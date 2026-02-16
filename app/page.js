@@ -1,0 +1,1253 @@
+"use client";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+
+/* ═══════════════════════════════════════════════════════════════════════
+   CONSTANTS & HELPERS
+   ═══════════════════════════════════════════════════════════════════════ */
+const TASKS_KEY = "inkwell-tasks-v2";
+const LISTS_KEY = "inkwell-lists-v2";
+const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+const todayStr = () => new Date().toISOString().split("T")[0];
+
+const PRIORITY = {
+  none:   { color: "#a8a29e", label: "None" },
+  low:    { color: "#60a5fa", label: "Low" },
+  medium: { color: "#fbbf24", label: "Medium" },
+  high:   { color: "#f87171", label: "High" },
+};
+
+const DEFAULT_LISTS = ["Inbox", "Work", "Personal"];
+const LIST_PALETTE = ["#78716c","#3b82f6","#10b981","#f59e0b","#ef4444","#8b5cf6","#ec4899","#14b8a6","#f97316","#6366f1"];
+
+const formatDate = (d) => {
+  if (!d) return "";
+  const date = new Date(d + "T00:00:00");
+  const today = new Date(); today.setHours(0,0,0,0);
+  const tmrw = new Date(today); tmrw.setDate(tmrw.getDate()+1);
+  const yest = new Date(today); yest.setDate(yest.getDate()-1);
+  if (date.getTime()===today.getTime()) return "Today";
+  if (date.getTime()===tmrw.getTime()) return "Tomorrow";
+  if (date.getTime()===yest.getTime()) return "Yesterday";
+  return date.toLocaleDateString("en-IE",{month:"short",day:"numeric",year:date.getFullYear()!==today.getFullYear()?"numeric":undefined});
+};
+
+const isOverdue = (d) => d && new Date(d+"T23:59:59") < new Date();
+const load = (k,fb) => { try { const r=localStorage.getItem(k); return r?JSON.parse(r):fb; } catch{return fb;} };
+const save = (k,d) => { try{localStorage.setItem(k,JSON.stringify(d));}catch{} };
+const getListColor = (name, lists) => LIST_PALETTE[lists.indexOf(name) % LIST_PALETTE.length];
+
+/* Default subtask with all properties (mirrors parent task shape) */
+const newSubtask = (title) => ({
+  id:uid(), title, completed:false, subtasks:[],
+  dueDate:null, startDate:null, endDate:null,
+  priority:"none", notes:"", tags:[]
+});
+
+/* Recursive subtask helpers */
+const countSubs = (subs) => { if(!subs?.length) return {total:0,done:0}; let t=0,d=0; for(const s of subs){t++;if(s.completed)d++;const c=countSubs(s.subtasks);t+=c.total;d+=c.done;} return{total:t,done:d}; };
+const updateSubById = (subs, id, changes) => {
+  if(!subs) return [];
+  return subs.map(s => s.id===id ? {...s,...changes} : {...s, subtasks: updateSubById(s.subtasks, id, changes)});
+};
+const removeSubById = (subs, id) => {
+  if(!subs) return [];
+  return subs.filter(s=>s.id!==id).map(s=>({...s, subtasks: removeSubById(s.subtasks, id)}));
+};
+const addSubTo = (subs, parentId, newSub) => {
+  if(!subs) return [];
+  return subs.map(s => s.id===parentId ? {...s, subtasks:[...(s.subtasks||[]), newSub]} : {...s, subtasks: addSubTo(s.subtasks, parentId, newSub)});
+};
+const findSubById = (subs, id) => {
+  if(!subs) return null;
+  for(const s of subs){ if(s.id===id) return s; const f=findSubById(s.subtasks,id); if(f) return f; }
+  return null;
+};
+
+/* ═══════════════════════════════════════════════════════════════════════
+   SVG ICONS
+   ═══════════════════════════════════════════════════════════════════════ */
+const I = ({children,size=18,...p}) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}} {...p}>{children}</svg>
+);
+const Icons = {
+  inbox:    <I><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.45-6.89A2 2 0 0016.76 4H7.24a2 2 0 00-1.79 1.11z"/></I>,
+  today:    <I><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></I>,
+  upcoming: <I><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></I>,
+  all:      <I><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></I>,
+  done:     <I><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></I>,
+  calendar: <I><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></I>,
+  camera:   <I><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></I>,
+  plus:     <I><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></I>,
+  chevL:    <I size={16}><polyline points="15 18 9 12 15 6"/></I>,
+  chevR:    <I size={16}><polyline points="9 18 15 12 9 6"/></I>,
+  chevD:    <I size={14}><polyline points="6 9 12 15 18 9"/></I>,
+  x:        <I size={16}><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></I>,
+  trash:    <I size={16}><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></I>,
+  flag:     <I size={14}><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/></I>,
+  upload:   <I><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></I>,
+  search:   <I size={18}><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></I>,
+  menu:     <I size={22}><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></I>,
+  subtask:  <I size={14}><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></I>,
+  note:     <I size={14}><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></I>,
+  sparkle:  <I size={16}><path d="M12 2L14.5 9.5 22 12 14.5 14.5 12 22 9.5 14.5 2 12 9.5 9.5z"/></I>,
+  grip:     <I size={16}><circle cx="9" cy="5" r="1" fill="currentColor" stroke="none"/><circle cx="9" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="9" cy="19" r="1" fill="currentColor" stroke="none"/><circle cx="15" cy="5" r="1" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="15" cy="19" r="1" fill="currentColor" stroke="none"/></I>,
+  duration: <I size={14}><path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.172a2 2 0 00-.586-1.414L12 12l-4.414 4.414A2 2 0 007 17.828V22"/><path d="M7 2v4.172a2 2 0 00.586 1.414L12 12l4.414-4.414A2 2 0 0017 6.172V2"/></I>,
+  keyboard: <I size={16}><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M8 12h.01M12 12h.01M16 12h.01M7 16h10"/></I>,
+  settings: <I size={16}><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></I>,
+  back:     <I size={16}><polyline points="15 18 9 12 15 6"/></I>,
+};
+
+/* ═══════════════════════════════════════════════════════════════════════
+   SHARED UI COMPONENTS
+   ═══════════════════════════════════════════════════════════════════════ */
+const Checkbox = ({checked, onChange, priority="none", size=20}) => (
+  <button onClick={e=>{e.stopPropagation();onChange(!checked);}}
+    aria-label={checked?"Mark incomplete":"Mark complete"} role="checkbox" aria-checked={checked}
+    style={{width:size,height:size,borderRadius:6,flexShrink:0,padding:0,
+      border:`2px solid ${checked?PRIORITY[priority].color:(priority!=="none"?PRIORITY[priority].color:"#cbd5e1")}`,
+      background:checked?PRIORITY[priority].color:"transparent",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.2s ease"}}>
+    {checked && <svg width={size*.6} height={size*.6} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
+  </button>
+);
+
+/* Double-click to edit any text inline */
+const EditableText = ({value, onSave, onEditStart, style={}, tag:Tag="span"}) => {
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState(value);
+  const ref = useRef(null);
+  useEffect(()=>{setText(value);},[value]);
+  useEffect(()=>{if(editing&&ref.current){ref.current.focus();ref.current.select();}},[editing]);
+  if(!editing) return <Tag onDoubleClick={e=>{e.stopPropagation();e.preventDefault();if(onEditStart)onEditStart();setEditing(true);}} title="Double-click to edit" style={{...style,cursor:"default"}}>{value}</Tag>;
+  return <input ref={ref} value={text} onChange={e=>setText(e.target.value)}
+    onClick={e=>e.stopPropagation()}
+    onBlur={()=>{if(text.trim()&&text.trim()!==value)onSave(text.trim());setEditing(false);}}
+    onKeyDown={e=>{if(e.key==="Enter")e.target.blur();if(e.key==="Escape"){setText(value);setEditing(false);}}}
+    style={{border:"none",outline:"none",background:"rgba(217,119,6,0.1)",borderRadius:4,padding:"2px 6px",fontFamily:"inherit",...style}} />;
+};
+
+const Overlay = ({onClose,children,wide}) => (
+  <div style={{position:"fixed",inset:0,background:"rgba(15,23,42,0.45)",backdropFilter:"blur(8px)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,animation:"fadeIn 0.2s ease",padding:16}} onClick={onClose} role="dialog" aria-modal="true">
+    <div onClick={e=>e.stopPropagation()} style={{background:"var(--bg)",borderRadius:20,padding:28,width:"100%",maxWidth:wide?560:500,boxShadow:"0 25px 60px rgba(0,0,0,0.25)",position:"relative",display:"flex",flexDirection:"column",maxHeight:"90vh"}}>
+      <button onClick={onClose} style={{position:"absolute",top:16,right:16,background:"none",border:"none",cursor:"pointer",color:"var(--muted)",padding:4}} aria-label="Close">{Icons.x}</button>
+      {children}
+    </div>
+  </div>
+);
+const Btn = ({children,variant="primary",...p}) => (
+  <button {...p} style={{flex:1,padding:"12px 16px",borderRadius:12,border:variant==="secondary"?"1px solid var(--border)":"none",background:variant==="secondary"?"white":"linear-gradient(135deg,#d97706,#ea580c)",color:variant==="secondary"?"var(--text)":"white",fontSize:14,fontWeight:600,cursor:p.disabled?"wait":"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8,fontFamily:"inherit",opacity:p.disabled?0.6:1,...(p.style||{})}}>{children}</button>
+);
+const IconBtn = ({children,...p}) => (<button {...p} style={{background:"none",border:"none",cursor:"pointer",color:"var(--muted)",padding:6,borderRadius:6,display:"flex",...(p.style||{})}}>{children}</button>);
+const Spinner = () => <div style={{width:16,height:16,border:"2px solid rgba(255,255,255,0.3)",borderTopColor:"white",borderRadius:"50%",animation:"spin 0.8s linear infinite"}}/>;
+const Field = ({label,children}) => (<div style={{marginBottom:18}}><label style={{fontSize:11,fontWeight:700,color:"var(--muted)",display:"block",marginBottom:7,textTransform:"uppercase",letterSpacing:0.8}}>{label}</label>{children}</div>);
+const fieldInput = {width:"100%",padding:"10px 12px",borderRadius:10,border:"1px solid var(--border)",fontSize:14,color:"var(--text)",background:"white",fontFamily:"inherit",boxSizing:"border-box",outline:"none"};
+const calNav = {background:"none",border:"1px solid var(--border)",borderRadius:8,padding:"8px 12px",cursor:"pointer",color:"var(--text)",display:"flex"};
+
+/* Inline date picker — click date label to reveal native date input */
+const InlineDatePicker = ({value, overdue, onChange}) => {
+  const [editing, setEditing] = useState(false);
+  const ref = useRef(null);
+  useEffect(()=>{if(editing && ref.current){ref.current.showPicker?.();ref.current.focus();}},[editing]);
+  if(editing) return (
+    <input ref={ref} type="date" value={value||""} onClick={e=>e.stopPropagation()}
+      onChange={e=>{onChange(e.target.value);setEditing(false);}}
+      onBlur={()=>setEditing(false)}
+      style={{fontSize:12,fontWeight:600,border:"1px solid var(--accent)",borderRadius:6,padding:"2px 6px",outline:"none",fontFamily:"inherit",color:"var(--accent)",background:"white",cursor:"pointer"}}/>
+  );
+  return (
+    <span onClick={e=>{e.stopPropagation();setEditing(true);}} title="Click to change date"
+      style={{fontSize:12,fontWeight:600,display:"flex",alignItems:"center",gap:3,cursor:"pointer",borderRadius:4,padding:"1px 4px",transition:"background 0.15s",
+        color:value?(overdue?"#ef4444":value===todayStr()?"var(--accent)":"var(--muted)"):"#a78bfa",
+        background:value?"transparent":"#f5f3ff",border:value?"none":"1px solid #ede9fe"}}>
+      {Icons.calendar} {value?formatDate(value):"No date"}
+    </span>
+  );
+};
+
+/* Subtasks in TaskRow — draggable to promote to task */
+const DraggableSubtaskTree = ({subtasks, onAction, onDragStart, onDragEnd, depth=0}) => {
+  const [openIds, setOpenIds] = useState({});
+  const toggle = id => setOpenIds(p=>({...p,[id]:!p[id]}));
+  if(!subtasks?.length) return null;
+  const indent = Math.min(depth * 18, 54);
+  return (
+    <div style={{paddingLeft:indent}}>
+      {subtasks.map(sub => {
+        const childCount = countSubs(sub.subtasks);
+        const hasChildren = (sub.subtasks||[]).length > 0;
+        const isOpen = openIds[sub.id];
+        return (
+          <div key={sub.id}>
+            <div draggable onDragStart={e=>onDragStart(e,sub,"subtask")} onDragEnd={onDragEnd}
+              style={{display:"flex",alignItems:"center",gap:8,padding:"4px 0",fontSize:13,cursor:"grab"}}>
+              <span style={{color:"var(--border)",flexShrink:0,cursor:"grab"}}>{Icons.grip}</span>
+              <Checkbox checked={sub.completed} size={15} onChange={c=>onAction("update",sub.id,{completed:c})}/>
+              <span style={{flex:1,color:sub.completed?"var(--muted)":"var(--text)",textDecoration:sub.completed?"line-through":"none",minWidth:0,fontSize:13}}>{sub.title}</span>
+              {hasChildren && (
+                <button onClick={()=>toggle(sub.id)} style={{background:"none",border:"none",cursor:"pointer",padding:2,color:"var(--muted)",display:"flex",alignItems:"center",gap:2,fontSize:11,fontFamily:"inherit"}}>
+                  {childCount.done}/{childCount.total}
+                  <span style={{transform:isOpen?"rotate(0)":"rotate(-90deg)",transition:"transform 0.15s",display:"flex"}}>{Icons.chevD}</span>
+                </button>
+              )}
+            </div>
+            {hasChildren && isOpen && (
+              <DraggableSubtaskTree subtasks={sub.subtasks} onAction={onAction} onDragStart={onDragStart} onDragEnd={onDragEnd} depth={depth+1}/>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+const ToggleRow = ({label, sublabel, checked, onChange}) => (
+  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 0",borderBottom:"1px solid var(--border-light)"}}>
+    <div>
+      <div style={{fontSize:14,fontWeight:500,color:"var(--ink)"}}>{label}</div>
+      {sublabel && <div style={{fontSize:12,color:"var(--muted)",marginTop:2}}>{sublabel}</div>}
+    </div>
+    <button onClick={()=>onChange(!checked)} role="switch" aria-checked={checked}
+      style={{width:44,height:26,borderRadius:13,border:"none",cursor:"pointer",padding:2,
+        background:checked?"var(--accent)":"var(--border)",transition:"background 0.2s",flexShrink:0,position:"relative"}}>
+      <div style={{width:22,height:22,borderRadius:11,background:"white",boxShadow:"0 1px 3px rgba(0,0,0,0.2)",
+        transform:checked?"translateX(18px)":"translateX(0)",transition:"transform 0.2s"}}/>
+    </button>
+  </div>
+);
+
+/* ═══════════════════════════════════════════════════════════════════════
+   RECURSIVE SUBTASK TREE (infinite nesting, editable titles, clickable)
+   ═══════════════════════════════════════════════════════════════════════ */
+const SubtaskTree = ({subtasks, onAction, onOpenSub, depth=0, compact=false}) => {
+  const [openIds, setOpenIds] = useState({});
+  const [addingTo, setAddingTo] = useState(null);
+  const [addText, setAddText] = useState("");
+  const [editingId, setEditingId] = useState(null);
+  const [editText, setEditText] = useState("");
+  const editRef = useRef(null);
+  const toggle = id => setOpenIds(p=>({...p,[id]:!p[id]}));
+  if(!subtasks?.length && !compact) return null;
+  const indent = compact ? 0 : Math.min(depth * 20, 60);
+
+  useEffect(()=>{if(editingId&&editRef.current){editRef.current.focus();editRef.current.select();}},[editingId]);
+
+  return (
+    <div style={{paddingLeft:indent}}>
+      {(subtasks||[]).map(sub => {
+        const childCount = countSubs(sub.subtasks);
+        const hasChildren = (sub.subtasks||[]).length > 0;
+        const isOpen = openIds[sub.id];
+        const isEditing = editingId===sub.id;
+        return (
+          <div key={sub.id}>
+            <div style={{display:"flex",alignItems:"center",gap:8,padding:compact?"6px 0":"4px 0",fontSize:compact?14:13}}>
+              <Checkbox checked={sub.completed} size={compact?16:15} onChange={c=>onAction("update",sub.id,{completed:c})}/>
+
+              {/* Title: double-click to edit inline, single-click to open details */}
+              {isEditing ? (
+                <input ref={editRef} value={editText} onChange={e=>setEditText(e.target.value)}
+                  onClick={e=>e.stopPropagation()}
+                  onBlur={()=>{if(editText.trim()&&editText.trim()!==sub.title)onAction("update",sub.id,{title:editText.trim()});setEditingId(null);}}
+                  onKeyDown={e=>{if(e.key==="Enter")e.target.blur();if(e.key==="Escape"){setEditingId(null);}}}
+                  style={{flex:1,border:"none",outline:"none",background:"rgba(217,119,6,0.1)",borderRadius:4,padding:"2px 6px",fontFamily:"inherit",fontSize:compact?14:13,minWidth:0,color:"var(--text)"}}/>
+              ) : (
+                <span
+                  onClick={e=>{e.stopPropagation();if(compact&&onOpenSub)onOpenSub(sub.id);}}
+                  onDoubleClick={e=>{e.stopPropagation();setEditingId(sub.id);setEditText(sub.title);}}
+                  title={compact?"Click to edit details · Double-click to rename":"Double-click to rename"}
+                  style={{flex:1,color:sub.completed?"var(--muted)":"var(--text)",textDecoration:sub.completed?"line-through":"none",
+                    cursor:compact?"pointer":"default",minWidth:0,
+                    borderRadius:4,padding:"1px 4px",transition:"background 0.1s",
+                    ...(compact?{":hover":{background:"var(--surface)"}}:{})}}>
+                  {sub.title}
+                </span>
+              )}
+
+              {sub.priority&&sub.priority!=="none"&&<span style={{width:6,height:6,borderRadius:"50%",background:PRIORITY[sub.priority].color,flexShrink:0}}/>}
+              {sub.dueDate&&<span style={{fontSize:10,color:isOverdue(sub.dueDate)?"#ef4444":"var(--muted)",fontWeight:500}}>{formatDate(sub.dueDate)}</span>}
+              {hasChildren && (
+                <button onClick={e=>{e.stopPropagation();toggle(sub.id);}} style={{background:"none",border:"none",cursor:"pointer",padding:2,color:"var(--muted)",display:"flex",alignItems:"center",gap:2,fontSize:11,fontFamily:"inherit"}}>
+                  {childCount.done}/{childCount.total}
+                  <span style={{transform:isOpen?"rotate(0)":"rotate(-90deg)",transition:"transform 0.15s",display:"flex"}}>{Icons.chevD}</span>
+                </button>
+              )}
+              {compact && (
+                <button onClick={e=>{e.stopPropagation();setAddingTo(addingTo===sub.id?null:sub.id);setAddText("");}} style={{background:"none",border:"none",cursor:"pointer",padding:2,color:"var(--muted)",display:"flex"}} title="Add sub-subtask">
+                  {Icons.plus}
+                </button>
+              )}
+              {compact && <IconBtn onClick={e=>{e.stopPropagation();onAction("remove",sub.id);}} aria-label="Remove subtask">{Icons.x}</IconBtn>}
+            </div>
+            {compact && addingTo===sub.id && (
+              <div style={{paddingLeft:20,paddingBottom:4}}>
+                <input autoFocus value={addText} onChange={e=>setAddText(e.target.value)} placeholder="Add nested subtask..."
+                  onKeyDown={e=>{if(e.key==="Enter"&&addText.trim()){onAction("add",sub.id,newSubtask(addText.trim()));setAddText("");setAddingTo(null);}if(e.key==="Escape"){setAddingTo(null);setAddText("");}}}
+                  onBlur={()=>{setAddingTo(null);setAddText("");}}
+                  style={{width:"100%",padding:"6px 10px",borderRadius:8,border:"1px solid var(--accent)",fontSize:13,outline:"none",background:"white",fontFamily:"inherit"}}/>
+              </div>
+            )}
+            {hasChildren && isOpen && (
+              <SubtaskTree subtasks={sub.subtasks} onAction={onAction} onOpenSub={onOpenSub} depth={depth+1} compact={compact}/>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+/* ═══════════════════════════════════════════════════════════════════════
+   PHOTO UPLOAD MODAL
+   ═══════════════════════════════════════════════════════════════════════ */
+const PhotoModal = ({onClose,onProcess,processing}) => {
+  const [dragOver,setDragOver]=useState(false);
+  const [preview,setPreview]=useState(null);
+  const [fileData,setFileData]=useState(null);
+  const [mediaType,setMediaType]=useState("image/jpeg");
+  const inputRef=useRef(null);
+  const handleFile=f=>{if(!f?.type.startsWith("image/"))return;setMediaType(f.type);const r=new FileReader();r.onload=e=>{setPreview(e.target.result);setFileData(e.target.result.split(",")[1]);};r.readAsDataURL(f);};
+  return (
+    <Overlay onClose={onClose}>
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20}}>
+        <div style={{width:40,height:40,borderRadius:12,background:"linear-gradient(135deg,#d97706,#ea580c)",display:"flex",alignItems:"center",justifyContent:"center",color:"white"}}>{Icons.camera}</div>
+        <div><h2 style={{margin:0,fontSize:19,fontFamily:"var(--font-display)",color:"var(--ink)"}}>Scan Notebook Page</h2><p style={{margin:0,fontSize:13,color:"var(--muted)"}}>AI extracts and syncs your handwritten to-dos</p></div>
+      </div>
+      {!preview?(
+        <div onDragOver={e=>{e.preventDefault();setDragOver(true);}} onDragLeave={()=>setDragOver(false)} onDrop={e=>{e.preventDefault();setDragOver(false);handleFile(e.dataTransfer.files[0]);}} onClick={()=>inputRef.current?.click()}
+          style={{border:`2px dashed ${dragOver?"var(--accent)":"#cbd5e1"}`,borderRadius:16,padding:"44px 24px",textAlign:"center",cursor:"pointer",background:dragOver?"var(--accent-bg)":"var(--surface)",transition:"all 0.2s"}}>
+          <div style={{marginBottom:14,color:dragOver?"var(--accent)":"#94a3b8"}}>{Icons.upload}</div>
+          <p style={{margin:0,fontSize:15,fontWeight:600,color:"var(--text)"}}>Drop your notebook photo here</p>
+          <p style={{margin:"8px 0 0",fontSize:13,color:"var(--muted)"}}>or tap to browse</p>
+          <input ref={inputRef} type="file" accept="image/*" capture="environment" style={{display:"none"}} onChange={e=>handleFile(e.target.files[0])}/>
+        </div>
+      ):(
+        <div>
+          <div style={{borderRadius:12,overflow:"hidden",marginBottom:16,border:"1px solid var(--border)",maxHeight:260}}><img src={preview} alt="Preview" style={{width:"100%",display:"block",objectFit:"contain",maxHeight:260}}/></div>
+          <div style={{display:"flex",gap:10}}>
+            <Btn variant="secondary" onClick={()=>{setPreview(null);setFileData(null);}}>Change</Btn>
+            <Btn onClick={()=>onProcess(fileData,mediaType)} disabled={processing}>{processing?<><Spinner/> Scanning...</>:<>{Icons.sparkle} Extract To-dos</>}</Btn>
+          </div>
+        </div>
+      )}
+    </Overlay>
+  );
+};
+
+/* ═══════════════════════════════════════════════════════════════════════
+   SCAN RESULTS MODAL — new lists persist across all dropdowns
+   ═══════════════════════════════════════════════════════════════════════ */
+const ScanResultsModal = ({results,onConfirm,onClose,lists}) => {
+  const [items,setItems]=useState(()=>results.items.map((it,i)=>({...it,_selected:true,_id:i})));
+  const [localLists,setLocalLists]=useState([]);
+  const [newInputIdx,setNewInputIdx]=useState(null);
+  const [newInputVal,setNewInputVal]=useState("");
+  const didCommit=useRef(false);
+
+  const allLists = [...lists, ...localLists.filter(l=>!lists.includes(l))];
+  const updateItem=(idx,changes)=>setItems(prev=>prev.map((it,i)=>i===idx?{...it,...changes}:it));
+  const toggle=idx=>updateItem(idx,{_selected:!items[idx]._selected});
+  const selected=items.filter(it=>it._selected);
+
+  const commitNewList = () => {
+    if(didCommit.current) return;
+    didCommit.current=true;
+    const val=newInputVal.trim();
+    const idx=newInputIdx;
+    if(val && idx!==null){
+      if(!lists.includes(val) && !localLists.includes(val)){
+        setLocalLists(prev=>[...prev, val]);
+      }
+      updateItem(idx, {category:val});
+    }
+    setNewInputIdx(null);
+    setNewInputVal("");
+    setTimeout(()=>{didCommit.current=false;},50);
+  };
+
+  return (
+    <Overlay onClose={onClose} wide>
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6}}>
+        <span style={{color:"var(--accent)"}}>{Icons.sparkle}</span>
+        <h2 style={{margin:0,fontSize:19,fontFamily:"var(--font-display)"}}>Found {items.length} Item{items.length!==1?"s":""}</h2>
+      </div>
+      <p style={{fontSize:13,color:"var(--muted)",margin:"0 0 16px"}}>Edit task names or reassign lists before adding.</p>
+      {results.page_date&&(<div style={{padding:"8px 12px",background:"var(--accent-bg)",borderRadius:8,marginBottom:14,fontSize:13,color:"var(--accent-dark)",display:"flex",alignItems:"center",gap:6}}>{Icons.calendar} Page dated {formatDate(results.page_date)}</div>)}
+      <div style={{flex:1,overflowY:"auto",marginBottom:20,maxHeight:"50vh"}}>
+        {items.map((item,idx)=>(
+          <div key={idx} style={{padding:"12px 8px",borderBottom:"1px solid var(--border-light)",opacity:item._selected?1:0.3,transition:"opacity 0.15s"}}>
+            <div style={{display:"flex",alignItems:"flex-start",gap:10}}>
+              <div style={{paddingTop:2}}><Checkbox checked={item._selected} onChange={()=>toggle(idx)}/></div>
+              <div style={{flex:1,minWidth:0}}>
+                <input value={item.title} onChange={e=>updateItem(idx,{title:e.target.value})}
+                  style={{width:"100%",border:"1px solid transparent",borderRadius:6,padding:"4px 8px",fontSize:14,fontWeight:500,color:"var(--ink)",background:"transparent",outline:"none",fontFamily:"inherit",boxSizing:"border-box",textDecoration:item.completed?"line-through":"none"}}
+                  onFocus={e=>{e.target.style.borderColor="var(--accent)";e.target.style.background="white";}}
+                  onBlur={e=>{e.target.style.borderColor="transparent";e.target.style.background="transparent";}}/>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginTop:4,paddingLeft:8,flexWrap:"wrap"}}>
+                  <select value={item.category||""} onChange={e=>{
+                    const v=e.target.value;
+                    if(v==="__new__"){
+                      didCommit.current=false;
+                      setNewInputIdx(idx);
+                      setNewInputVal("");
+                      return;
+                    }
+                    updateItem(idx,{category:v||null});
+                  }} style={{fontSize:12,padding:"2px 6px",borderRadius:4,border:"1px solid var(--border)",background:"white",color:"var(--text)",cursor:"pointer",fontFamily:"inherit"}}>
+                    <option value="">Inbox</option>
+                    {allLists.filter(l=>l!=="Inbox").map(l=><option key={l} value={l}>{l}</option>)}
+                    <option value="__new__">+ New list...</option>
+                  </select>
+
+                  {newInputIdx===idx&&(
+                    <input autoFocus value={newInputVal}
+                      onChange={e=>setNewInputVal(e.target.value)}
+                      placeholder="List name, Enter to save"
+                      onKeyDown={e=>{
+                        if(e.key==="Enter"){e.preventDefault();commitNewList();}
+                        if(e.key==="Escape"){setNewInputIdx(null);setNewInputVal("");}
+                      }}
+                      onBlur={()=>commitNewList()}
+                      style={{fontSize:12,padding:"3px 8px",borderRadius:4,border:"1px solid var(--accent)",width:140,outline:"none",fontFamily:"inherit",background:"#fffbeb"}}/>
+                  )}
+
+                  {item.completed&&<span style={{fontSize:11,background:"#dcfce7",color:"#166534",padding:"1px 7px",borderRadius:4,fontWeight:600}}>DONE</span>}
+                  {item.is_duplicate_of&&<span style={{fontSize:11,color:"#d97706",fontWeight:500}}>↻ match</span>}
+                  {!item.date&&!results.page_date&&<span style={{fontSize:11,color:"#a78bfa",fontWeight:500}}>defaults to today</span>}
+                </div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div style={{display:"flex",gap:10,flexShrink:0}}>
+        <Btn variant="secondary" onClick={onClose}>Cancel</Btn>
+        <Btn onClick={()=>onConfirm(selected)}>Add {selected.length} Task{selected.length!==1?"s":""}</Btn>
+      </div>
+    </Overlay>
+  );
+};
+
+/* ═══════════════════════════════════════════════════════════════════════
+   TASK DETAIL PANEL — with subtask navigation (click into any subtask)
+   ═══════════════════════════════════════════════════════════════════════ */
+const TaskDetail = ({task, onUpdate, onDelete, onClose, lists}) => {
+  /* Navigation stack: view subtask details, then go back */
+  const [subPath, setSubPath] = useState([]);
+  const [newSub, setNewSub] = useState("");
+  const [newTag, setNewTag] = useState("");
+
+  /* Reset path when switching tasks */
+  useEffect(()=>{ setSubPath([]); },[task.id]);
+
+  /* Resolve current item from path */
+  let current = task;
+  let breadcrumbs = [{id:task.id, title:task.title}];
+  for(const sid of subPath) {
+    const found = findSubById(current.subtasks, sid);
+    if(found) { current = found; breadcrumbs.push({id:found.id, title:found.title}); }
+    else break;
+  }
+  const isSubtask = subPath.length > 0;
+
+  /* Update helpers — route changes through the correct path */
+  const updateCurrent = (changes) => {
+    if(!isSubtask) { onUpdate({...task, ...changes}); return; }
+    const newSubs = updateSubById(task.subtasks, current.id, changes);
+    onUpdate({...task, subtasks: newSubs});
+  };
+
+  /* Local state for title/notes */
+  const [title, setTitle] = useState(current.title);
+  const [notes, setNotes] = useState(current.notes||"");
+  useEffect(()=>{setTitle(current.title);setNotes(current.notes||"");setNewSub("");setNewTag("");},[current.id, task]);
+
+  const durationDays = current.startDate&&current.endDate ? Math.max(1,Math.ceil((new Date(current.endDate)-new Date(current.startDate))/(86400000))) : null;
+
+  /* Subtask actions for the tree */
+  const handleSubAction = (action, targetId, data) => {
+    let newSubs;
+    if(action==="remove") newSubs = removeSubById(current.subtasks||[], targetId);
+    else if(action==="add") newSubs = addSubTo(current.subtasks||[], targetId, data);
+    else newSubs = updateSubById(current.subtasks||[], targetId, data);
+    updateCurrent({subtasks: newSubs});
+  };
+
+  return (
+    <div className="detail-panel" role="complementary" aria-label="Task details"
+      style={{width:380,borderLeft:"1px solid var(--border)",background:"var(--bg)",display:"flex",flexDirection:"column",height:"100%",flexShrink:0,animation:"slideIn 0.2s ease"}}>
+      {/* Header */}
+      <div style={{padding:"12px 20px",borderBottom:"1px solid var(--border)",display:"flex",justifyContent:"space-between",alignItems:"center",minHeight:48}}>
+        <div style={{display:"flex",alignItems:"center",gap:6,flex:1,minWidth:0}}>
+          {isSubtask && (
+            <button onClick={()=>setSubPath(p=>p.slice(0,-1))} style={{background:"none",border:"none",cursor:"pointer",color:"var(--accent)",padding:2,display:"flex",flexShrink:0}} aria-label="Back to parent">
+              {Icons.back}
+            </button>
+          )}
+          <div style={{fontSize:11,fontWeight:700,color:"var(--muted)",textTransform:"uppercase",letterSpacing:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+            {breadcrumbs.map((b,i)=>(
+              <span key={b.id}>
+                {i>0&&" › "}
+                {i<breadcrumbs.length-1 ? (
+                  <button onClick={()=>setSubPath(subPath.slice(0,i))} style={{background:"none",border:"none",cursor:"pointer",color:"var(--accent)",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,padding:0,fontFamily:"inherit"}}>{b.title.slice(0,12)}{b.title.length>12?"…":""}</button>
+                ) : (isSubtask ? "Subtask" : "Task Details")}
+              </span>
+            ))}
+          </div>
+        </div>
+        <div style={{display:"flex",gap:2,flexShrink:0}}>
+          {!isSubtask && <IconBtn onClick={()=>onDelete(task.id)} title="Delete" aria-label="Delete task">{Icons.trash}</IconBtn>}
+          {isSubtask && <IconBtn onClick={()=>{handleSubAction("remove",current.id);setSubPath(p=>p.slice(0,-1));}} title="Delete subtask" aria-label="Delete subtask">{Icons.trash}</IconBtn>}
+          <IconBtn onClick={onClose} aria-label="Close">{Icons.x}</IconBtn>
+        </div>
+      </div>
+
+      <div style={{flex:1,overflowY:"auto",padding:"18px 20px"}}>
+        {/* Title + checkbox */}
+        <div style={{display:"flex",alignItems:"flex-start",gap:12,marginBottom:20}}>
+          <div style={{paddingTop:4}}><Checkbox checked={current.completed} priority={current.priority||"none"} onChange={c=>updateCurrent({completed:c,completedAt:c?new Date().toISOString():null})}/></div>
+          <textarea ref={el=>{if(el){el.style.height="auto";el.style.height=el.scrollHeight+"px";}}} value={title} onChange={e=>{setTitle(e.target.value);e.target.style.height="auto";e.target.style.height=e.target.scrollHeight+"px";}} rows={1} onBlur={e=>{if(title.trim())updateCurrent({title:title.trim()});e.target.style.borderColor="transparent";e.target.style.background="none";}} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();e.target.blur();}}}
+            style={{flex:1,border:"1px solid transparent",borderRadius:8,background:"none",fontSize:18,fontFamily:"var(--font-display)",fontWeight:700,color:current.completed?"var(--muted)":"var(--ink)",textDecoration:current.completed?"line-through":"none",outline:"none",padding:"6px 8px",resize:"none",lineHeight:1.3,overflow:"hidden",transition:"border-color 0.15s, background 0.15s",cursor:"text"}}
+            onFocus={e=>{e.target.style.borderColor="var(--accent)";e.target.style.background="white";}}
+            onMouseEnter={e=>{if(document.activeElement!==e.target)e.target.style.borderColor="var(--border)";}}
+            onMouseLeave={e=>{if(document.activeElement!==e.target)e.target.style.borderColor="transparent";}}/>
+        </div>
+
+        {/* Due Date */}
+        <Field label="Due Date"><input type="date" value={current.dueDate||""} onChange={e=>updateCurrent({dueDate:e.target.value||null})} style={fieldInput}/></Field>
+
+        {/* Duration */}
+        <Field label="Duration (Start → End)">
+          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+            <input type="date" value={current.startDate||""} onChange={e=>updateCurrent({startDate:e.target.value||null})} style={{...fieldInput,flex:1}}/>
+            <span style={{color:"var(--muted)",fontSize:13,flexShrink:0}}>→</span>
+            <input type="date" value={current.endDate||""} onChange={e=>updateCurrent({endDate:e.target.value||null})} style={{...fieldInput,flex:1}}/>
+          </div>
+          {durationDays&&<div style={{fontSize:12,color:"var(--muted)",marginTop:6}}>{durationDays} day{durationDays!==1?"s":""}</div>}
+        </Field>
+
+        {/* Priority */}
+        <Field label="Priority">
+          <div style={{display:"flex",gap:6}}>
+            {Object.entries(PRIORITY).map(([k,{color,label}])=>(
+              <button key={k} onClick={()=>updateCurrent({priority:k})} style={{flex:1,padding:"8px 2px",borderRadius:8,fontSize:12,fontWeight:600,cursor:"pointer",transition:"all 0.15s",border:(current.priority||"none")===k?`2px solid ${color}`:"1px solid var(--border)",background:(current.priority||"none")===k?`${color}12`:"white",color:(current.priority||"none")===k?color:"var(--muted)"}}>{label}</button>
+            ))}
+          </div>
+        </Field>
+
+        {/* List (only on top-level tasks) */}
+        {!isSubtask && (
+          <Field label="List">
+            <select value={task.list} onChange={e=>onUpdate({...task,list:e.target.value})} style={{...fieldInput,cursor:"pointer"}}>
+              {lists.map(l=><option key={l} value={l}>{l}</option>)}
+            </select>
+          </Field>
+        )}
+
+        {/* Tags */}
+        <Field label="Tags">
+          <div style={{display:"flex",flexWrap:"wrap",gap:4,marginBottom:6}}>
+            {(current.tags||[]).map(t=>(
+              <span key={t} style={{fontSize:12,padding:"2px 8px",borderRadius:12,background:"var(--accent-bg)",color:"var(--accent-dark)",display:"flex",alignItems:"center",gap:4,fontWeight:500}}>
+                #{t}<button onClick={()=>updateCurrent({tags:(current.tags||[]).filter(x=>x!==t)})} style={{background:"none",border:"none",cursor:"pointer",color:"var(--accent)",padding:0,fontSize:14,lineHeight:1}}>×</button>
+              </span>
+            ))}
+          </div>
+          <input value={newTag} onChange={e=>setNewTag(e.target.value)} placeholder="Add tag, press Enter..."
+            onKeyDown={e=>{if(e.key==="Enter"&&newTag.trim()){const tag=newTag.trim().replace(/^#/,"");if(!(current.tags||[]).includes(tag))updateCurrent({tags:[...(current.tags||[]),tag]});setNewTag("");}}}
+            style={{...fieldInput,fontSize:13}}/>
+        </Field>
+
+        {/* Subtasks — recursive, with clickable items to drill in */}
+        <Field label={`Subtasks (${countSubs(current.subtasks).done}/${countSubs(current.subtasks).total})`}>
+          {(current.subtasks||[]).length>0&&(
+            <div style={{background:"white",borderRadius:10,border:"1px solid var(--border)",overflow:"hidden",marginBottom:8,padding:"6px 12px"}}>
+              <SubtaskTree subtasks={current.subtasks} compact={true}
+                onAction={handleSubAction}
+                onOpenSub={(subId)=>setSubPath(p=>[...p, subId])}/>
+            </div>
+          )}
+          <input value={newSub} onChange={e=>setNewSub(e.target.value)} placeholder="Add subtask, press Enter..."
+            onKeyDown={e=>{if(e.key==="Enter"&&newSub.trim()){updateCurrent({subtasks:[...(current.subtasks||[]),newSubtask(newSub.trim())]});setNewSub("");}}}
+            style={{...fieldInput,fontSize:13}}/>
+        </Field>
+
+        {/* Notes */}
+        <Field label="Notes"><textarea value={notes} onChange={e=>setNotes(e.target.value)} onBlur={()=>updateCurrent({notes})} placeholder="Add notes..." rows={4} style={{...fieldInput,resize:"vertical",minHeight:80,fontFamily:"inherit"}}/></Field>
+
+        {task.createdAt&&!isSubtask&&<div style={{fontSize:12,color:"var(--muted)",marginTop:8,paddingTop:12,borderTop:"1px solid var(--border-light)"}}>Created {new Date(task.createdAt).toLocaleDateString("en-IE",{month:"short",day:"numeric",year:"numeric"})}{task.completedAt&&<> · Done {new Date(task.completedAt).toLocaleDateString("en-IE",{month:"short",day:"numeric"})}</>}</div>}
+      </div>
+    </div>
+  );
+};
+
+/* ═══════════════════════════════════════════════════════════════════════
+   CALENDAR VIEW — vertical scroll, drag-to-move, drag-to-resize duration
+   ═══════════════════════════════════════════════════════════════════════ */
+const CalendarView = ({tasks, onSelect, onUpdate}) => {
+  const scrollRef = useRef(null);
+  const currentMonthRef = useRef(null);
+  const [extraMonths, setExtraMonths] = useState(0);
+  const td = todayStr();
+  const [dragInfo, setDragInfo] = useState(null); // {taskId, type:'move'|'resize-start'|'resize-end'}
+  const [hoverDate, setHoverDate] = useState(null);
+
+  const PAST = 2, FUTURE = 12;
+  const months = useMemo(() => {
+    const now = new Date();
+    const r = [];
+    for (let i = -PAST; i <= FUTURE + extraMonths; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+      r.push({ year: d.getFullYear(), month: d.getMonth(), isCurrent: i === 0 });
+    }
+    return r;
+  }, [extraMonths]);
+
+  /* scroll to current month on mount */
+  useEffect(() => { setTimeout(() => currentMonthRef.current?.scrollIntoView({ block: "start" }), 80); }, []);
+
+  /* infinite scroll */
+  const onScroll = () => {
+    const el = scrollRef.current;
+    if (el && el.scrollHeight - el.scrollTop - el.clientHeight < 300) setExtraMonths(p => p + 6);
+  };
+
+  /* helper: date string */
+  const ds = (y, m, d) => `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+
+  /* weeks for a month: each week = array of 7 date-strings or null */
+  const getWeeks = (yr, mo) => {
+    const last = new Date(yr, mo + 1, 0).getDate();
+    const weeks = [];
+    let week = Array(7).fill(null);
+    for (let d = 1; d <= last; d++) {
+      const dow = (new Date(yr, mo, d).getDay() + 6) % 7;
+      week[dow] = ds(yr, mo, d);
+      if (dow === 6 || d === last) { weeks.push(week); week = Array(7).fill(null); }
+    }
+    return weeks;
+  };
+
+  /* index single-day tasks by dueDate (exclude multi-day) */
+  const tasksByDate = useMemo(() => {
+    const map = {};
+    tasks.forEach(t => {
+      if (t.dueDate && !(t.startDate && t.endDate && t.startDate !== t.endDate))
+        (map[t.dueDate] ||= []).push(t);
+    });
+    return map;
+  }, [tasks]);
+
+  /* multi-day tasks */
+  const multiDay = useMemo(() => tasks.filter(t => t.startDate && t.endDate && t.startDate !== t.endDate), [tasks]);
+
+  /* bars for one week + lane allocation */
+  const getWeekBars = (week) => {
+    const valid = week.filter(Boolean);
+    if (!valid.length) return { bars: [], lanes: 0 };
+    const wS = valid[0], wE = valid[valid.length - 1];
+    const raw = multiDay
+      .filter(t => t.startDate <= wE && t.endDate >= wS)
+      .map(t => {
+        const cS = t.startDate < wS ? wS : t.startDate;
+        const cE = t.endDate > wE ? wE : t.endDate;
+        let sc = week.indexOf(cS), ec = week.indexOf(cE);
+        if (sc < 0) sc = week.findIndex(Boolean);
+        if (ec < 0) ec = 6 - [...week].reverse().findIndex(Boolean);
+        return { task: t, sc, ec, trimL: t.startDate < wS, trimR: t.endDate > wE };
+      })
+      .filter(b => b.ec >= b.sc);
+    /* greedy lane allocation */
+    const lanes = [];
+    const allocated = raw.map(bar => {
+      for (let l = 0; l < lanes.length; l++) {
+        if (!lanes[l].some(b => b.sc <= bar.ec && b.ec >= bar.sc)) { lanes[l].push(bar); return { ...bar, lane: l }; }
+      }
+      lanes.push([bar]); return { ...bar, lane: lanes.length - 1 };
+    });
+    return { bars: allocated, lanes: lanes.length };
+  };
+
+  /* ── Drag handlers ────────────────────────────────────── */
+  const startDrag = (e, task, type) => {
+    e.stopPropagation();
+    setDragInfo({ taskId: task.id, type });
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", task.id);
+    /* ghost label */
+    const g = document.createElement("div");
+    g.textContent = type === "resize-start" ? "◁ start" : type === "resize-end" ? "▷ end" : task.title;
+    g.style.cssText = "position:absolute;top:-200px;padding:4px 10px;background:var(--ink,#1c1917);color:white;border-radius:6px;font-size:12px;white-space:nowrap;font-family:sans-serif;";
+    document.body.appendChild(g);
+    e.dataTransfer.setDragImage(g, 0, 0);
+    requestAnimationFrame(() => g.remove());
+  };
+
+  const onCellOver = (e, d) => { if (!dragInfo) return; e.preventDefault(); e.dataTransfer.dropEffect = "move"; setHoverDate(d); };
+  const onCellLeave = () => setHoverDate(null);
+
+  const onCellDrop = (e, d) => {
+    e.preventDefault(); setHoverDate(null);
+    if (!dragInfo || !d) { setDragInfo(null); return; }
+    const t = tasks.find(x => x.id === dragInfo.taskId);
+    if (!t) { setDragInfo(null); return; }
+    const u = { ...t };
+    const { type } = dragInfo;
+
+    if (type === "move") {
+      if (t.startDate && t.endDate && t.startDate !== t.endDate) {
+        const anchor = t.dueDate || t.startDate;
+        const diff = Math.round((new Date(d) - new Date(anchor)) / 864e5);
+        const shift = (s) => { if (!s) return s; const x = new Date(s); x.setDate(x.getDate() + diff); return x.toISOString().split("T")[0]; };
+        u.dueDate = d; u.startDate = shift(t.startDate); u.endDate = shift(t.endDate);
+      } else {
+        u.dueDate = d;
+      }
+    } else if (type === "resize-start") {
+      u.startDate = d;
+      if (!u.endDate || d > u.endDate) u.endDate = d;
+      if (u.dueDate && u.dueDate < d) u.dueDate = d;
+    } else if (type === "resize-end") {
+      u.endDate = d;
+      if (!u.startDate || d < u.startDate) u.startDate = d;
+      if (u.dueDate && u.dueDate > d) u.dueDate = d;
+    }
+    onUpdate(u);
+    setDragInfo(null);
+  };
+
+  const endDrag = () => { setDragInfo(null); setHoverDate(null); };
+
+  /* ── Render ───────────────────────────────────────────── */
+  const BAR_H = 22, BAR_GAP = 2;
+
+  return (
+    <div ref={scrollRef} onScroll={onScroll} style={{height:"100%",overflowY:"auto",overflowX:"hidden",paddingBottom:40}}>
+      {months.map(({ year, month, isCurrent }) => {
+        const weeks = getWeeks(year, month);
+        const label = new Date(year, month).toLocaleDateString("en-IE", { month: "long", year: "numeric" });
+        return (
+          <div key={`${year}-${month}`} ref={isCurrent ? currentMonthRef : null} style={{marginBottom:28}}>
+            {/* Sticky month header */}
+            <div style={{position:"sticky",top:0,zIndex:10,padding:"10px 0 8px",background:"var(--bg)",borderBottom:"2px solid var(--border)"}}>
+              <h3 style={{margin:0,fontSize:18,fontFamily:"var(--font-display)",fontWeight:700,color:"var(--ink)"}}>{label}</h3>
+            </div>
+            {/* Weekday labels */}
+            <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",marginTop:6}}>
+              {["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map(d => (
+                <div key={d} style={{textAlign:"center",fontSize:11,fontWeight:700,color:"var(--muted)",textTransform:"uppercase",letterSpacing:0.5,padding:"4px 0"}}>{d}</div>
+              ))}
+            </div>
+            {/* Weeks */}
+            {weeks.map((week, wi) => {
+              const { bars, lanes } = getWeekBars(week);
+              const barsH = lanes * (BAR_H + BAR_GAP);
+              return (
+                <div key={wi} style={{position:"relative"}}>
+                  {/* Day cell grid */}
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)"}}>
+                    {week.map((dStr, col) => {
+                      const dayN = dStr ? parseInt(dStr.split("-")[2]) : null;
+                      const isT = dStr === td;
+                      const isH = dStr === hoverDate;
+                      const dayTasks = dStr ? (tasksByDate[dStr] || []) : [];
+                      return (
+                        <div key={col}
+                          onDragOver={e => dStr && onCellOver(e, dStr)} onDragLeave={onCellLeave} onDrop={e => dStr && onCellDrop(e, dStr)}
+                          style={{minHeight:56 + barsH,padding:4,overflow:"hidden",minWidth:0,background:isH?"rgba(217,119,6,0.12)":isT?"rgba(217,119,6,0.05)":"transparent",borderBottom:"1px solid var(--border-light)",borderRight:col < 6 ? "1px solid var(--border-light)":"none",transition:"background 0.1s"}}>
+                          {dayN != null && (
+                            <div style={{fontSize:13,fontWeight:isT?800:500,width:isT?26:"auto",height:isT?26:"auto",borderRadius:"50%",display:isT?"flex":"block",alignItems:"center",justifyContent:"center",background:isT?"var(--accent)":"none",color:isT?"white":dStr < td?"var(--muted)":"var(--text)",marginBottom:2}}>{dayN}</div>
+                          )}
+                          {/* spacer for multi-day bars */}
+                          {barsH > 0 && <div style={{height:barsH}} />}
+                          {/* single-day tasks */}
+                          {dayTasks.slice(0, 4).map(t => (
+                            <div key={t.id} draggable onDragStart={e => startDrag(e, t, "move")} onDragEnd={endDrag}
+                              onClick={e => { e.stopPropagation(); onSelect(t); }}
+                              style={{fontSize:11,padding:"2px 5px",borderRadius:4,marginBottom:2,cursor:"pointer",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontWeight:500,maxWidth:"100%",display:"block",background:t.completed?"var(--surface)":`${PRIORITY[t.priority||"none"].color}15`,color:t.completed?"var(--muted)":"var(--text)",textDecoration:t.completed?"line-through":"none",borderLeft:`2px solid ${PRIORITY[t.priority||"none"].color}`,opacity:dragInfo?.taskId === t.id ? 0.3 : 1}}
+                              title={t.title}>{t.title}</div>
+                          ))}
+                          {dayTasks.length > 4 && <div style={{fontSize:10,color:"var(--muted)",paddingLeft:4}}>+{dayTasks.length - 4}</div>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {/* ── Multi-day bar overlay ── */}
+                  {bars.map(bar => {
+                    const leftPct = (bar.sc / 7) * 100;
+                    const widthPct = ((bar.ec - bar.sc + 1) / 7) * 100;
+                    const topPx = 30 + bar.lane * (BAR_H + BAR_GAP);
+                    const pc = PRIORITY[bar.task.priority || "none"].color;
+                    const isDragging = dragInfo?.taskId === bar.task.id;
+                    return (
+                      <div key={bar.task.id + "-" + wi}
+                        style={{position:"absolute",left:`calc(${leftPct}% + 5px)`,width:`calc(${widthPct}% - 10px)`,top:topPx,height:BAR_H,display:"flex",alignItems:"center",borderRadius:5,background:bar.task.completed?"var(--surface)":`${pc}18`,border:`1px solid ${bar.task.completed?"var(--border)":`${pc}50`}`,fontSize:11,fontWeight:600,color:bar.task.completed?"var(--muted)":"var(--text)",cursor:"grab",overflow:"hidden",opacity:isDragging?0.3:1,pointerEvents:dragInfo && !isDragging?"none":"auto",zIndex:5,transition:"opacity 0.15s"}}
+                        draggable onDragStart={e => startDrag(e, bar.task, "move")} onDragEnd={endDrag}
+                        onClick={e => { e.stopPropagation(); onSelect(bar.task); }}>
+                        {/* Left resize handle */}
+                        {!bar.trimL && (
+                          <div draggable onDragStart={e => { e.stopPropagation(); startDrag(e, bar.task, "resize-start"); }} onDragEnd={endDrag}
+                            style={{width:7,minWidth:7,height:"100%",cursor:"ew-resize",background:`${pc}35`,borderRadius:"5px 0 0 5px",flexShrink:0}}
+                            title="Drag to change start date" />
+                        )}
+                        <span style={{flex:1,padding:"0 5px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",textDecoration:bar.task.completed?"line-through":"none"}}>{bar.task.title}</span>
+                        {/* Right resize handle */}
+                        {!bar.trimR && (
+                          <div draggable onDragStart={e => { e.stopPropagation(); startDrag(e, bar.task, "resize-end"); }} onDragEnd={endDrag}
+                            style={{width:7,minWidth:7,height:"100%",cursor:"ew-resize",background:`${pc}35`,borderRadius:"0 5px 5px 0",flexShrink:0}}
+                            title="Drag to change end date" />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
+        );
+      })}
+      <div style={{textAlign:"center",padding:"20px 0 40px",color:"var(--muted)",fontSize:13}}>Scroll down for more months…</div>
+    </div>
+  );
+};
+
+/* ═══════════════════════════════════════════════════════════════════════
+   TASK ROW — editable title, drag handle, collapsible subtasks
+   ═══════════════════════════════════════════════════════════════════════ */
+const TaskRow = ({task,isActive,isSelected,onSelect,onToggle,onUpdateTask,onDragStart,onDragOver,onDrop,onDragEnd,dropTarget,view,lists}) => {
+  const [subsOpen,setSubsOpen]=useState(false);
+  const clickTimer=useRef(null);
+  const overdue=!task.completed&&isOverdue(task.dueDate);
+  const {total:subTotal,done:subDone}=countSubs(task.subtasks);
+  const hasDuration=task.startDate&&task.endDate;
+  const isDT=dropTarget?.id===task.id;
+  const dtZone=isDT?dropTarget.zone:null;
+
+  const handleSubAction = (action, targetId, data) => {
+    let newSubs;
+    if(action==="remove") newSubs = removeSubById(task.subtasks||[], targetId);
+    else if(action==="add") newSubs = addSubTo(task.subtasks||[], targetId, data);
+    else newSubs = updateSubById(task.subtasks||[], targetId, data);
+    onUpdateTask({...task, subtasks: newSubs});
+  };
+
+  const handleRowClick = (e) => {
+    if(clickTimer.current) return;
+    clickTimer.current = setTimeout(()=>{clickTimer.current=null; onSelect(task,e);}, 250);
+  };
+  const cancelRowClick = () => {
+    if(clickTimer.current){clearTimeout(clickTimer.current);clickTimer.current=null;}
+  };
+
+  return (
+    <div draggable onDragStart={e=>onDragStart(e,task,"task")} onDragOver={e=>onDragOver(e,task)} onDrop={e=>onDrop(e,task)} onDragEnd={onDragEnd}
+      style={{marginBottom:2,borderRadius:12,position:"relative",
+        background:isSelected?"rgba(217,119,6,0.1)":dtZone==="nest"?"rgba(217,119,6,0.08)":isActive?"var(--active-bg)":"transparent",
+        outline:isSelected?"2px solid var(--accent)":dtZone==="nest"?"2px dashed var(--accent)":"none",
+        transition:"background 0.15s,opacity 0.3s,outline 0.1s",opacity:task.completed?0.45:1}}>
+      {/* Drop indicator lines */}
+      {dtZone==="before"&&<div style={{position:"absolute",top:-1,left:12,right:12,height:2,background:"var(--accent)",borderRadius:1,zIndex:5}}/>}
+      {dtZone==="after"&&<div style={{position:"absolute",bottom:-1,left:12,right:12,height:2,background:"var(--accent)",borderRadius:1,zIndex:5}}/>}
+      {dtZone==="nest"&&<div style={{position:"absolute",left:42,top:"50%",transform:"translateY(-50)",fontSize:10,color:"var(--accent)",fontWeight:700,zIndex:5,pointerEvents:"none"}}>↳ nest</div>}
+
+      <div onClick={handleRowClick} style={{display:"flex",alignItems:"flex-start",gap:8,padding:"11px 12px",cursor:"pointer"}}>
+        <div style={{paddingTop:3,cursor:"grab",color:"var(--border)",touchAction:"none"}} onMouseDown={e=>e.stopPropagation()}>{Icons.grip}</div>
+        <div style={{paddingTop:2}}><Checkbox checked={task.completed} priority={task.priority} onChange={()=>onToggle(task.id)}/></div>
+        <div style={{flex:1,minWidth:0}}>
+          <EditableText value={task.title} onSave={t=>onUpdateTask({...task,title:t})} onEditStart={cancelRowClick}
+            style={{fontSize:15,fontWeight:task.completed?400:500,lineHeight:1.4,color:task.completed?"var(--muted)":"var(--ink)",textDecoration:task.completed?"line-through":"none",display:"block",marginBottom:3}}/>
+          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+            <InlineDatePicker value={task.dueDate} overdue={overdue} onChange={d=>onUpdateTask({...task,dueDate:d||null})}/>
+            {hasDuration&&<span style={{fontSize:11,display:"flex",alignItems:"center",gap:3,color:"var(--muted)"}}>{Icons.duration} {formatDate(task.startDate)}–{formatDate(task.endDate)}</span>}
+            {task.priority!=="none"&&<span style={{fontSize:11,fontWeight:700,display:"flex",alignItems:"center",gap:3,color:PRIORITY[task.priority].color}}>{Icons.flag} {PRIORITY[task.priority].label}</span>}
+            {subTotal>0&&(<button onClick={e=>{e.stopPropagation();setSubsOpen(!subsOpen);}} style={{fontSize:12,display:"flex",alignItems:"center",gap:3,color:subDone===subTotal?"#16a34a":"var(--muted)",background:"none",border:"none",cursor:"pointer",padding:0,fontFamily:"inherit"}}>{Icons.subtask} {subDone}/{subTotal} <span style={{transform:subsOpen?"rotate(0)":"rotate(-90deg)",transition:"transform 0.15s",display:"flex"}}>{Icons.chevD}</span></button>)}
+            {(task.tags||[]).map(t=><span key={t} style={{fontSize:11,color:"var(--accent)",fontWeight:500}}>#{t}</span>)}
+            {task.notes&&<span style={{color:"#cbd5e1",display:"flex"}}>{Icons.note}</span>}
+            {!view.startsWith("list:")&&view!=="inbox"&&<span style={{fontSize:11,color:"var(--muted)",background:"var(--surface)",padding:"1px 7px",borderRadius:4}}>{task.list}</span>}
+          </div>
+        </div>
+      </div>
+      {/* Expanded subtasks — each one is draggable to promote */}
+      {subsOpen&&subTotal>0&&(
+        <div style={{paddingLeft:52,paddingBottom:8,paddingRight:12}}>
+          <DraggableSubtaskTree subtasks={task.subtasks} onAction={handleSubAction} onDragStart={onDragStart} onDragEnd={onDragEnd} parentTask={task}/>
+        </div>
+      )}
+    </div>
+  );
+};
+
+/* ═══════════════════════════════════════════════════════════════════════
+   MAIN APP
+   ═══════════════════════════════════════════════════════════════════════ */
+export default function InkwellApp() {
+  const [tasks,setTasks]=useState([]);
+  const [lists,setLists]=useState(DEFAULT_LISTS);
+  const [view,setView]=useState("today");
+  const [selectedTask,setSelectedTask]=useState(null);
+  const [showPhoto,setShowPhoto]=useState(false);
+  const [scanResults,setScanResults]=useState(null);
+  const [processing,setProcessing]=useState(false);
+  const [search,setSearch]=useState("");
+  const [showSearch,setShowSearch]=useState(false);
+  const [newTitle,setNewTitle]=useState("");
+  const [newList,setNewList]=useState("");
+  const [showNewList,setShowNewList]=useState(false);
+  const [ready,setReady]=useState(false);
+  const [sidebar,setSidebar]=useState(true);
+  const [toast,setToast]=useState(null);
+  const [isMobile,setIsMobile]=useState(false);
+  const [dragTask,setDragTask]=useState(null);
+  const [selectedIds,setSelectedIds]=useState(new Set());
+  const [dropTarget,setDropTarget]=useState(null); // {id, zone:'before'|'nest'|'after'}
+  const [showShortcuts,setShowShortcuts]=useState(false);
+  const [showSettings,setShowSettings]=useState(false);
+  const [listMenu,setListMenu]=useState(null); // {name, x, y}
+  const [editingList,setEditingList]=useState(null);
+  const [dragList,setDragList]=useState(null);
+  const [dragListOver,setDragListOver]=useState(null);
+  const [showViewCounts,setShowViewCounts]=useState(()=>load("inkwell-showViewCounts",true));
+  const [showListCounts,setShowListCounts]=useState(()=>load("inkwell-showListCounts",true));
+  useEffect(()=>{save("inkwell-showViewCounts",showViewCounts);},[showViewCounts]);
+  useEffect(()=>{save("inkwell-showListCounts",showListCounts);},[showListCounts]);
+
+  useEffect(()=>{setTasks(load(TASKS_KEY,[]));setLists(load(LISTS_KEY,DEFAULT_LISTS));setReady(true);const mob=window.innerWidth<768;setIsMobile(mob);if(mob)setSidebar(false);const fn=()=>{const m=window.innerWidth<768;setIsMobile(m);if(m)setSidebar(false);};window.addEventListener("resize",fn);if("serviceWorker" in navigator)navigator.serviceWorker.register("/sw.js").catch(()=>{});return()=>window.removeEventListener("resize",fn);},[]);
+  useEffect(()=>{if(ready)save(TASKS_KEY,tasks);},[tasks,ready]);
+  useEffect(()=>{if(ready)save(LISTS_KEY,lists);},[lists,ready]);
+  useEffect(()=>{if(selectedTask){const u=tasks.find(t=>t.id===selectedTask.id);if(u)setSelectedTask(u);else setSelectedTask(null);}},[tasks]);
+  const flash=msg=>{setToast(msg);setTimeout(()=>setToast(null),3000);};
+
+  /* Bulk operations */
+  const bulkDelete=()=>{setTasks(prev=>prev.filter(t=>!selectedIds.has(t.id)));flash(`Deleted ${selectedIds.size} tasks`);setSelectedIds(new Set());setSelectedTask(null);};
+  const bulkMove=(listName)=>{setTasks(prev=>prev.map(t=>selectedIds.has(t.id)?{...t,list:listName}:t));flash(`Moved ${selectedIds.size} tasks to ${listName}`);setSelectedIds(new Set());};
+  const bulkPriority=(p)=>{setTasks(prev=>prev.map(t=>selectedIds.has(t.id)?{...t,priority:p}:t));flash(`Set ${selectedIds.size} tasks to ${PRIORITY[p].label}`);setSelectedIds(new Set());};
+  const bulkComplete=()=>{setTasks(prev=>prev.map(t=>selectedIds.has(t.id)?{...t,completed:true,completedAt:new Date().toISOString()}:t));flash(`Completed ${selectedIds.size} tasks`);setSelectedIds(new Set());};
+
+
+
+
+
+  const addTask=useCallback(data=>{
+    const task={id:uid(),title:data.title||"Untitled",completed:data.completed||false,dueDate:data.dueDate||todayStr(),startDate:data.startDate||null,endDate:data.endDate||null,priority:data.priority||"none",list:data.list||(view.startsWith("list:")?view.replace("list:",""):"Inbox"),subtasks:data.subtasks||[],notes:data.notes||"",tags:data.tags||[],createdAt:new Date().toISOString(),completedAt:data.completed?new Date().toISOString():null};
+    setTasks(prev=>[task,...prev]);return task;
+  },[view]);
+
+  const updateTask=useCallback(updated=>{setTasks(prev=>prev.map(t=>t.id===updated.id?updated:t));},[]);
+  const toggleTask=useCallback(id=>{setTasks(prev=>prev.map(t=>t.id===id?{...t,completed:!t.completed,completedAt:!t.completed?new Date().toISOString():null}:t));},[]);
+  const deleteTask=useCallback(id=>{setTasks(prev=>prev.filter(t=>t.id!==id));if(selectedTask?.id===id)setSelectedTask(null);},[selectedTask]);
+
+  const renameList=useCallback((oldN,newN)=>{if(!newN.trim()||newN===oldN||lists.includes(newN))return;setLists(prev=>prev.map(l=>l===oldN?newN:l));setTasks(prev=>prev.map(t=>t.list===oldN?{...t,list:newN}:t));if(view===`list:${oldN}`)setView(`list:${newN}`);},[lists,view]);
+  const deleteList=useCallback((name)=>{if(name==="Inbox")return;const ct=tasks.filter(t=>t.list===name).length;if(ct>0&&!confirm(`"${name}" has ${ct} task${ct>1?"s":""}. They'll be moved to Inbox. Continue?`))return;setTasks(prev=>prev.map(t=>t.list===name?{...t,list:"Inbox"}:t));setLists(prev=>prev.filter(l=>l!==name));if(view===`list:${name}`)setView("all");flash(`Deleted list "${name}"`);},[tasks,view,flash]);
+  const bulkDate=(d)=>{setTasks(prev=>prev.map(t=>selectedIds.has(t.id)?{...t,dueDate:d}:t));flash(`Set ${selectedIds.size} tasks to ${formatDate(d)}`);setSelectedIds(new Set());};
+
+  const onDragStart=(e,task,source="task")=>{setDragTask({...task,_source:source});e.dataTransfer.effectAllowed="move";e.dataTransfer.setData("text/plain",task.id);e.dataTransfer.setData("application/x-source",source);};
+  const onDragOver=(e,overTask)=>{
+    e.preventDefault();e.dataTransfer.dropEffect="move";
+    if(!dragTask||dragTask.id===overTask?.id){setDropTarget(null);return;}
+    if(!overTask){setDropTarget(null);return;}
+    const rect=e.currentTarget.getBoundingClientRect();
+    const y=(e.clientY-rect.top)/rect.height;
+    const zone=y<0.25?"before":y>0.75?"after":"nest";
+    setDropTarget({id:overTask.id,zone});
+  };
+  const onDrop=(e,overTask)=>{
+    e.preventDefault();
+    if(!dragTask||!overTask){setDragTask(null);setDropTarget(null);return;}
+    const zone=dropTarget?.zone||"nest";
+    const src=dragTask._source;
+
+    if(dragTask.id===overTask.id){setDragTask(null);setDropTarget(null);return;}
+
+    if(zone==="nest"){
+      /* ── Nest: make dragged task a subtask of target ── */
+      if(src==="subtask"){
+        /* subtask→subtask nest: remove from old parent, add to new parent */
+        setTasks(prev=>{
+          let arr=prev.map(t=>({...t,subtasks:removeSubById(t.subtasks||[],dragTask.id)}));
+          return arr.map(t=>t.id===overTask.id?{...t,subtasks:[...(t.subtasks||[]),{...dragTask,_source:undefined}]}:t);
+        });
+      } else {
+        /* task→subtask: remove from top level, add as sub */
+        const sub={id:dragTask.id,title:dragTask.title,completed:dragTask.completed,subtasks:dragTask.subtasks||[],dueDate:dragTask.dueDate,startDate:dragTask.startDate,endDate:dragTask.endDate,priority:dragTask.priority||"none",notes:dragTask.notes||"",tags:dragTask.tags||[]};
+        setTasks(prev=>{
+          const without=prev.filter(t=>t.id!==dragTask.id);
+          return without.map(t=>t.id===overTask.id?{...t,subtasks:[...(t.subtasks||[]),sub]}:t);
+        });
+      }
+      flash(`Nested under "${overTask.title}"`);
+    } else {
+      /* ── Reorder: insert before/after target ── */
+      if(src==="subtask"){
+        /* Promote subtask to task and insert at position */
+        const promoted={id:dragTask.id,title:dragTask.title,completed:dragTask.completed||false,dueDate:dragTask.dueDate||todayStr(),startDate:dragTask.startDate||null,endDate:dragTask.endDate||null,priority:dragTask.priority||"none",list:overTask.list||"Inbox",subtasks:dragTask.subtasks||[],notes:dragTask.notes||"",tags:dragTask.tags||[],createdAt:new Date().toISOString(),completedAt:dragTask.completed?new Date().toISOString():null};
+        setTasks(prev=>{
+          const cleaned=prev.map(t=>({...t,subtasks:removeSubById(t.subtasks||[],dragTask.id)}));
+          const idx=cleaned.findIndex(t=>t.id===overTask.id);
+          const ins=zone==="after"?idx+1:idx;
+          cleaned.splice(ins,0,promoted);
+          return cleaned;
+        });
+        flash(`Promoted "${dragTask.title}" to task`);
+      } else {
+        setTasks(prev=>{
+          const w=prev.filter(t=>t.id!==dragTask.id);
+          const idx=w.findIndex(t=>t.id===overTask.id);
+          const ins=zone==="after"?idx+1:idx;
+          w.splice(ins,0,{...dragTask,_source:undefined,list:overTask.list});
+          return w;
+        });
+      }
+    }
+    setDragTask(null);setDropTarget(null);setSelectedIds(new Set());
+  };
+  const onDragEnd=()=>{setDragTask(null);setDropTarget(null);};
+  const onListDrop=(e,listName)=>{e.preventDefault();setDropTarget(null);const tid=e.dataTransfer.getData("text/plain");const src=e.dataTransfer.getData("application/x-source");
+    if(tid&&src==="subtask"){
+      /* Promote subtask to task in the target list */
+      setTasks(prev=>{
+        let sub=null;
+        for(const t of prev){sub=findSubById(t.subtasks,tid);if(sub)break;}
+        if(!sub)return prev;
+        const cleaned=prev.map(t=>({...t,subtasks:removeSubById(t.subtasks||[],tid)}));
+        const promoted={id:sub.id,title:sub.title,completed:sub.completed||false,dueDate:sub.dueDate||todayStr(),startDate:sub.startDate||null,endDate:sub.endDate||null,priority:sub.priority||"none",list:listName,subtasks:sub.subtasks||[],notes:sub.notes||"",tags:sub.tags||[],createdAt:new Date().toISOString(),completedAt:sub.completed?new Date().toISOString():null};
+        return[promoted,...cleaned];
+      });
+      flash(`Promoted to "${listName}"`);
+    } else if(tid){
+      /* Multi-select: move all selected if applicable */
+      const ids=selectedIds.size>1&&selectedIds.has(tid)?selectedIds:new Set([tid]);
+      setTasks(prev=>prev.map(t=>ids.has(t.id)?{...t,list:listName}:t));
+      flash(`Moved ${ids.size>1?ids.size+" tasks":"task"} to ${listName}`);
+      setSelectedIds(new Set());
+    }
+  };
+
+  /* ── Multi-select handlers ── */
+  const lastClickedIdx=useRef(null);
+  const handleTaskClick=(task,e)=>{
+    const idx=filtered.findIndex(t=>t.id===task.id);
+    if(e.shiftKey&&lastClickedIdx.current!=null){
+      const start=Math.min(lastClickedIdx.current,idx);
+      const end=Math.max(lastClickedIdx.current,idx);
+      const range=new Set(filtered.slice(start,end+1).map(t=>t.id));
+      setSelectedIds(range);
+    } else if(e.metaKey||e.ctrlKey){
+      setSelectedIds(prev=>{const n=new Set(prev);if(n.has(task.id))n.delete(task.id);else n.add(task.id);return n;});
+      lastClickedIdx.current=idx;
+    } else {
+      setSelectedIds(new Set());
+      lastClickedIdx.current=idx;
+      setSelectedTask(task);
+    }
+  };
+
+  /* Bulk operations */
+
+
+  const handleScan=async(b64,mt)=>{setProcessing(true);try{const res=await fetch("/api/scan",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({imageData:b64,mediaType:mt,existingTasks:tasks.map(t=>t.title)})});if(!res.ok){const err=await res.json();throw new Error(err.error||"Scan failed");}const results=await res.json();setShowPhoto(false);setScanResults(results);}catch(e){flash("⚠ "+(e.message||"Failed"));}setProcessing(false);};
+
+  const confirmScan=items=>{let added=0,checked=0;const pageDate=scanResults?.page_date;const newCats=new Set();items.forEach(it=>{if(it.category?.trim()&&!lists.includes(it.category.trim()))newCats.add(it.category.trim());});if(newCats.size>0)setLists(prev=>[...prev,...Array.from(newCats)]);const all=[...lists,...Array.from(newCats)];
+    items.forEach(item=>{if(item.is_duplicate_of){const ex=tasks.find(t=>t.title.toLowerCase().trim()===item.is_duplicate_of.toLowerCase().trim());if(ex&&item.completed&&!ex.completed){updateTask({...ex,completed:true,completedAt:new Date().toISOString()});checked++;return;}if(ex)return;}const tl=item.category&&all.includes(item.category.trim())?item.category.trim():"Inbox";addTask({title:item.title,completed:item.completed,dueDate:item.date||pageDate||todayStr(),list:tl});added++;});
+    setScanResults(null);const lm=newCats.size>0?`, created ${newCats.size} list${newCats.size!==1?"s":""}`:""
+    flash(`✓ Added ${added} task${added!==1?"s":""}${checked?`, checked off ${checked}`:""}${lm}`);};
+
+  const filtered=useMemo(()=>{let f=tasks;
+    if(search){const q=search.toLowerCase();f=f.filter(t=>t.title.toLowerCase().includes(q)||(t.notes||"").toLowerCase().includes(q)||(t.tags||[]).some(tg=>tg.toLowerCase().includes(q)));}
+    else{switch(view){case"today":f=f.filter(t=>t.dueDate===todayStr()||(!t.dueDate&&t.createdAt?.startsWith(todayStr())));break;case"upcoming":f=f.filter(t=>!t.completed&&t.dueDate&&t.dueDate>=todayStr());f.sort((a,b)=>(a.dueDate||"").localeCompare(b.dueDate||""));break;case"all":break;case"completed":return f.filter(t=>t.completed).sort((a,b)=>(b.completedAt||"").localeCompare(a.completedAt||""));case"inbox":f=f.filter(t=>t.list==="Inbox");break;default:if(view.startsWith("list:"))f=f.filter(t=>t.list===view.replace("list:",""));}}
+    return[...f.filter(t=>!t.completed),...f.filter(t=>t.completed)];
+  },[tasks,view,search]);
+
+  const overdueCount=useMemo(()=>tasks.filter(t=>!t.completed&&isOverdue(t.dueDate)).length,[tasks]);
+  const todayCount=useMemo(()=>tasks.filter(t=>!t.completed&&t.dueDate===todayStr()).length,[tasks]);
+
+  /* Keyboard shortcuts — must be after filtered/bulkDelete definitions */
+  useEffect(()=>{const h=e=>{if(["INPUT","TEXTAREA","SELECT"].includes(e.target.tagName))return;if(e.key==="n"&&!e.metaKey){e.preventDefault();document.getElementById("quick-add")?.focus();}if(e.key==="/"||((e.metaKey||e.ctrlKey)&&e.key==="f")){e.preventDefault();setShowSearch(true);}if(e.key==="?")setShowShortcuts(s=>!s);if(e.key==="Escape"){setShowSearch(false);setSearch("");setSelectedTask(null);setShowShortcuts(false);setSelectedIds(new Set());}if(e.key==="a"&&(e.metaKey||e.ctrlKey)){e.preventDefault();setSelectedIds(new Set(filtered.map(t=>t.id)));}if((e.key==="Delete"||e.key==="Backspace")&&selectedIds.size>0&&!e.metaKey){bulkDelete();}};window.addEventListener("keydown",h);return()=>window.removeEventListener("keydown",h);},[filtered,selectedIds]);
+  const titles={today:"Today",upcoming:"Upcoming",all:"All Tasks",completed:"Completed",inbox:"Inbox",calendar:"Calendar"};
+  const iconsMap={today:Icons.today,upcoming:Icons.upcoming,all:Icons.all,completed:Icons.done,inbox:Icons.inbox,calendar:Icons.calendar};
+  const viewTitle=titles[view]||(view.startsWith("list:")?view.replace("list:",""):"Tasks");
+  const viewIcon=iconsMap[view]||Icons.all;
+  const selectView=v=>{setView(v);setSelectedTask(null);setSearch("");if(isMobile)setSidebar(false);};
+
+  if(!ready)return<div style={{height:"100vh",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"var(--font-display)",fontSize:22,color:"var(--muted)"}}>Loading...</div>;
+
+  return (
+    <div style={{height:"100vh",display:"flex",overflow:"hidden"}}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700;800&family=Source+Sans+3:wght@300;400;500;600;700&display=swap');
+        :root{--font-display:'Playfair Display',Georgia,serif;--font-body:'Source Sans 3',-apple-system,sans-serif;--ink:#1c1917;--text:#44403c;--muted:#a8a29e;--bg:#fafaf9;--surface:#f5f5f4;--border:#e7e5e4;--border-light:#f5f5f4;--active-bg:#fffbeb;--accent:#d97706;--accent-dark:#b45309;--accent-bg:#fffbeb;--accent2:#ea580c;}
+        *{box-sizing:border-box;margin:0;padding:0;font-family:var(--font-body);}
+        html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;}
+        ::selection{background:rgba(217,119,6,0.15);}
+        .list-row:hover .list-menu-btn{opacity:1!important;}
+        @keyframes fadeIn{from{opacity:0;transform:scale(0.95)}to{opacity:1;transform:scale(1)}}
+        ::-webkit-scrollbar{width:6px;}::-webkit-scrollbar-track{background:transparent;}::-webkit-scrollbar-thumb{background:#d6d3d1;border-radius:3px;}
+        input::placeholder,textarea::placeholder{color:#a8a29e;}
+        @keyframes fadeIn{from{opacity:0}to{opacity:1}}
+        @keyframes slideIn{from{opacity:0;transform:translateX(12px)}to{opacity:1;transform:translateX(0)}}
+        @keyframes spin{to{transform:rotate(360deg)}}
+        @keyframes toastIn{from{opacity:0;transform:translate(-50%,20px)}to{opacity:1;transform:translate(-50%,0)}}
+        button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+        [draggable]{user-select:none;}
+        @media(max-width:768px){.sidebar{position:fixed!important;z-index:100!important;height:100vh!important;}.detail-panel{position:fixed!important;right:0;top:0;height:100vh!important;z-index:100;width:100%!important;max-width:420px;}}
+      `}</style>
+
+      {isMobile&&sidebar&&<div onClick={()=>setSidebar(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.3)",zIndex:99}}/>}
+
+      {/* ═══ SIDEBAR ═══ */}
+      <nav className="sidebar" aria-label="Navigation" style={{width:sidebar?264:0,...(isMobile?{position:"fixed",zIndex:100,height:"100vh"}:{}),background:"var(--surface)",borderRight:"1px solid var(--border)",display:"flex",flexDirection:"column",transition:"width 0.25s ease",overflow:"hidden",flexShrink:0}}>
+        <div style={{padding:"20px 16px 12px",flexShrink:0}}>
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20}}>
+            <div style={{width:34,height:34,borderRadius:10,background:"linear-gradient(135deg,#d97706,#ea580c)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:17,fontWeight:800,color:"white",fontFamily:"var(--font-display)"}}>I</div>
+            <span style={{fontSize:20,fontWeight:700,fontFamily:"var(--font-display)",color:"var(--ink)",whiteSpace:"nowrap"}}>Inkwell</span>
+          </div>
+          <button onClick={()=>{setShowPhoto(true);if(isMobile)setSidebar(false);}} style={{width:"100%",padding:"11px 14px",borderRadius:12,border:"2px dashed #d6d3d1",background:"rgba(217,119,6,0.04)",color:"var(--accent)",fontSize:13,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:10,transition:"all 0.2s",marginBottom:16,whiteSpace:"nowrap",fontFamily:"inherit"}}>{Icons.camera} Scan Notebook Page</button>
+        </div>
+        <div style={{flex:1,overflowY:"auto",padding:"0 8px"}}>
+          <NavSection title="Views">
+            {[{id:"today",icon:Icons.today,label:"Today",count:todayCount},{id:"upcoming",icon:Icons.upcoming,label:"Upcoming"},{id:"all",icon:Icons.all,label:"All Tasks",count:tasks.filter(t=>!t.completed).length},{id:"completed",icon:Icons.done,label:"Completed",count:tasks.filter(t=>t.completed).length},{id:"calendar",icon:Icons.calendar,label:"Calendar"}].map(({id,icon,label,count})=>(
+              <div key={id}
+                onDragOver={id==="today"?e=>{e.preventDefault();e.currentTarget.style.background="var(--accent-bg)";e.currentTarget.style.outline="2px solid var(--accent)";e.currentTarget.style.borderRadius="10px";}:undefined}
+                onDragLeave={id==="today"?e=>{e.currentTarget.style.background="";e.currentTarget.style.outline="";}:undefined}
+                onDrop={id==="today"?e=>{e.preventDefault();e.currentTarget.style.background="";e.currentTarget.style.outline="";const tid=e.dataTransfer.getData("text/plain");if(tid){const src=e.dataTransfer.getData("application/x-source");if(src==="subtask"){/* promote subtask with today date */setTasks(prev=>{let sub=null;for(const t of prev){sub=findSubById(t.subtasks,tid);if(sub)break;}if(!sub)return prev;const cleaned=prev.map(t=>({...t,subtasks:removeSubById(t.subtasks||[],tid)}));const promoted={id:sub.id,title:sub.title,completed:sub.completed||false,dueDate:todayStr(),startDate:sub.startDate||null,endDate:sub.endDate||null,priority:sub.priority||"none",list:"Inbox",subtasks:sub.subtasks||[],notes:sub.notes||"",tags:sub.tags||[],createdAt:new Date().toISOString(),completedAt:null};return[promoted,...cleaned];});flash("Promoted to Today");}else{const ids=selectedIds.size>1&&selectedIds.has(tid)?selectedIds:new Set([tid]);setTasks(prev=>prev.map(t=>ids.has(t.id)?{...t,dueDate:todayStr()}:t));flash(`Set ${ids.size>1?ids.size+" tasks":"task"} to Today`);setSelectedIds(new Set());}}}:undefined}>
+                <NavItem active={view===id} icon={icon} label={label} count={showViewCounts?count:0} onClick={()=>selectView(id)} countColor={id==="today"&&overdueCount>0?"#ef4444":undefined}/>
+              </div>
+            ))}
+          </NavSection>
+          <NavSection title="Lists" action={()=>setShowNewList(true)}>
+            {lists.map((l,li)=>{const lv=l==="Inbox"?"inbox":`list:${l}`;const color=getListColor(l,lists);return(
+              <div key={l}
+                draggable={l!=="Inbox"&&!editingList}
+                onDragStart={e=>{if(l==="Inbox")return;/* Only set dragList if no task is being dragged */if(!dragTask){setDragList(l);e.dataTransfer.effectAllowed="move";e.dataTransfer.setData("application/x-list",l);}}}
+                onDragEnd={()=>{setDragList(null);setDragListOver(null);}}
+                onContextMenu={e=>{if(l==="Inbox")return;e.preventDefault();setListMenu({name:l,x:e.clientX,y:e.clientY});}}
+                onDragOver={e=>{e.preventDefault();
+                  if(dragList){/* List reorder */setDragListOver(l);e.currentTarget.style.background="";e.currentTarget.style.outline="";}
+                  else{/* Task drop onto list */e.currentTarget.style.background="var(--accent-bg)";e.currentTarget.style.outline="2px solid var(--accent)";e.currentTarget.style.borderRadius="10px";}
+                }}
+                onDragLeave={e=>{e.currentTarget.style.background="";e.currentTarget.style.outline="";if(dragList)setDragListOver(null);}}
+                onDrop={e=>{e.currentTarget.style.background="";e.currentTarget.style.outline="";
+                  if(dragList&&dragList!==l){/* Reorder lists */setLists(prev=>{const w=prev.filter(x=>x!==dragList);const idx=w.indexOf(l);w.splice(idx,0,dragList);return w;});setDragList(null);setDragListOver(null);}
+                  else if(!dragList){onListDrop(e,l);}
+                }}
+                style={{position:"relative",opacity:dragList===l?0.3:1,transition:"opacity 0.15s"}}>
+                {/* Drop indicator line for list reorder */}
+                {dragListOver===l&&dragList&&dragList!==l&&<div style={{position:"absolute",top:-1,left:8,right:8,height:2,background:"var(--accent)",borderRadius:1,zIndex:5}}/>}
+                <div style={{display:"flex",alignItems:"center",position:"relative"}} className="list-row">
+                  <div style={{flex:1}}>
+                    <NavItem active={view===lv} count={showListCounts?tasks.filter(t=>!t.completed&&t.list===l).length:0} onClick={()=>selectView(lv)}
+                      icon={<span style={{width:8,height:8,borderRadius:"50%",display:"inline-block",background:color,flexShrink:0}}/>}
+                      label={editingList===l?(
+                        <input autoFocus defaultValue={l}
+                          onClick={e=>e.stopPropagation()}
+                          onKeyDown={e=>{if(e.key==="Enter"){const v=e.target.value.trim();if(v&&v!==l)renameList(l,v);setEditingList(null);}if(e.key==="Escape")setEditingList(null);}}
+                          onBlur={e=>{const v=e.target.value.trim();if(v&&v!==l)renameList(l,v);setEditingList(null);}}
+                          style={{border:"none",outline:"none",background:"rgba(217,119,6,0.1)",borderRadius:4,padding:"2px 6px",fontSize:14,fontWeight:view===lv?600:500,width:"100%",fontFamily:"inherit"}}/>
+                      ):(
+                        <span onDoubleClick={e=>{if(l!=="Inbox"){e.stopPropagation();setEditingList(l);}}}
+                          style={{fontSize:14,fontWeight:view===lv?600:500,color:view===lv?"var(--ink)":"var(--text)",cursor:l!=="Inbox"?"grab":"default"}}>{l}</span>
+                      )}/>
+                  </div>
+                  {l!=="Inbox"&&(
+                    <button onClick={e=>{e.stopPropagation();setListMenu({name:l,x:e.clientX,y:e.clientY});}}
+                      className="list-menu-btn" style={{background:"none",border:"none",cursor:"pointer",color:"var(--muted)",padding:"4px 6px",borderRadius:4,fontSize:14,lineHeight:1,fontFamily:"inherit",opacity:0,transition:"opacity 0.15s",position:"absolute",right:4,top:"50%",transform:"translateY(-50%)"}}>⋯</button>
+                  )}
+                </div>
+              </div>);})}
+            {/* List context menu */}
+            {listMenu&&(<>
+              <div style={{position:"fixed",inset:0,zIndex:999}} onClick={()=>setListMenu(null)}/>
+              <div style={{position:"fixed",left:listMenu.x,top:listMenu.y,background:"white",borderRadius:10,boxShadow:"0 4px 20px rgba(0,0,0,0.15)",border:"1px solid var(--border)",padding:4,zIndex:1000,minWidth:140,animation:"fadeIn 0.1s ease"}}>
+                <button onClick={()=>{setEditingList(listMenu.name);setListMenu(null);}} style={{width:"100%",padding:"8px 12px",border:"none",background:"none",cursor:"pointer",fontSize:13,fontWeight:500,color:"var(--text)",textAlign:"left",borderRadius:6,fontFamily:"inherit",display:"flex",alignItems:"center",gap:8}}
+                  onMouseEnter={e=>e.currentTarget.style.background="var(--surface)"} onMouseLeave={e=>e.currentTarget.style.background="none"}>✏️ Rename</button>
+                <button onClick={()=>{deleteList(listMenu.name);setListMenu(null);}} style={{width:"100%",padding:"8px 12px",border:"none",background:"none",cursor:"pointer",fontSize:13,fontWeight:500,color:"#ef4444",textAlign:"left",borderRadius:6,fontFamily:"inherit",display:"flex",alignItems:"center",gap:8}}
+                  onMouseEnter={e=>e.currentTarget.style.background="#fef2f2"} onMouseLeave={e=>e.currentTarget.style.background="none"}>🗑 Delete list</button>
+              </div>
+            </>)}
+            {showNewList&&(<div style={{padding:"4px 6px"}}><input autoFocus value={newList} onChange={e=>setNewList(e.target.value)}
+              onKeyDown={e=>{if(e.key==="Enter"&&newList.trim()&&!lists.includes(newList.trim())){setLists(p=>[...p,newList.trim()]);setNewList("");setShowNewList(false);}if(e.key==="Escape"){setShowNewList(false);setNewList("");}}}
+              onBlur={()=>{setShowNewList(false);setNewList("");}} placeholder="List name..." style={{width:"100%",padding:"8px 10px",borderRadius:8,border:"1px solid var(--accent)",fontSize:13,outline:"none",background:"white",fontFamily:"inherit"}}/></div>)}
+          </NavSection>
+        </div>
+        {overdueCount>0&&<div style={{margin:"0 8px 8px",padding:"10px 14px",borderRadius:10,background:"#fef2f2",border:"1px solid #fecaca",fontSize:13,color:"#ef4444",fontWeight:600}}>⚠ {overdueCount} overdue</div>}
+        <div style={{padding:"8px 16px 12px",borderTop:"1px solid var(--border)",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <button onClick={()=>setShowShortcuts(true)} style={{background:"none",border:"none",cursor:"pointer",fontSize:12,color:"var(--muted)",display:"flex",alignItems:"center",gap:6,fontFamily:"inherit",padding:0}}>{Icons.keyboard} Press ? for shortcuts</button>
+          <button onClick={()=>setShowSettings(true)} style={{background:"none",border:"none",cursor:"pointer",color:"var(--muted)",padding:4,display:"flex",borderRadius:6}} aria-label="Settings" title="Settings">{Icons.settings}</button>
+        </div>
+      </nav>
+
+      {/* ═══ MAIN ═══ */}
+      <main style={{flex:1,display:"flex",flexDirection:"column",minWidth:0}}>
+        <header style={{padding:isMobile?"14px 16px":"14px 24px",borderBottom:"1px solid var(--border)",display:"flex",alignItems:"center",gap:12,flexShrink:0}}>
+          <button onClick={()=>setSidebar(!sidebar)} style={{background:"none",border:"none",cursor:"pointer",color:"var(--muted)",padding:4,display:"flex"}} aria-label="Toggle sidebar">{Icons.menu}</button>
+          <div style={{flex:1,display:"flex",alignItems:"center",gap:10,minWidth:0}}>
+            {!showSearch?(<>
+              <span style={{color:"var(--accent)",flexShrink:0}}>{viewIcon}</span>
+              {view.startsWith("list:")?(<EditableText value={viewTitle} onSave={n=>renameList(viewTitle,n)} tag="h1" style={{fontSize:isMobile?20:22,fontFamily:"var(--font-display)",fontWeight:700,color:"var(--ink)"}}/>):(<h1 style={{margin:0,fontSize:isMobile?20:22,fontFamily:"var(--font-display)",fontWeight:700,color:"var(--ink)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{viewTitle}</h1>)}
+              {view==="today"&&!isMobile&&<span style={{fontSize:13,color:"var(--muted)"}}>{new Date().toLocaleDateString("en-IE",{weekday:"long",month:"long",day:"numeric"})}</span>}
+            </>):(<input autoFocus value={search} onChange={e=>setSearch(e.target.value)} onKeyDown={e=>{if(e.key==="Escape"){setShowSearch(false);setSearch("");}}} placeholder="Search tasks, tags..." style={{flex:1,padding:"10px 14px",borderRadius:12,border:"1px solid var(--border)",fontSize:15,outline:"none",background:"white",fontFamily:"inherit",minWidth:0}}/>)}
+          </div>
+          <button onClick={()=>{setShowSearch(!showSearch);if(showSearch)setSearch("");}} style={{background:showSearch?"var(--surface)":"none",border:"none",cursor:"pointer",color:"var(--muted)",padding:8,borderRadius:8,display:"flex",flexShrink:0}} aria-label="Search">{Icons.search}</button>
+        </header>
+
+        <div style={{flex:1,display:"flex",overflow:"hidden"}}>
+          <div style={{flex:1,overflowY:"auto",padding:isMobile?"16px":"20px 24px"}}>
+            {view==="calendar"?(<CalendarView tasks={tasks} onSelect={t=>setSelectedTask(t)} onUpdate={updateTask}/>):(<>
+              {view!=="completed"&&(<div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",background:"white",borderRadius:14,border:"1px solid var(--border)",marginBottom:16,boxShadow:"0 1px 3px rgba(0,0,0,0.04)"}}>
+                <span style={{color:"var(--accent)",flexShrink:0}}>{Icons.plus}</span>
+                <input id="quick-add" value={newTitle} onChange={e=>setNewTitle(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&newTitle.trim()){const t=addTask({title:newTitle.trim()});setNewTitle("");flash(`✓ Added "${t.title}"`);}}} placeholder="Add a task... (Enter) · defaults to today" style={{flex:1,border:"none",outline:"none",fontSize:15,color:"var(--ink)",background:"none",fontFamily:"inherit",minWidth:0}}/>
+              </div>)}
+              {filtered.length===0?(<div style={{textAlign:"center",padding:"50px 20px",color:"var(--muted)"}}><div style={{fontSize:44,marginBottom:14,opacity:0.4}}>{view==="completed"?"🎉":view==="today"?"☀️":search?"🔍":"📋"}</div><div style={{fontSize:16,fontWeight:600,marginBottom:4}}>{view==="completed"?"No completed tasks yet":search?"No matching tasks":"All clear!"}</div><div style={{fontSize:14}}>Add a task above or scan a notebook page</div></div>):(
+                <div role="list" aria-label="Tasks">
+                  {filtered.map((task,i)=>{const prev=i>0?filtered[i-1]:null;const showSep=task.completed&&prev&&!prev.completed;
+                    return(<div key={task.id} role="listitem">
+                      {showSep&&(<div style={{display:"flex",alignItems:"center",gap:10,padding:"12px 12px 8px",marginTop:8}}><div style={{height:1,flex:1,background:"var(--border)"}}/><span style={{fontSize:12,fontWeight:600,color:"var(--muted)",textTransform:"uppercase",letterSpacing:0.8}}>Completed</span><div style={{height:1,flex:1,background:"var(--border)"}}/></div>)}
+                      <TaskRow task={task} isActive={selectedTask?.id===task.id} isSelected={selectedIds.has(task.id)} onSelect={handleTaskClick} onToggle={toggleTask} onUpdateTask={updateTask} view={view} lists={lists} onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop} onDragEnd={onDragEnd} dropTarget={dropTarget?.id===task.id?dropTarget:null}/>
+                    </div>);})}
+                </div>
+              )}
+            </>)}
+          </div>
+          {selectedTask&&!isMobile&&<TaskDetail task={selectedTask} onUpdate={updateTask} onDelete={deleteTask} onClose={()=>setSelectedTask(null)} lists={lists}/>}
+        </div>
+        {selectedTask&&isMobile&&(<div style={{position:"fixed",inset:0,background:"rgba(15,23,42,0.4)",zIndex:100,display:"flex",justifyContent:"flex-end"}} onClick={()=>setSelectedTask(null)}><div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:420}}><TaskDetail task={selectedTask} onUpdate={updateTask} onDelete={deleteTask} onClose={()=>setSelectedTask(null)} lists={lists}/></div></div>)}
+      </main>
+
+      {showPhoto&&<PhotoModal onClose={()=>setShowPhoto(false)} onProcess={handleScan} processing={processing}/>}
+      {scanResults&&<ScanResultsModal results={scanResults} onConfirm={confirmScan} onClose={()=>setScanResults(null)} lists={lists}/>}
+      {showShortcuts&&(<Overlay onClose={()=>setShowShortcuts(false)}><h2 style={{fontSize:19,fontFamily:"var(--font-display)",marginBottom:16}}>Keyboard Shortcuts</h2>{[["N","New task"],["/ or ⌘F","Search"],["⌘A","Select all tasks"],["Shift+Click","Select range"],["⌘/Ctrl+Click","Toggle select"],["Delete","Delete selected"],["Esc","Clear selection / close"],["?","This help"],["Double-click","Edit any name"]].map(([k,d])=>(<div key={k} style={{display:"flex",alignItems:"center",gap:12,padding:"8px 0",borderBottom:"1px solid var(--border-light)"}}><kbd style={{fontSize:12,fontWeight:600,background:"var(--surface)",padding:"3px 8px",borderRadius:6,border:"1px solid var(--border)",fontFamily:"inherit",minWidth:50,textAlign:"center"}}>{k}</kbd><span style={{fontSize:14,color:"var(--text)"}}>{d}</span></div>))}</Overlay>)}
+      {showSettings&&(<Overlay onClose={()=>setShowSettings(false)}>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20}}>
+          <div style={{width:36,height:36,borderRadius:10,background:"var(--surface)",display:"flex",alignItems:"center",justifyContent:"center",color:"var(--muted)"}}>{Icons.settings}</div>
+          <h2 style={{margin:0,fontSize:19,fontFamily:"var(--font-display)"}}>Settings</h2>
+        </div>
+        <div style={{marginBottom:24}}>
+          <div style={{fontSize:11,fontWeight:700,color:"var(--muted)",textTransform:"uppercase",letterSpacing:1,marginBottom:12}}>Sidebar Display</div>
+          <ToggleRow label="Show task counts on Views" sublabel="Today, All Tasks, Completed, etc." checked={showViewCounts} onChange={setShowViewCounts}/>
+          <ToggleRow label="Show task counts on Lists" sublabel="Inbox, Work, Personal, etc." checked={showListCounts} onChange={setShowListCounts}/>
+        </div>
+      </Overlay>)}
+      {/* ═══ BULK ACTION BAR ═══ */}
+      {selectedIds.size>1&&(
+        <div style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",background:"var(--ink)",color:"white",padding:"10px 16px",borderRadius:14,fontSize:13,fontWeight:600,boxShadow:"0 8px 24px rgba(0,0,0,0.25)",animation:"toastIn 0.3s ease",zIndex:1500,display:"flex",alignItems:"center",gap:10,whiteSpace:"nowrap"}}>
+          <span style={{opacity:0.7}}>{selectedIds.size} selected</span>
+          <div style={{width:1,height:20,background:"rgba(255,255,255,0.2)"}}/>
+          <select onChange={e=>{if(e.target.value)bulkMove(e.target.value);e.target.value="";}} defaultValue="" style={{background:"rgba(255,255,255,0.15)",border:"none",color:"white",borderRadius:6,padding:"5px 8px",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
+            <option value="" disabled>Move to…</option>
+            {lists.map(l=><option key={l} value={l} style={{color:"#1c1917"}}>{l}</option>)}
+          </select>
+          <select onChange={e=>{if(e.target.value)bulkPriority(e.target.value);e.target.value="";}} defaultValue="" style={{background:"rgba(255,255,255,0.15)",border:"none",color:"white",borderRadius:6,padding:"5px 8px",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
+            <option value="" disabled>Priority…</option>
+            {Object.entries(PRIORITY).map(([k,v])=><option key={k} value={k} style={{color:"#1c1917"}}>{v.label}</option>)}
+          </select>
+          <button onClick={bulkComplete} style={{background:"rgba(255,255,255,0.15)",border:"none",color:"white",borderRadius:6,padding:"5px 10px",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>✓ Done</button>
+          <input type="date" onChange={e=>{if(e.target.value)bulkDate(e.target.value);}} style={{background:"rgba(255,255,255,0.15)",border:"none",color:"white",borderRadius:6,padding:"4px 8px",fontSize:12,cursor:"pointer",fontFamily:"inherit",colorScheme:"dark"}} title="Set due date"/>
+          <button onClick={bulkDelete} style={{background:"rgba(239,68,68,0.8)",border:"none",color:"white",borderRadius:6,padding:"5px 10px",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>Delete</button>
+          <button onClick={()=>setSelectedIds(new Set())} style={{background:"none",border:"none",color:"rgba(255,255,255,0.6)",cursor:"pointer",padding:4,display:"flex"}}>{Icons.x}</button>
+        </div>
+      )}
+      {toast&&<div role="status" aria-live="polite" style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",background:"var(--ink)",color:"white",padding:"12px 24px",borderRadius:12,fontSize:14,fontWeight:600,boxShadow:"0 8px 24px rgba(0,0,0,0.2)",animation:"toastIn 0.3s ease",zIndex:2000,whiteSpace:"nowrap"}}>{toast}</div>}
+    </div>
+  );
+}
+
+function NavSection({title,action,children}){return(<div style={{marginBottom:14}}><div style={{fontSize:11,fontWeight:700,color:"var(--muted)",textTransform:"uppercase",letterSpacing:1,padding:"0 8px",marginBottom:4,display:"flex",alignItems:"center",justifyContent:"space-between"}}>{title}{action&&<button onClick={action} style={{background:"none",border:"none",cursor:"pointer",color:"var(--muted)",padding:0,display:"flex"}} aria-label={`Add ${title.toLowerCase()}`}>{Icons.plus}</button>}</div>{children}</div>);}
+function NavItem({active,icon,label,count,onClick,countColor}){return(<button onClick={onClick} style={{width:"100%",padding:"8px 10px",borderRadius:10,border:"none",background:active?"#fef3c7":"transparent",color:active?"var(--ink)":"var(--text)",fontSize:14,fontWeight:active?600:500,cursor:"pointer",display:"flex",alignItems:"center",gap:10,textAlign:"left",transition:"all 0.12s",whiteSpace:"nowrap",fontFamily:"inherit"}}><span style={{display:"flex",flexShrink:0}}>{icon}</span><span style={{flex:1}}>{typeof label==="string"?label:label}</span>{count>0&&<span style={{fontSize:12,fontWeight:700,minWidth:18,textAlign:"right",color:countColor||"var(--muted)"}}>{count}</span>}</button>);}
