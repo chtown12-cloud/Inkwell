@@ -87,10 +87,6 @@ Return ONLY valid JSON with no markdown backticks and no preamble text. Use this
   }
 }
 
-export const config = {
-  api: {
-    bodyParser: {
-      sizeLimit: "10mb",
-    },
-  },
-};
+// Next.js App Router route segment config
+export const maxDuration = 30;
+export const dynamic = "force-dynamic";
