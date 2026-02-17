@@ -1760,12 +1760,6 @@ export default function InkwellApp() {
               <span style={{color:"var(--accent)",flexShrink:0}}>{viewIcon}</span>
               {view.startsWith("list:")?(<EditableText value={viewTitle} onSave={n=>renameList(viewTitle,n)} tag="h1" style={{fontSize:isMobile?20:22,fontFamily:"var(--font-display)",fontWeight:700,color:"var(--ink)"}}/>):(<h1 style={{margin:0,fontSize:isMobile?20:22,fontFamily:"var(--font-display)",fontWeight:700,color:"var(--ink)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{viewTitle}</h1>)}
               {view==="today"&&!isMobile&&<span style={{fontSize:13,color:"var(--muted)"}}>{new Date().toLocaleDateString("en-IE",{weekday:"long",month:"long",day:"numeric"})}</span>}
-              {view==="today"&&(
-                <div style={{display:"flex",background:"var(--surface)",borderRadius:8,padding:2,marginLeft:"auto",flexShrink:0}}>
-                  <button onClick={()=>setTodayMode("kanban")} style={{padding:"5px 10px",borderRadius:6,border:"none",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:todayMode==="kanban"?"white":"transparent",color:todayMode==="kanban"?"var(--ink)":"var(--muted)",boxShadow:todayMode==="kanban"?"0 1px 3px rgba(0,0,0,0.08)":"none",transition:"all 0.15s"}}>Board</button>
-                  <button onClick={()=>setTodayMode("list")} style={{padding:"5px 10px",borderRadius:6,border:"none",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:todayMode==="list"?"white":"transparent",color:todayMode==="list"?"var(--ink)":"var(--muted)",boxShadow:todayMode==="list"?"0 1px 3px rgba(0,0,0,0.08)":"none",transition:"all 0.15s"}}>List</button>
-                </div>
-              )}
             </>):(<input autoFocus value={search} onChange={e=>setSearch(e.target.value)} onKeyDown={e=>{if(e.key==="Escape"){setShowSearch(false);setSearch("");}}} placeholder="Search tasks, tags..." style={{flex:1,padding:"10px 14px",borderRadius:12,border:"1px solid var(--border)",fontSize:15,outline:"none",background:"white",fontFamily:"inherit",minWidth:0}}/>)}
           </div>
           <button onClick={()=>{setShowSearch(!showSearch);if(showSearch)setSearch("");}} style={{background:showSearch?"var(--surface)":"none",border:"none",cursor:"pointer",color:"var(--muted)",padding:8,borderRadius:8,display:"flex",flexShrink:0}} aria-label="Search">{Icons.search}</button>
@@ -1774,16 +1768,26 @@ export default function InkwellApp() {
         <div style={{flex:1,display:"flex",overflow:"hidden"}}>
           <div style={{flex:1,overflowY:"auto",padding:isMobile?"16px":"20px 24px"}}>
             {view==="calendar"?(<CalendarView tasks={tasks} onSelect={t=>setSelectedTask(t)} onUpdate={updateTask}/>):(view==="today"&&todayMode==="kanban")?(<div style={{display:"flex",flexDirection:"column",height:"100%"}}>
-              <div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",background:"white",borderRadius:14,border:"1px solid var(--border)",marginBottom:16,boxShadow:"0 1px 3px rgba(0,0,0,0.04)",flexShrink:0}}>
+              <div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",background:"white",borderRadius:14,border:"1px solid var(--border)",marginBottom:10,boxShadow:"0 1px 3px rgba(0,0,0,0.04)",flexShrink:0}}>
                 <span style={{color:"var(--accent)",flexShrink:0}}>{Icons.plus}</span>
                 <input id="quick-add" value={newTitle} onChange={e=>setNewTitle(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&newTitle.trim()){const t=addTask({title:newTitle.trim()});setNewTitle("");flash(`✓ Added "${t.title}"`);}}} placeholder="Add a task... (Enter) · defaults to today" style={{flex:1,border:"none",outline:"none",fontSize:15,color:"var(--ink)",background:"none",fontFamily:"inherit",minWidth:0}}/>
               </div>
+              <div style={{display:"flex",background:"var(--surface)",borderRadius:8,padding:2,marginBottom:14,width:"fit-content",flexShrink:0}}>
+                <button onClick={()=>setTodayMode("kanban")} style={{padding:"5px 12px",borderRadius:6,border:"none",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:todayMode==="kanban"?"white":"transparent",color:todayMode==="kanban"?"var(--ink)":"var(--muted)",boxShadow:todayMode==="kanban"?"0 1px 3px rgba(0,0,0,0.08)":"none",transition:"all 0.15s"}}>Board</button>
+                <button onClick={()=>setTodayMode("list")} style={{padding:"5px 12px",borderRadius:6,border:"none",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:todayMode==="list"?"white":"transparent",color:todayMode==="list"?"var(--ink)":"var(--muted)",boxShadow:todayMode==="list"?"0 1px 3px rgba(0,0,0,0.08)":"none",transition:"all 0.15s"}}>List</button>
+              </div>
               <div style={{flex:1,minHeight:0}}><KanbanBoard tasks={tasks} onSelect={t=>setSelectedTask(t)} onUpdate={updateTask} onToggle={toggleTask} flash={flash} setIsDragging={setIsDragging}/></div>
             </div>):(<>
-              {view!=="completed"&&(<div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",background:"white",borderRadius:14,border:"1px solid var(--border)",marginBottom:16,boxShadow:"0 1px 3px rgba(0,0,0,0.04)"}}>
+              {view!=="completed"&&(<div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",background:"white",borderRadius:14,border:"1px solid var(--border)",marginBottom:view==="today"?10:16,boxShadow:"0 1px 3px rgba(0,0,0,0.04)"}}>
                 <span style={{color:"var(--accent)",flexShrink:0}}>{Icons.plus}</span>
                 <input id="quick-add" value={newTitle} onChange={e=>setNewTitle(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&newTitle.trim()){const t=addTask({title:newTitle.trim()});setNewTitle("");flash(`✓ Added "${t.title}"`);}}} placeholder="Add a task... (Enter) · defaults to today" style={{flex:1,border:"none",outline:"none",fontSize:15,color:"var(--ink)",background:"none",fontFamily:"inherit",minWidth:0}}/>
               </div>)}
+              {view==="today"&&(
+                <div style={{display:"flex",background:"var(--surface)",borderRadius:8,padding:2,marginBottom:14,width:"fit-content",flexShrink:0}}>
+                  <button onClick={()=>setTodayMode("kanban")} style={{padding:"5px 12px",borderRadius:6,border:"none",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:todayMode==="kanban"?"white":"transparent",color:todayMode==="kanban"?"var(--ink)":"var(--muted)",boxShadow:todayMode==="kanban"?"0 1px 3px rgba(0,0,0,0.08)":"none",transition:"all 0.15s"}}>Board</button>
+                  <button onClick={()=>setTodayMode("list")} style={{padding:"5px 12px",borderRadius:6,border:"none",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:todayMode==="list"?"white":"transparent",color:todayMode==="list"?"var(--ink)":"var(--muted)",boxShadow:todayMode==="list"?"0 1px 3px rgba(0,0,0,0.08)":"none",transition:"all 0.15s"}}>List</button>
+                </div>
+              )}
               {filtered.length===0?(<div style={{textAlign:"center",padding:"50px 20px",color:"var(--muted)"}}><div style={{fontSize:44,marginBottom:14,opacity:0.4}}>{view==="completed"?"🎉":view==="today"?"☀️":search?"🔍":"📋"}</div><div style={{fontSize:16,fontWeight:600,marginBottom:4}}>{view==="completed"?"No completed tasks yet":search?"No matching tasks":"All clear!"}</div><div style={{fontSize:14}}>Add a task above or scan a notebook page</div></div>):(
                 <div role="list" aria-label="Tasks">
                   {filtered.map((task,i)=>{const prev=i>0?filtered[i-1]:null;const showSep=task.completed&&prev&&!prev.completed;
