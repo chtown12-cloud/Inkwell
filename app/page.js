@@ -616,9 +616,11 @@ const ScanResultsModal = ({results,onConfirm,onClose,lists}) => {
                       style={{fontSize:12,padding:"3px 8px",borderRadius:4,border:"1px solid var(--accent)",width:140,outline:"none",fontFamily:"inherit",background:"#fffbeb"}}/>
                   )}
 
+                  <input type="date" value={item.date||results.page_date||""} onChange={e=>updateItem(idx,{date:e.target.value||null})}
+                    style={{fontSize:12,padding:"2px 6px",borderRadius:4,border:"1px solid var(--border)",background:"white",color:"var(--text)",cursor:"pointer",fontFamily:"inherit"}}/>
+
                   {item.completed&&<span style={{fontSize:11,background:"#dcfce7",color:"#166534",padding:"1px 7px",borderRadius:4,fontWeight:600}}>DONE</span>}
                   {item.is_duplicate_of&&<span style={{fontSize:11,color:"#d97706",fontWeight:500}}>↻ match</span>}
-                  {!item.date&&!results.page_date&&<span style={{fontSize:11,color:"#a78bfa",fontWeight:500}}>defaults to today</span>}
                 </div>
               </div>
             </div>
@@ -1575,7 +1577,7 @@ export default function InkwellApp() {
   /* Bulk operations */
 
 
-  const handleScan=async(b64,mt)=>{setProcessing(true);try{const res=await fetch("/api/scan",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({imageData:b64,mediaType:mt,existingTasks:tasks.map(t=>t.title)})});if(!res.ok){const err=await res.json();throw new Error(err.error||"Scan failed");}const results=await res.json();setShowPhoto(false);setScanResults(results);}catch(e){flash("⚠ "+(e.message||"Failed"));}setProcessing(false);};
+  const handleScan=async(b64,mt)=>{setProcessing(true);try{const res=await fetch("/api/scan",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({imageData:b64,mediaType:mt,existingTasks:tasks.map(t=>t.title),existingLists:lists})});if(!res.ok){const err=await res.json();throw new Error(err.error||"Scan failed");}const results=await res.json();setShowPhoto(false);setScanResults(results);}catch(e){flash("⚠ "+(e.message||"Failed"));}setProcessing(false);};
 
   const confirmScan=items=>{let added=0,checked=0;const pageDate=scanResults?.page_date;const newCats=new Set();items.forEach(it=>{if(it.category?.trim()&&!lists.includes(it.category.trim()))newCats.add(it.category.trim());});if(newCats.size>0)setLists(prev=>[...prev,...Array.from(newCats)]);const all=[...lists,...Array.from(newCats)];
     items.forEach(item=>{if(item.is_duplicate_of){const ex=tasks.find(t=>t.title.toLowerCase().trim()===item.is_duplicate_of.toLowerCase().trim());if(ex&&item.completed&&!ex.completed){updateTask({...ex,completed:true,completedAt:new Date().toISOString()});checked++;return;}if(ex)return;}const tl=item.category&&all.includes(item.category.trim())?item.category.trim():"Inbox";addTask({title:item.title,completed:item.completed,dueDate:item.date||pageDate||todayStr(),list:tl});added++;});

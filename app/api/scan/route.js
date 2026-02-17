@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 
 export async function POST(request) {
   try {
-    const { imageData, mediaType, existingTasks } = await request.json();
+    const { imageData, mediaType, existingTasks, existingLists } = await request.json();
 
     if (!imageData) {
       return NextResponse.json({ error: "No image data provided" }, { status: 400 });
@@ -20,6 +20,7 @@ export async function POST(request) {
     const client = new Anthropic({ apiKey });
 
     const existingTitles = (existingTasks || []).map((t) => t.toLowerCase().trim());
+    const listNames = existingLists || ["Inbox"];
 
     const message = await client.messages.create({
       model: "claude-sonnet-4-20250514",
@@ -43,11 +44,14 @@ export async function POST(request) {
 For each item, determine:
 1. The task title (clean it up for readability but stay faithful to what's written)
 2. Whether it appears checked off / crossed out / completed (look for checkmarks, strikethroughs, X marks, filled boxes)
-3. If there's an obvious category or grouping header written on the page, note it
-4. If a date is written near items or on the page, note it in YYYY-MM-DD format
+3. The category/list it belongs to — look for grouping headers, sections, or underlined titles on the page. Tasks written under a header belong to that category.
+4. If a date is written near items or on the page, note it in YYYY-MM-DD format. If a specific item has its own date annotation, use that for the item.
+
+IMPORTANT — Category matching:
+The user already has these lists in their app: ${JSON.stringify(listNames)}
+When you identify a category from the page, try to match it to one of these existing lists. Use fuzzy matching — for example if the page says "TY tasks" and the user has a list called "TY", use "TY". If the page says "Concentrix project" and they have "Concentrix", use "Concentrix". Only create a new category name if nothing in the existing lists is a reasonable match.
 
 Existing tasks already in the app: ${JSON.stringify(existingTitles)}
-
 If a scanned item closely matches an existing task (accounting for abbreviations, slight wording differences), mark it as a duplicate.
 
 Return ONLY valid JSON with no markdown backticks and no preamble text. Use this exact schema:
@@ -56,7 +60,7 @@ Return ONLY valid JSON with no markdown backticks and no preamble text. Use this
     {
       "title": "task description",
       "completed": false,
-      "category": "category name or null",
+      "category": "matched list name or new category name or null",
       "date": "YYYY-MM-DD or null",
       "is_duplicate_of": "matching existing task title or null"
     }
