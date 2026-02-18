@@ -117,6 +117,22 @@ const useTouchDrag = (onDrop, onDragStateChange, onSidebarShow) => {
       lastTarget: null, srcEl: null, scrollEl: null, sidebarShown: false
     };
 
+    /* Track if current interaction is touch-based. When it is, prevent the
+       browser's native HTML5 drag (from the 'draggable' attr) from firing,
+       because on Chrome Android native drag intercepts touch events and
+       kills our custom long-press-to-drag system. */
+    let lastInputWasTouch = false;
+    const markTouch = () => { lastInputWasTouch = true; };
+    const markMouse = () => { lastInputWasTouch = false; };
+    const blockNativeDrag = (e) => {
+      if (lastInputWasTouch && e.target?.closest?.("[data-drag-id]")) {
+        e.preventDefault();
+      }
+    };
+    document.addEventListener("touchstart", markTouch, { passive: true, capture: true });
+    document.addEventListener("mousedown", markMouse, { passive: true, capture: true });
+    document.addEventListener("dragstart", blockNativeDrag, { capture: true });
+
     /* ── Helpers ── */
     const closest = (el, sel) => {
       if (!el) return null;
@@ -329,6 +345,9 @@ const useTouchDrag = (onDrop, onDragStateChange, onSidebarShow) => {
       document.removeEventListener("touchmove", onMove);
       document.removeEventListener("touchend", onEnd);
       document.removeEventListener("touchcancel", reset);
+      document.removeEventListener("touchstart", markTouch, { capture: true });
+      document.removeEventListener("mousedown", markMouse, { capture: true });
+      document.removeEventListener("dragstart", blockNativeDrag, { capture: true });
       reset();
     };
   }, []);

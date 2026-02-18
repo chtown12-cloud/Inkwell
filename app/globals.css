@@ -37,3 +37,14 @@ input::placeholder, textarea::placeholder { color: #a8a29e; }
   .sidebar-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.3); z-index: 99; }
   .detail-panel { position: fixed !important; right: 0; top: 0; height: 100vh !important; z-index: 100; width: 100% !important; max-width: 400px; }
 }
+
+/* Touch drag: prevent browser from hijacking touches on draggable elements */
+@media (pointer: coarse) {
+  [data-drag-id] {
+    touch-action: none;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    -webkit-user-drag: none;
+    user-select: none;
+  }
+}
