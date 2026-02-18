@@ -114,7 +114,7 @@ const useTouchDrag = (onDrop, onDragStateChange, onSidebarShow) => {
       phase: "idle", /* idle | waiting | dragging | scrolling */
       dragId: null, dragSource: null, ghost: null, timer: null,
       startX: 0, startY: 0, lastY: 0, moved: false,
-      lastTarget: null, srcEl: null, scrollEl: null
+      lastTarget: null, srcEl: null, scrollEl: null, sidebarShown: false
     };
 
     /* ── Helpers ── */
@@ -171,6 +171,9 @@ const useTouchDrag = (onDrop, onDragStateChange, onSidebarShow) => {
       document.body.style.userSelect = "";
       if (wasDragging) {
         if (onStateRef.current) onStateRef.current(false);
+      }
+      if (s.sidebarShown) {
+        s.sidebarShown = false;
         if (onSidebarRef.current) onSidebarRef.current(false);
       }
     };
@@ -179,7 +182,6 @@ const useTouchDrag = (onDrop, onDragStateChange, onSidebarShow) => {
       if (!s.dragId || !s.srcEl) return;
       s.phase = "dragging";
       if (onStateRef.current) onStateRef.current(true);
-      if (onSidebarRef.current) onSidebarRef.current(true);
       document.body.style.overflow = "hidden";
       document.body.style.userSelect = "none";
       /* Ghost pill */
@@ -269,6 +271,17 @@ const useTouchDrag = (onDrop, onDragStateChange, onSidebarShow) => {
       if (s.ghost) {
         s.ghost.style.top = (t.clientY - 20) + "px";
         s.ghost.style.left = (t.clientX - 10) + "px";
+      }
+
+      /* Show sidebar when finger approaches left edge, hide when moves away */
+      const EDGE = 50;
+      if (t.clientX < EDGE && !s.sidebarShown) {
+        s.sidebarShown = true;
+        if (onSidebarRef.current) onSidebarRef.current(true);
+      } else if (t.clientX > EDGE + 200 && s.sidebarShown) {
+        /* Hide once finger is well past sidebar width */
+        s.sidebarShown = false;
+        if (onSidebarRef.current) onSidebarRef.current(false);
       }
 
       const target = findDropTarget(t.clientX, t.clientY);
