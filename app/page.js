@@ -88,59 +88,70 @@ const dateOffset = (n) => { const d = new Date(); d.setDate(d.getDate() + n); re
 
 /* ═══════════════════════════════════════════════════════════════════════
    TOUCH DRAG SYSTEM — long-press to drag on mobile
-   Usage: Add data-drag-id, data-drag-source to draggables
-          Add data-drop-type, data-drop-value to drop targets
+   
+   Architecture:
+   - Draggable elements MUST have CSS touch-action: none
+     (This prevents the browser from hijacking touches for scrolling
+      at the compositor level, which would fire touchcancel and kill
+      our 400ms long-press timer before it ever fires.)
+   - When the user swipes quickly (moves >12px within 400ms), we cancel
+     the drag and enter "scroll assist" mode — manually scrolling the
+     nearest scrollable container via JS so the user can still scroll
+     even though native scroll is disabled on task elements.
+   - When drag activates, we call onSidebarShow(true) so mobile users
+     can see sidebar drop targets (lists, dates).
    ═══════════════════════════════════════════════════════════════════════ */
-const useTouchDrag = (onDrop, onDragStateChange) => {
-  const stateRef = useRef({ active: false, dragId: null, dragSource: null, ghost: null, timer: null, startX: 0, startY: 0, moved: false, lastTarget: null, srcEl: null });
+const useTouchDrag = (onDrop, onDragStateChange, onSidebarShow) => {
   const onDropRef = useRef(onDrop);
   const onStateRef = useRef(onDragStateChange);
+  const onSidebarRef = useRef(onSidebarShow);
   useEffect(() => { onDropRef.current = onDrop; }, [onDrop]);
   useEffect(() => { onStateRef.current = onDragStateChange; }, [onDragStateChange]);
+  useEffect(() => { onSidebarRef.current = onSidebarShow; }, [onSidebarShow]);
 
   useEffect(() => {
-    const s = stateRef.current;
+    const s = {
+      phase: "idle", /* idle | waiting | dragging | scrolling */
+      dragId: null, dragSource: null, ghost: null, timer: null,
+      startX: 0, startY: 0, lastY: 0, moved: false,
+      lastTarget: null, srcEl: null, scrollEl: null
+    };
 
-    /* Robust draggable finder — handles SVG elements, text nodes, and deep nesting */
-    const findDraggable = (el) => {
+    /* ── Helpers ── */
+    const closest = (el, sel) => {
       if (!el) return null;
-      /* If el is a text node or SVG child, get the nearest HTML element */
-      if (el.nodeType === 3) el = el.parentElement; /* text node */
+      if (el.nodeType === 3) el = el.parentElement;
       if (!el) return null;
-      /* Use closest if available (works on HTML elements) */
-      try {
-        const found = el.closest?.("[data-drag-id]");
-        if (found) return found;
-      } catch(e) { /* SVG elements may throw in some browsers */ }
-      /* Manual walk-up fallback for SVG elements */
-      let cur = el;
-      while (cur) {
-        if (cur.dataset && cur.dataset.dragId) return cur;
-        cur = cur.parentElement || cur.parentNode;
-        if (cur === document.body || cur === document) break;
+      /* Try native closest (works on HTML elements, modern SVG) */
+      try { const r = el.closest?.(sel); if (r) return r; } catch(e) {}
+      /* Manual walk for old SVG engines */
+      let c = el;
+      while (c && c !== document.body) {
+        try { if (c.matches?.(sel)) return c; } catch(e) {}
+        c = c.parentElement;
       }
       return null;
     };
 
     const findDropTarget = (x, y) => {
       if (s.ghost) s.ghost.style.display = "none";
-      let el = document.elementFromPoint(x, y);
+      const el = document.elementFromPoint(x, y);
       if (s.ghost) s.ghost.style.display = "";
-      if (!el) return null;
-      try {
-        const found = el.closest?.("[data-drop-type]");
-        if (found) return found;
-      } catch(e) {}
-      let cur = el;
-      while (cur) {
-        if (cur.dataset && cur.dataset.dropType) return cur;
-        cur = cur.parentElement || cur.parentNode;
-        if (cur === document.body || cur === document) break;
-      }
-      return null;
+      return closest(el, "[data-drop-type]");
     };
 
-    const clearHighlight = () => {
+    /* Find the nearest scrollable ancestor */
+    const findScrollParent = (el) => {
+      let c = el?.parentElement;
+      while (c && c !== document.body) {
+        const ov = getComputedStyle(c).overflowY;
+        if ((ov === "auto" || ov === "scroll") && c.scrollHeight > c.clientHeight) return c;
+        c = c.parentElement;
+      }
+      return document.scrollingElement || document.documentElement;
+    };
+
+    const clearHL = () => {
       if (s.lastTarget) {
         s.lastTarget.style.outline = "";
         s.lastTarget.style.background = s.lastTarget.dataset.dropBg || "";
@@ -148,69 +159,121 @@ const useTouchDrag = (onDrop, onDragStateChange) => {
       }
     };
 
-    const cleanup = () => {
+    const reset = () => {
       clearTimeout(s.timer); s.timer = null;
       if (s.ghost) { s.ghost.remove(); s.ghost = null; }
-      if (s.srcEl) { s.srcEl.style.opacity = ""; s.srcEl = null; }
-      clearHighlight();
-      s.active = false; s.dragId = null; s.dragSource = null; s.moved = false;
+      if (s.srcEl) { try { s.srcEl.style.opacity = ""; } catch(e){} s.srcEl = null; }
+      clearHL();
+      const wasDragging = s.phase === "dragging";
+      s.phase = "idle"; s.dragId = null; s.dragSource = null;
+      s.moved = false; s.scrollEl = null;
       document.body.style.overflow = "";
       document.body.style.userSelect = "";
-      if (onStateRef.current) onStateRef.current(false);
+      if (wasDragging) {
+        if (onStateRef.current) onStateRef.current(false);
+        if (onSidebarRef.current) onSidebarRef.current(false);
+      }
     };
 
-    const onTouchStart = (e) => {
-      if (s.active) return; /* already dragging */
-      /* Skip if touch is on interactive elements */
-      const tag = e.target?.tagName?.toLowerCase?.();
-      if (tag === "input" || tag === "textarea" || tag === "select" || tag === "button") return;
-      /* Also skip if target is inside a button (e.g. checkbox) */
-      if (e.target?.closest?.("button")) return;
+    const activateDrag = () => {
+      if (!s.dragId || !s.srcEl) return;
+      s.phase = "dragging";
+      if (onStateRef.current) onStateRef.current(true);
+      if (onSidebarRef.current) onSidebarRef.current(true);
+      document.body.style.overflow = "hidden";
+      document.body.style.userSelect = "none";
+      /* Ghost pill */
+      const rect = s.srcEl.getBoundingClientRect();
+      const g = document.createElement("div");
+      g.textContent = s.srcEl.dataset.dragLabel || "•";
+      Object.assign(g.style, {
+        position:"fixed", top:rect.top+"px", left:rect.left+"px", zIndex:"9999",
+        padding:"8px 14px", background:"#1c1917", color:"white", borderRadius:"10px",
+        fontSize:"13px", fontWeight:"600", fontFamily:"sans-serif",
+        boxShadow:"0 8px 24px rgba(0,0,0,0.3)", pointerEvents:"none",
+        whiteSpace:"nowrap", maxWidth:"200px", overflow:"hidden",
+        textOverflow:"ellipsis", opacity:"0.95"
+      });
+      document.body.appendChild(g);
+      s.ghost = g;
+      s.srcEl.style.opacity = "0.3";
+      try { navigator.vibrate?.(30); } catch(e){}
+    };
 
-      const draggable = findDraggable(e.target);
+    /* ─── TOUCH START ─── */
+    const onStart = (e) => {
+      if (s.phase !== "idle") return;
+
+      const el = e.target;
+      const tag = el?.tagName?.toLowerCase?.() || "";
+      if (tag === "input" || tag === "textarea" || tag === "select") return;
+      if (tag === "button" || closest(el, "button")) return;
+
+      const draggable = closest(el, "[data-drag-id]");
       if (!draggable) return;
 
       const t = e.touches[0];
-      s.startX = t.clientX; s.startY = t.clientY; s.moved = false;
+      s.startX = t.clientX;
+      s.startY = t.clientY;
+      s.lastY = t.clientY;
+      s.moved = false;
       s.dragId = draggable.dataset.dragId;
       s.dragSource = draggable.dataset.dragSource || "task";
       s.srcEl = draggable;
+      s.scrollEl = findScrollParent(draggable);
+      s.phase = "waiting";
 
-      s.timer = setTimeout(() => {
-        if (!s.dragId) return; /* was cleaned up */
-        s.active = true;
-        if (onStateRef.current) onStateRef.current(true);
-        document.body.style.overflow = "hidden";
-        document.body.style.userSelect = "none";
-        const rect = draggable.getBoundingClientRect();
-        const g = document.createElement("div");
-        g.textContent = draggable.dataset.dragLabel || "•";
-        g.style.cssText = `position:fixed;top:${rect.top}px;left:${rect.left}px;z-index:9999;padding:8px 14px;background:#1c1917;color:white;border-radius:10px;font-size:13px;font-weight:600;font-family:sans-serif;box-shadow:0 8px 24px rgba(0,0,0,0.3);pointer-events:none;white-space:nowrap;max-width:200px;overflow:hidden;text-overflow:ellipsis;opacity:0.95;`;
-        document.body.appendChild(g);
-        s.ghost = g;
-        draggable.style.opacity = "0.3";
-        if (navigator.vibrate) navigator.vibrate(30);
-      }, 400);
+      s.timer = setTimeout(() => { activateDrag(); }, 400);
     };
 
-    const onTouchMove = (e) => {
-      if (!s.dragId) return; /* no drag in progress */
+    /* ─── TOUCH MOVE ─── */
+    const onMove = (e) => {
+      if (s.phase === "idle") return;
+
       const t = e.touches[0];
-      const dx = t.clientX - s.startX, dy = t.clientY - s.startY;
-      /* Cancel timer if moved before long-press threshold */
-      if (!s.active && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) {
-        clearTimeout(s.timer); s.timer = null;
-        s.dragId = null; s.dragSource = null; s.srcEl = null;
+
+      /* === WAITING for long-press === */
+      if (s.phase === "waiting") {
+        const dx = t.clientX - s.startX;
+        const dy = t.clientY - s.startY;
+        const dist = Math.abs(dx) + Math.abs(dy);
+
+        if (dist > 12) {
+          /* User is swiping, not holding — cancel drag, enter scroll mode */
+          clearTimeout(s.timer); s.timer = null;
+          s.phase = "scrolling";
+          s.lastY = t.clientY;
+          /* Don't reset dragId etc yet — we need scrollEl */
+          return; /* Don't preventDefault — but we have touch-action:none so
+                     browser won't scroll natively; we handle it below */
+        }
+        /* Still holding — prevent any possible scroll */
+        e.preventDefault();
         return;
       }
-      if (!s.active) return;
-      e.preventDefault(); /* prevent scroll during drag */
+
+      /* === SCROLL ASSIST mode === */
+      if (s.phase === "scrolling") {
+        const dy = s.lastY - t.clientY; /* positive = scroll down */
+        s.lastY = t.clientY;
+        if (s.scrollEl) {
+          s.scrollEl.scrollTop += dy;
+        }
+        e.preventDefault(); /* prevent any other default behavior */
+        return;
+      }
+
+      /* === ACTIVE DRAG === */
+      e.preventDefault();
       s.moved = true;
-      if (s.ghost) { s.ghost.style.top = (t.clientY - 20) + "px"; s.ghost.style.left = (t.clientX - 10) + "px"; }
+      if (s.ghost) {
+        s.ghost.style.top = (t.clientY - 20) + "px";
+        s.ghost.style.left = (t.clientX - 10) + "px";
+      }
 
       const target = findDropTarget(t.clientX, t.clientY);
       if (target !== s.lastTarget) {
-        clearHighlight();
+        clearHL();
         if (target) {
           target.dataset.dropBg = target.style.background || "";
           target.style.outline = "2px solid #d97706";
@@ -221,8 +284,10 @@ const useTouchDrag = (onDrop, onDragStateChange) => {
       }
     };
 
-    const onTouchEnd = (e) => {
-      if (!s.active || !s.moved) { cleanup(); return; }
+    /* ─── TOUCH END ─── */
+    const onEnd = (e) => {
+      if (s.phase === "scrolling") { reset(); return; }
+      if (s.phase !== "dragging" || !s.moved) { reset(); return; }
 
       const t = e.changedTouches[0];
       const target = findDropTarget(t.clientX, t.clientY);
@@ -236,24 +301,24 @@ const useTouchDrag = (onDrop, onDragStateChange) => {
           dropZone: target.dataset.dropZone,
         });
       }
-      cleanup();
+      reset();
     };
 
-    const onTouchCancel = () => { cleanup(); };
-
-    document.addEventListener("touchstart", onTouchStart, { passive: true });
-    document.addEventListener("touchmove", onTouchMove, { passive: false });
-    document.addEventListener("touchend", onTouchEnd, { passive: true });
-    document.addEventListener("touchcancel", onTouchCancel, { passive: true });
+    /* Register — touchstart passive is fine (we don't need preventDefault on it);
+       touchmove MUST be non-passive so we can preventDefault during drag/scroll */
+    document.addEventListener("touchstart", onStart, { passive: true });
+    document.addEventListener("touchmove", onMove, { passive: false });
+    document.addEventListener("touchend", onEnd, { passive: true });
+    document.addEventListener("touchcancel", reset, { passive: true });
 
     return () => {
-      document.removeEventListener("touchstart", onTouchStart);
-      document.removeEventListener("touchmove", onTouchMove);
-      document.removeEventListener("touchend", onTouchEnd);
-      document.removeEventListener("touchcancel", onTouchCancel);
-      cleanup();
+      document.removeEventListener("touchstart", onStart);
+      document.removeEventListener("touchmove", onMove);
+      document.removeEventListener("touchend", onEnd);
+      document.removeEventListener("touchcancel", reset);
+      reset();
     };
-  }, []); /* stable — callbacks accessed via refs */
+  }, []);
 };
 
 const PRIORITY = {
@@ -427,7 +492,7 @@ const DraggableSubtaskTree = ({subtasks, onAction, onDragStart, onDragEnd, depth
           <div key={sub.id}>
             <div draggable onDragStart={e=>onDragStart(e,sub,"subtask")} onDragEnd={onDragEnd}
               data-drag-id={sub.id} data-drag-source="subtask" data-drag-label={sub.title}
-              style={{display:"flex",alignItems:"center",gap:8,padding:"4px 0",fontSize:13,cursor:"grab"}}>
+              style={{display:"flex",alignItems:"center",gap:8,padding:"4px 0",fontSize:13,cursor:"grab",touchAction:"none"}}>
               <span style={{color:"var(--border)",flexShrink:0,cursor:"grab"}}>{Icons.grip}</span>
               <Checkbox checked={sub.completed} size={15} onChange={c=>onAction("update",sub.id,{completed:c})}/>
               <span style={{flex:1,color:sub.completed?"var(--muted)":"var(--text)",textDecoration:sub.completed?"line-through":"none",minWidth:0,fontSize:13}}>{sub.title}</span>
@@ -924,7 +989,7 @@ const KanbanCard = ({task, onSelect, onToggle, onDragBegin, animateState}) => {
       onDragStart={e => { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", task.id); if(onDragBegin)onDragBegin(true); }}
       onDragEnd={()=>{ if(onDragBegin) onDragBegin(false); }}
       onClick={() => onSelect(task)}
-      style={{padding:"10px 12px",background:"white",borderRadius:10,marginBottom:6,cursor:"grab",
+      style={{padding:"10px 12px",background:"white",borderRadius:10,marginBottom:6,cursor:"grab",touchAction:"none",
         borderLeft:`3px solid ${pc}`,boxShadow:"0 1px 3px rgba(0,0,0,0.06)",
         animation:animateState==="complete"?"cardComplete 0.5s ease forwards":animateState==="uncomplete"?"taskUncomplete 0.4s ease forwards":"none",
         transition:"box-shadow 0.15s,transform 0.15s"}}>
@@ -1131,7 +1196,7 @@ const CalendarView = ({tasks, onSelect, onUpdate}) => {
                             <div key={t.id} draggable onDragStart={e => startDrag(e, t, "move")} onDragEnd={endDrag}
                               data-drag-id={t.id} data-drag-source="task" data-drag-label={t.title}
                               onClick={e => { e.stopPropagation(); onSelect(t); }}
-                              style={{fontSize:11,padding:"2px 5px",borderRadius:4,marginBottom:2,cursor:"pointer",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontWeight:500,maxWidth:"100%",display:"block",background:t.completed?"var(--surface)":`${PRIORITY[t.priority||"none"].color}15`,color:t.completed?"var(--muted)":"var(--text)",textDecoration:t.completed?"line-through":"none",borderLeft:`2px solid ${PRIORITY[t.priority||"none"].color}`,opacity:dragInfo?.taskId === t.id ? 0.3 : 1}}
+                              style={{fontSize:11,padding:"2px 5px",borderRadius:4,marginBottom:2,cursor:"pointer",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontWeight:500,maxWidth:"100%",display:"block",background:t.completed?"var(--surface)":`${PRIORITY[t.priority||"none"].color}15`,color:t.completed?"var(--muted)":"var(--text)",textDecoration:t.completed?"line-through":"none",borderLeft:`2px solid ${PRIORITY[t.priority||"none"].color}`,opacity:dragInfo?.taskId === t.id ? 0.3 : 1,touchAction:"none"}}
                               title={t.title}>{t.title}</div>
                           ))}
                           {dayTasks.length > 4 && <div style={{fontSize:10,color:"var(--muted)",paddingLeft:4}}>+{dayTasks.length - 4}</div>}
@@ -1148,7 +1213,7 @@ const CalendarView = ({tasks, onSelect, onUpdate}) => {
                     const isDragging = dragInfo?.taskId === bar.task.id;
                     return (
                       <div key={bar.task.id + "-" + wi}
-                        style={{position:"absolute",left:`calc(${leftPct}% + 5px)`,width:`calc(${widthPct}% - 10px)`,top:topPx,height:BAR_H,display:"flex",alignItems:"center",borderRadius:5,background:bar.task.completed?"var(--surface)":`${pc}18`,border:`1px solid ${bar.task.completed?"var(--border)":`${pc}50`}`,fontSize:11,fontWeight:600,color:bar.task.completed?"var(--muted)":"var(--text)",cursor:"grab",overflow:"hidden",opacity:isDragging?0.3:1,pointerEvents:dragInfo && !isDragging?"none":"auto",zIndex:5,transition:"opacity 0.15s"}}
+                        style={{position:"absolute",left:`calc(${leftPct}% + 5px)`,width:`calc(${widthPct}% - 10px)`,top:topPx,height:BAR_H,display:"flex",alignItems:"center",borderRadius:5,background:bar.task.completed?"var(--surface)":`${pc}18`,border:`1px solid ${bar.task.completed?"var(--border)":`${pc}50`}`,fontSize:11,fontWeight:600,color:bar.task.completed?"var(--muted)":"var(--text)",cursor:"grab",overflow:"hidden",opacity:isDragging?0.3:1,pointerEvents:dragInfo && !isDragging?"none":"auto",zIndex:5,transition:"opacity 0.15s",touchAction:"none"}}
                         draggable onDragStart={e => startDrag(e, bar.task, "move")} onDragEnd={endDrag}
                         data-drag-id={bar.task.id} data-drag-source="task" data-drag-label={bar.task.title}
                         onClick={e => { e.stopPropagation(); onSelect(bar.task); }}>
@@ -1211,7 +1276,7 @@ const TaskRow = ({task,isActive,isSelected,onSelect,onToggle,onUpdateTask,onDrag
     <div draggable onDragStart={e=>onDragStart(e,task,"task")} onDragOver={e=>onDragOver(e,task)} onDrop={e=>onDrop(e,task)} onDragEnd={onDragEnd}
       data-drag-id={task.id} data-drag-source="task" data-drag-label={task.title}
       data-drop-type="task" data-drop-value={task.id} data-drop-zone="nest"
-      style={{marginBottom:2,borderRadius:12,position:"relative",
+      style={{marginBottom:2,borderRadius:12,position:"relative",touchAction:"none",
         background:isSelected?"rgba(217,119,6,0.1)":dtZone==="nest"?"rgba(217,119,6,0.08)":isActive?"var(--active-bg)":"transparent",
         outline:isSelected?"2px solid var(--accent)":dtZone==="nest"?"2px dashed var(--accent)":"none",
         animation:animateState==="complete"?"taskComplete 0.6s ease forwards":animateState==="uncomplete"?"taskUncomplete 0.5s ease forwards":"none",
@@ -1222,7 +1287,7 @@ const TaskRow = ({task,isActive,isSelected,onSelect,onToggle,onUpdateTask,onDrag
       {dtZone==="nest"&&<div style={{position:"absolute",left:42,top:"50%",transform:"translateY(-50)",fontSize:10,color:"var(--accent)",fontWeight:700,zIndex:5,pointerEvents:"none"}}>↳ nest</div>}
 
       <div onClick={handleRowClick} style={{display:"flex",alignItems:"flex-start",gap:8,padding:"11px 12px",cursor:"pointer"}}>
-        <div style={{paddingTop:3,cursor:"grab",color:"var(--border)",touchAction:"none"}} onMouseDown={e=>e.stopPropagation()}>{Icons.grip}</div>
+        <div style={{paddingTop:3,cursor:"grab",color:"var(--border)"}} onMouseDown={e=>e.stopPropagation()}>{Icons.grip}</div>
         <div style={{paddingTop:2,animation:animateState?"checkPop 0.35s ease":"none"}}><Checkbox checked={task.completed} priority={task.priority} onChange={()=>onToggle(task.id)}/></div>
         <div style={{flex:1,minWidth:0}}>
           <EditableText value={task.title} onSave={t=>onUpdateTask({...task,title:t})} onEditStart={cancelRowClick}
@@ -1629,7 +1694,10 @@ export default function InkwellApp() {
     }
   }, [tasks, flash]);
 
-  useTouchDrag(touchDropHandler, setIsDragging);
+  const touchSidebarCb = useCallback((show) => {
+    if (isMobile) setSidebar(show);
+  }, [isMobile]);
+  useTouchDrag(touchDropHandler, setIsDragging, touchSidebarCb);
 
   /* Bulk operations */
 
@@ -1763,7 +1831,7 @@ export default function InkwellApp() {
                   if(dragList&&dragList!==l){/* Reorder lists */setLists(prev=>{const w=prev.filter(x=>x!==dragList);const idx=w.indexOf(l);w.splice(idx,0,dragList);return w;});setDragList(null);setDragListOver(null);}
                   else if(!dragList){onListDrop(e,l);}
                 }}
-                style={{position:"relative",opacity:dragList===l?0.3:1,transition:"opacity 0.15s"}}>
+                style={{position:"relative",opacity:dragList===l?0.3:1,transition:"opacity 0.15s",touchAction:"none"}}>
                 {/* Drop indicator line for list reorder */}
                 {dragListOver===l&&dragList&&dragList!==l&&<div style={{position:"absolute",top:-1,left:8,right:8,height:2,background:"var(--accent)",borderRadius:1,zIndex:5}}/>}
                 <div style={{display:"flex",alignItems:"center",position:"relative"}} className="list-row">
