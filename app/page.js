@@ -93,6 +93,10 @@ const dateOffset = (n) => { const d = new Date(); d.setDate(d.getDate() + n); re
    ═══════════════════════════════════════════════════════════════════════ */
 const useTouchDrag = (onDrop, onDragStateChange) => {
   const stateRef = useRef({ active: false, dragId: null, dragSource: null, ghost: null, timer: null, startX: 0, startY: 0, moved: false, lastTarget: null });
+  const onDropRef = useRef(onDrop);
+  const onStateRef = useRef(onDragStateChange);
+  useEffect(() => { onDropRef.current = onDrop; }, [onDrop]);
+  useEffect(() => { onStateRef.current = onDragStateChange; }, [onDragStateChange]);
 
   useEffect(() => {
     const s = stateRef.current;
@@ -103,7 +107,6 @@ const useTouchDrag = (onDrop, onDragStateChange) => {
     };
 
     const findDropTarget = (x, y) => {
-      /* hide ghost so elementFromPoint can see beneath */
       if (s.ghost) s.ghost.style.display = "none";
       let el = document.elementFromPoint(x, y);
       if (s.ghost) s.ghost.style.display = "";
@@ -126,7 +129,7 @@ const useTouchDrag = (onDrop, onDragStateChange) => {
       s.active = false; s.dragId = null; s.dragSource = null; s.moved = false;
       document.body.style.overflow = "";
       document.body.style.userSelect = "";
-      if (onDragStateChange) onDragStateChange(false);
+      if (onStateRef.current) onStateRef.current(false);
     };
 
     const onTouchStart = (e) => {
@@ -139,19 +142,16 @@ const useTouchDrag = (onDrop, onDragStateChange) => {
 
       s.timer = setTimeout(() => {
         s.active = true;
-        if (onDragStateChange) onDragStateChange(true);
+        if (onStateRef.current) onStateRef.current(true);
         document.body.style.overflow = "hidden";
         document.body.style.userSelect = "none";
-        /* Create ghost */
         const rect = draggable.getBoundingClientRect();
         const g = document.createElement("div");
         g.textContent = draggable.dataset.dragLabel || draggable.textContent?.slice(0, 30) || "•";
         g.style.cssText = `position:fixed;top:${rect.top}px;left:${rect.left}px;z-index:9999;padding:8px 14px;background:#1c1917;color:white;border-radius:10px;font-size:13px;font-weight:600;font-family:sans-serif;box-shadow:0 8px 24px rgba(0,0,0,0.3);pointer-events:none;white-space:nowrap;max-width:200px;overflow:hidden;text-overflow:ellipsis;opacity:0.95;`;
         document.body.appendChild(g);
         s.ghost = g;
-        /* Dim the source */
         draggable.style.opacity = "0.3";
-        /* Haptic feedback */
         if (navigator.vibrate) navigator.vibrate(30);
       }, 400);
     };
@@ -180,15 +180,14 @@ const useTouchDrag = (onDrop, onDragStateChange) => {
 
     const onTouchEnd = (e) => {
       if (!s.active || !s.moved) { cleanup(); return; }
-      /* Restore source opacity */
       const src = document.querySelector(`[data-drag-id="${s.dragId}"]`);
       if (src) src.style.opacity = "";
 
       const t = e.changedTouches[0];
       const target = findDropTarget(t.clientX, t.clientY);
 
-      if (target && onDrop) {
-        onDrop({
+      if (target && onDropRef.current) {
+        onDropRef.current({
           dragId: s.dragId,
           dragSource: s.dragSource,
           dropType: target.dataset.dropType,
@@ -211,7 +210,7 @@ const useTouchDrag = (onDrop, onDragStateChange) => {
       document.removeEventListener("touchend", onTouchEnd);
       cleanup();
     };
-  }, [onDrop, onDragStateChange]);
+  }, []); /* empty deps — listeners registered once, callbacks accessed via refs */
 };
 
 const PRIORITY = {
