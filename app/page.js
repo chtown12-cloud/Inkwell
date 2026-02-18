@@ -92,7 +92,7 @@ const dateOffset = (n) => { const d = new Date(); d.setDate(d.getDate() + n); re
           Add data-drop-type, data-drop-value to drop targets
    ═══════════════════════════════════════════════════════════════════════ */
 const useTouchDrag = (onDrop, onDragStateChange) => {
-  const stateRef = useRef({ active: false, dragId: null, dragSource: null, ghost: null, timer: null, startX: 0, startY: 0, moved: false, lastTarget: null });
+  const stateRef = useRef({ active: false, dragId: null, dragSource: null, ghost: null, timer: null, startX: 0, startY: 0, moved: false, lastTarget: null, srcEl: null });
   const onDropRef = useRef(onDrop);
   const onStateRef = useRef(onDragStateChange);
   useEffect(() => { onDropRef.current = onDrop; }, [onDrop]);
@@ -101,17 +101,43 @@ const useTouchDrag = (onDrop, onDragStateChange) => {
   useEffect(() => {
     const s = stateRef.current;
 
+    /* Robust draggable finder — handles SVG elements, text nodes, and deep nesting */
     const findDraggable = (el) => {
-      while (el && !el.dataset?.dragId) el = el.parentElement;
-      return el;
+      if (!el) return null;
+      /* If el is a text node or SVG child, get the nearest HTML element */
+      if (el.nodeType === 3) el = el.parentElement; /* text node */
+      if (!el) return null;
+      /* Use closest if available (works on HTML elements) */
+      try {
+        const found = el.closest?.("[data-drag-id]");
+        if (found) return found;
+      } catch(e) { /* SVG elements may throw in some browsers */ }
+      /* Manual walk-up fallback for SVG elements */
+      let cur = el;
+      while (cur) {
+        if (cur.dataset && cur.dataset.dragId) return cur;
+        cur = cur.parentElement || cur.parentNode;
+        if (cur === document.body || cur === document) break;
+      }
+      return null;
     };
 
     const findDropTarget = (x, y) => {
       if (s.ghost) s.ghost.style.display = "none";
       let el = document.elementFromPoint(x, y);
       if (s.ghost) s.ghost.style.display = "";
-      while (el && !el.dataset?.dropType) el = el.parentElement;
-      return el;
+      if (!el) return null;
+      try {
+        const found = el.closest?.("[data-drop-type]");
+        if (found) return found;
+      } catch(e) {}
+      let cur = el;
+      while (cur) {
+        if (cur.dataset && cur.dataset.dropType) return cur;
+        cur = cur.parentElement || cur.parentNode;
+        if (cur === document.body || cur === document) break;
+      }
+      return null;
     };
 
     const clearHighlight = () => {
@@ -125,6 +151,7 @@ const useTouchDrag = (onDrop, onDragStateChange) => {
     const cleanup = () => {
       clearTimeout(s.timer); s.timer = null;
       if (s.ghost) { s.ghost.remove(); s.ghost = null; }
+      if (s.srcEl) { s.srcEl.style.opacity = ""; s.srcEl = null; }
       clearHighlight();
       s.active = false; s.dragId = null; s.dragSource = null; s.moved = false;
       document.body.style.overflow = "";
@@ -133,21 +160,31 @@ const useTouchDrag = (onDrop, onDragStateChange) => {
     };
 
     const onTouchStart = (e) => {
+      if (s.active) return; /* already dragging */
+      /* Skip if touch is on interactive elements */
+      const tag = e.target?.tagName?.toLowerCase?.();
+      if (tag === "input" || tag === "textarea" || tag === "select" || tag === "button") return;
+      /* Also skip if target is inside a button (e.g. checkbox) */
+      if (e.target?.closest?.("button")) return;
+
       const draggable = findDraggable(e.target);
       if (!draggable) return;
+
       const t = e.touches[0];
       s.startX = t.clientX; s.startY = t.clientY; s.moved = false;
       s.dragId = draggable.dataset.dragId;
       s.dragSource = draggable.dataset.dragSource || "task";
+      s.srcEl = draggable;
 
       s.timer = setTimeout(() => {
+        if (!s.dragId) return; /* was cleaned up */
         s.active = true;
         if (onStateRef.current) onStateRef.current(true);
         document.body.style.overflow = "hidden";
         document.body.style.userSelect = "none";
         const rect = draggable.getBoundingClientRect();
         const g = document.createElement("div");
-        g.textContent = draggable.dataset.dragLabel || draggable.textContent?.slice(0, 30) || "•";
+        g.textContent = draggable.dataset.dragLabel || "•";
         g.style.cssText = `position:fixed;top:${rect.top}px;left:${rect.left}px;z-index:9999;padding:8px 14px;background:#1c1917;color:white;border-radius:10px;font-size:13px;font-weight:600;font-family:sans-serif;box-shadow:0 8px 24px rgba(0,0,0,0.3);pointer-events:none;white-space:nowrap;max-width:200px;overflow:hidden;text-overflow:ellipsis;opacity:0.95;`;
         document.body.appendChild(g);
         s.ghost = g;
@@ -157,11 +194,17 @@ const useTouchDrag = (onDrop, onDragStateChange) => {
     };
 
     const onTouchMove = (e) => {
+      if (!s.dragId) return; /* no drag in progress */
       const t = e.touches[0];
       const dx = t.clientX - s.startX, dy = t.clientY - s.startY;
-      if (!s.active && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) { clearTimeout(s.timer); s.timer = null; return; }
+      /* Cancel timer if moved before long-press threshold */
+      if (!s.active && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) {
+        clearTimeout(s.timer); s.timer = null;
+        s.dragId = null; s.dragSource = null; s.srcEl = null;
+        return;
+      }
       if (!s.active) return;
-      e.preventDefault();
+      e.preventDefault(); /* prevent scroll during drag */
       s.moved = true;
       if (s.ghost) { s.ghost.style.top = (t.clientY - 20) + "px"; s.ghost.style.left = (t.clientX - 10) + "px"; }
 
@@ -180,8 +223,6 @@ const useTouchDrag = (onDrop, onDragStateChange) => {
 
     const onTouchEnd = (e) => {
       if (!s.active || !s.moved) { cleanup(); return; }
-      const src = document.querySelector(`[data-drag-id="${s.dragId}"]`);
-      if (src) src.style.opacity = "";
 
       const t = e.changedTouches[0];
       const target = findDropTarget(t.clientX, t.clientY);
@@ -198,19 +239,21 @@ const useTouchDrag = (onDrop, onDragStateChange) => {
       cleanup();
     };
 
-    const opts = { passive: false };
+    const onTouchCancel = () => { cleanup(); };
+
     document.addEventListener("touchstart", onTouchStart, { passive: true });
-    document.addEventListener("touchmove", onTouchMove, opts);
+    document.addEventListener("touchmove", onTouchMove, { passive: false });
     document.addEventListener("touchend", onTouchEnd, { passive: true });
-    document.addEventListener("touchcancel", () => { const src = document.querySelector(`[data-drag-id="${stateRef.current.dragId}"]`); if (src) src.style.opacity = ""; cleanup(); }, { passive: true });
+    document.addEventListener("touchcancel", onTouchCancel, { passive: true });
 
     return () => {
       document.removeEventListener("touchstart", onTouchStart);
       document.removeEventListener("touchmove", onTouchMove);
       document.removeEventListener("touchend", onTouchEnd);
+      document.removeEventListener("touchcancel", onTouchCancel);
       cleanup();
     };
-  }, []); /* empty deps — listeners registered once, callbacks accessed via refs */
+  }, []); /* stable — callbacks accessed via refs */
 };
 
 const PRIORITY = {
@@ -790,7 +833,7 @@ const TaskDetail = ({task, onUpdate, onDelete, onClose, lists}) => {
 /* ═══════════════════════════════════════════════════════════════════════
    KANBAN BOARD — Today view as draggable columns for today+3 days
    ═══════════════════════════════════════════════════════════════════════ */
-const KanbanBoard = ({tasks, onSelect, onUpdate, onToggle, flash, setIsDragging}) => {
+const KanbanBoard = ({tasks, onSelect, onUpdate, onToggle, flash, setIsDragging, animatingTasks}) => {
   const [hoverCol, setHoverCol] = useState(null);
 
   const columns = useMemo(() => {
@@ -834,7 +877,7 @@ const KanbanBoard = ({tasks, onSelect, onUpdate, onToggle, flash, setIsDragging}
           </div>
           <div style={{flex:1,overflowY:"auto",padding:8}}>
             {overdueTasks.map(t => (
-              <KanbanCard key={t.id} task={t} onSelect={onSelect} onToggle={onToggle} onDragBegin={setIsDragging} />
+              <KanbanCard key={t.id} task={t} onSelect={onSelect} onToggle={onToggle} onDragBegin={setIsDragging} animateState={animatingTasks?.[t.id]} />
             ))}
           </div>
         </div>
@@ -863,7 +906,7 @@ const KanbanBoard = ({tasks, onSelect, onUpdate, onToggle, flash, setIsDragging}
                 </div>
               )}
               {colTasks.map(t => (
-                <KanbanCard key={t.id} task={t} onSelect={onSelect} onToggle={onToggle} onDragBegin={setIsDragging} />
+                <KanbanCard key={t.id} task={t} onSelect={onSelect} onToggle={onToggle} onDragBegin={setIsDragging} animateState={animatingTasks?.[t.id]} />
               ))}
             </div>
           </div>
@@ -873,7 +916,7 @@ const KanbanBoard = ({tasks, onSelect, onUpdate, onToggle, flash, setIsDragging}
   );
 };
 
-const KanbanCard = ({task, onSelect, onToggle, onDragBegin}) => {
+const KanbanCard = ({task, onSelect, onToggle, onDragBegin, animateState}) => {
   const pc = PRIORITY[task.priority || "none"].color;
   return (
     <div draggable
@@ -883,9 +926,10 @@ const KanbanCard = ({task, onSelect, onToggle, onDragBegin}) => {
       onClick={() => onSelect(task)}
       style={{padding:"10px 12px",background:"white",borderRadius:10,marginBottom:6,cursor:"grab",
         borderLeft:`3px solid ${pc}`,boxShadow:"0 1px 3px rgba(0,0,0,0.06)",
+        animation:animateState==="complete"?"cardComplete 0.5s ease forwards":animateState==="uncomplete"?"taskUncomplete 0.4s ease forwards":"none",
         transition:"box-shadow 0.15s,transform 0.15s"}}>
       <div style={{display:"flex",alignItems:"flex-start",gap:8}}>
-        <div style={{paddingTop:1}}>
+        <div style={{paddingTop:1,animation:animateState?"checkPop 0.35s ease":"none"}}>
           <Checkbox checked={task.completed} priority={task.priority} size={16} onChange={()=>onToggle(task.id)}/>
         </div>
         <div style={{flex:1,minWidth:0}}>
@@ -1138,7 +1182,7 @@ const CalendarView = ({tasks, onSelect, onUpdate}) => {
 /* ═══════════════════════════════════════════════════════════════════════
    TASK ROW — editable title, drag handle, collapsible subtasks
    ═══════════════════════════════════════════════════════════════════════ */
-const TaskRow = ({task,isActive,isSelected,onSelect,onToggle,onUpdateTask,onDragStart,onDragOver,onDrop,onDragEnd,dropTarget,view,lists}) => {
+const TaskRow = ({task,isActive,isSelected,onSelect,onToggle,onUpdateTask,onDragStart,onDragOver,onDrop,onDragEnd,dropTarget,view,lists,animateState}) => {
   const [subsOpen,setSubsOpen]=useState(false);
   const clickTimer=useRef(null);
   const overdue=!task.completed&&isOverdue(task.dueDate);
@@ -1170,7 +1214,8 @@ const TaskRow = ({task,isActive,isSelected,onSelect,onToggle,onUpdateTask,onDrag
       style={{marginBottom:2,borderRadius:12,position:"relative",
         background:isSelected?"rgba(217,119,6,0.1)":dtZone==="nest"?"rgba(217,119,6,0.08)":isActive?"var(--active-bg)":"transparent",
         outline:isSelected?"2px solid var(--accent)":dtZone==="nest"?"2px dashed var(--accent)":"none",
-        transition:"background 0.15s,opacity 0.3s,outline 0.1s",opacity:task.completed?0.45:1}}>
+        animation:animateState==="complete"?"taskComplete 0.6s ease forwards":animateState==="uncomplete"?"taskUncomplete 0.5s ease forwards":"none",
+        transition:"background 0.15s,opacity 0.3s,outline 0.1s",opacity:task.completed&&!animateState?0.45:animateState?undefined:1}}>
       {/* Drop indicator lines */}
       {dtZone==="before"&&<div style={{position:"absolute",top:-1,left:12,right:12,height:2,background:"var(--accent)",borderRadius:1,zIndex:5}}/>}
       {dtZone==="after"&&<div style={{position:"absolute",bottom:-1,left:12,right:12,height:2,background:"var(--accent)",borderRadius:1,zIndex:5}}/>}
@@ -1178,7 +1223,7 @@ const TaskRow = ({task,isActive,isSelected,onSelect,onToggle,onUpdateTask,onDrag
 
       <div onClick={handleRowClick} style={{display:"flex",alignItems:"flex-start",gap:8,padding:"11px 12px",cursor:"pointer"}}>
         <div style={{paddingTop:3,cursor:"grab",color:"var(--border)",touchAction:"none"}} onMouseDown={e=>e.stopPropagation()}>{Icons.grip}</div>
-        <div style={{paddingTop:2}}><Checkbox checked={task.completed} priority={task.priority} onChange={()=>onToggle(task.id)}/></div>
+        <div style={{paddingTop:2,animation:animateState?"checkPop 0.35s ease":"none"}}><Checkbox checked={task.completed} priority={task.priority} onChange={()=>onToggle(task.id)}/></div>
         <div style={{flex:1,minWidth:0}}>
           <EditableText value={task.title} onSave={t=>onUpdateTask({...task,title:t})} onEditStart={cancelRowClick}
             style={{fontSize:15,fontWeight:task.completed?400:500,lineHeight:1.4,color:task.completed?"var(--muted)":"var(--ink)",textDecoration:task.completed?"line-through":"none",display:"block",marginBottom:3}}/>
@@ -1396,7 +1441,20 @@ export default function InkwellApp() {
   },[view]);
 
   const updateTask=useCallback(updated=>{setTasks(prev=>prev.map(t=>t.id===updated.id?updated:t));},[]);
-  const toggleTask=useCallback(id=>{setTasks(prev=>prev.map(t=>t.id===id?{...t,completed:!t.completed,completedAt:!t.completed?new Date().toISOString():null}:t));},[]);
+  const [animatingTasks,setAnimatingTasks]=useState({}); /* {taskId: "complete"|"uncomplete"} */
+  const toggleTask=useCallback(id=>{
+    setTasks(prev=>prev.map(t=>{
+      if(t.id!==id) return t;
+      const nowComplete = !t.completed;
+      return {...t,completed:nowComplete,completedAt:nowComplete?new Date().toISOString():null};
+    }));
+    /* Trigger animation */
+    setAnimatingTasks(prev=>{
+      const task = tasks.find(t=>t.id===id);
+      return {...prev, [id]: task?.completed ? "uncomplete" : "complete"};
+    });
+    setTimeout(()=>setAnimatingTasks(prev=>{const n={...prev};delete n[id];return n;}), 700);
+  },[tasks]);
   const deleteTask=useCallback(id=>{setTasks(prev=>prev.filter(t=>t.id!==id));if(selectedTask?.id===id)setSelectedTask(null);},[selectedTask]);
 
   const renameList=useCallback((oldN,newN)=>{if(!newN.trim()||newN===oldN||lists.includes(newN))return;setLists(prev=>prev.map(l=>l===oldN?newN:l));setTasks(prev=>prev.map(t=>t.list===oldN?{...t,list:newN}:t));if(view===`list:${oldN}`)setView(`list:${newN}`);},[lists,view]);
@@ -1617,6 +1675,10 @@ export default function InkwellApp() {
         .list-row:hover .list-menu-btn{opacity:1!important;}
         @keyframes fadeIn{from{opacity:0;transform:scale(0.95)}to{opacity:1;transform:scale(1)}}
         @keyframes fanOut{from{max-height:0;opacity:0;transform:translateY(-8px)}to{max-height:50px;opacity:1;transform:translateY(0)}}
+        @keyframes taskComplete{0%{background:transparent}15%{background:rgba(34,197,94,0.12)}50%{background:rgba(34,197,94,0.08)}100%{background:transparent;opacity:0.45}}
+        @keyframes taskUncomplete{0%{opacity:0.45;background:rgba(217,119,6,0.12)}50%{background:rgba(217,119,6,0.08)}100%{opacity:1;background:transparent}}
+        @keyframes checkPop{0%{transform:scale(1)}30%{transform:scale(1.3)}60%{transform:scale(0.9)}100%{transform:scale(1)}}
+        @keyframes cardComplete{0%{transform:scale(1);opacity:1}40%{transform:scale(0.97);opacity:0.7;background:rgba(34,197,94,0.1)}100%{transform:scale(0.95);opacity:0}}
         ::-webkit-scrollbar{width:6px;}::-webkit-scrollbar-track{background:transparent;}::-webkit-scrollbar-thumb{background:#d6d3d1;border-radius:3px;}
         input::placeholder,textarea::placeholder{color:#a8a29e;}
         @keyframes fadeIn{from{opacity:0}to{opacity:1}}
@@ -1777,7 +1839,7 @@ export default function InkwellApp() {
                 <button onClick={()=>setTodayMode("kanban")} style={{padding:"5px 12px",borderRadius:6,border:"none",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:todayMode==="kanban"?"white":"transparent",color:todayMode==="kanban"?"var(--ink)":"var(--muted)",boxShadow:todayMode==="kanban"?"0 1px 3px rgba(0,0,0,0.08)":"none",transition:"all 0.15s"}}>Board</button>
                 <button onClick={()=>setTodayMode("list")} style={{padding:"5px 12px",borderRadius:6,border:"none",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:todayMode==="list"?"white":"transparent",color:todayMode==="list"?"var(--ink)":"var(--muted)",boxShadow:todayMode==="list"?"0 1px 3px rgba(0,0,0,0.08)":"none",transition:"all 0.15s"}}>List</button>
               </div>
-              <div style={{flex:1,minHeight:0}}><KanbanBoard tasks={tasks} onSelect={t=>setSelectedTask(t)} onUpdate={updateTask} onToggle={toggleTask} flash={flash} setIsDragging={setIsDragging}/></div>
+              <div style={{flex:1,minHeight:0}}><KanbanBoard tasks={tasks} onSelect={t=>setSelectedTask(t)} onUpdate={updateTask} onToggle={toggleTask} flash={flash} setIsDragging={setIsDragging} animatingTasks={animatingTasks}/></div>
             </div>):(<>
               {view!=="completed"&&(<div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",background:"white",borderRadius:14,border:"1px solid var(--border)",marginBottom:view==="today"?10:16,boxShadow:"0 1px 3px rgba(0,0,0,0.04)"}}>
                 <span style={{color:"var(--accent)",flexShrink:0}}>{Icons.plus}</span>
@@ -1794,7 +1856,7 @@ export default function InkwellApp() {
                   {filtered.map((task,i)=>{const prev=i>0?filtered[i-1]:null;const showSep=task.completed&&prev&&!prev.completed;
                     return(<div key={task.id} role="listitem">
                       {showSep&&(<div style={{display:"flex",alignItems:"center",gap:10,padding:"12px 12px 8px",marginTop:8}}><div style={{height:1,flex:1,background:"var(--border)"}}/><span style={{fontSize:12,fontWeight:600,color:"var(--muted)",textTransform:"uppercase",letterSpacing:0.8}}>Completed</span><div style={{height:1,flex:1,background:"var(--border)"}}/></div>)}
-                      <TaskRow task={task} isActive={selectedTask?.id===task.id} isSelected={selectedIds.has(task.id)} onSelect={handleTaskClick} onToggle={toggleTask} onUpdateTask={updateTask} view={view} lists={lists} onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop} onDragEnd={onDragEnd} dropTarget={dropTarget?.id===task.id?dropTarget:null}/>
+                      <TaskRow task={task} isActive={selectedTask?.id===task.id} isSelected={selectedIds.has(task.id)} onSelect={handleTaskClick} onToggle={toggleTask} onUpdateTask={updateTask} view={view} lists={lists} onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop} onDragEnd={onDragEnd} dropTarget={dropTarget?.id===task.id?dropTarget:null} animateState={animatingTasks[task.id]}/>
                     </div>);})}
                 </div>
               )}
