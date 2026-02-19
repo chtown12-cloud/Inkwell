@@ -1543,6 +1543,12 @@ export default function InkwellApp() {
   },[]);
   const [selectedIds,setSelectedIds]=useState(new Set());
   const [dropTarget,setDropTarget]=useState(null); // {id, zone:'before'|'nest'|'after'}
+  /* Safety: clear stale drop target if no drag is active */
+  useEffect(()=>{if(!dragTask&&dropTarget)setDropTarget(null);},[dragTask,dropTarget]);
+  /* Safety: if isDragging stays false for 500ms but dragTask is set, force cleanup */
+  useEffect(()=>{
+    if(!isDragging&&dragTask){const t=setTimeout(()=>setDragTask(null),500);return()=>clearTimeout(t);}
+  },[isDragging,dragTask]);
   const [showShortcuts,setShowShortcuts]=useState(false);
   const [showSettings,setShowSettings]=useState(false);
   const [listMenu,setListMenu]=useState(null); // {name, x, y}
