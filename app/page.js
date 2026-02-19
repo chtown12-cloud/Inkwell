@@ -711,16 +711,124 @@ const PhotoModal = ({onClose,onProcess,processing}) => {
    SCAN RESULTS MODAL — new lists persist across all dropdowns
    ═══════════════════════════════════════════════════════════════════════ */
 const ScanResultsModal = ({results,onConfirm,onClose,lists}) => {
-  const [items,setItems]=useState(()=>results.items.map((it,i)=>({...it,_selected:true,_id:i})));
+  /* Flatten tree into [{title, completed, category, date, is_duplicate_of, _depth, _selected, _id}] */
+  const [items,setItems]=useState(()=>{
+    const flat=[];let id=0;
+    const walk=(arr,depth)=>{
+      (arr||[]).forEach(it=>{
+        flat.push({title:it.title,completed:it.completed||false,category:depth===0?(it.category||null):null,date:depth===0?(it.date||null):null,is_duplicate_of:it.is_duplicate_of||null,_depth:depth,_selected:true,_id:id++});
+        walk(it.subtasks,depth+1);
+      });
+    };
+    walk(results.items,0);
+    return flat;
+  });
   const [localLists,setLocalLists]=useState([]);
   const [newInputIdx,setNewInputIdx]=useState(null);
   const [newInputVal,setNewInputVal]=useState("");
   const didCommit=useRef(false);
+  const [dragIdx,setDragIdx]=useState(null);
+  const [dropIdx,setDropIdx]=useState(null);
 
   const allLists = [...lists, ...localLists.filter(l=>!lists.includes(l))];
   const updateItem=(idx,changes)=>setItems(prev=>prev.map((it,i)=>i===idx?{...it,...changes}:it));
   const toggle=idx=>updateItem(idx,{_selected:!items[idx]._selected});
-  const selected=items.filter(it=>it._selected);
+
+  /* Get the range of an item + its children (items at deeper depth immediately following) */
+  const getItemRange=(idx)=>{
+    const baseDepth=items[idx]._depth;
+    let end=idx+1;
+    while(end<items.length && items[end]._depth>baseDepth) end++;
+    return [idx,end]; /* [start, exclusiveEnd] */
+  };
+
+  /* Indent: increase depth (max 2), only if previous item is at same or higher depth */
+  const indent=(idx)=>{
+    if(idx===0) return;
+    const item=items[idx];
+    if(item._depth>=2) return;
+    const prev=items[idx-1];
+    if(prev._depth<item._depth) return;
+    updateItem(idx,{_depth:item._depth+1});
+  };
+  /* Outdent: decrease depth (min 0), also outdent children */
+  const outdent=(idx)=>{
+    const item=items[idx];
+    if(item._depth<=0) return;
+    setItems(prev=>{
+      const next=[...prev];
+      const oldDepth=next[idx]._depth;
+      next[idx]={...next[idx],_depth:oldDepth-1};
+      for(let i=idx+1;i<next.length;i++){
+        if(next[i]._depth<=oldDepth) break;
+        next[i]={...next[i],_depth:next[i]._depth-1};
+      }
+      return next;
+    });
+  };
+  const removeRow=(idx)=>{
+    const [start,end]=getItemRange(idx);
+    setItems(prev=>prev.filter((_,i)=>i<start||i>=end));
+  };
+
+  /* Drag reorder */
+  const onRowDragStart=(e,idx)=>{
+    setDragIdx(idx);
+    e.dataTransfer.effectAllowed="move";
+    e.dataTransfer.setData("text/plain",String(idx));
+    /* Slightly transparent the dragged row */
+    requestAnimationFrame(()=>{
+      const el=e.target.closest("[data-scan-row]");
+      if(el) el.style.opacity="0.4";
+    });
+  };
+  const onRowDragEnd=(e)=>{
+    const el=e.target.closest("[data-scan-row]");
+    if(el) el.style.opacity="";
+    setDragIdx(null);setDropIdx(null);
+  };
+  const onRowDragOver=(e,idx)=>{
+    e.preventDefault();e.dataTransfer.dropEffect="move";
+    if(dragIdx===null||idx===dragIdx) return;
+    setDropIdx(idx);
+  };
+  const onRowDrop=(e,targetIdx)=>{
+    e.preventDefault();
+    if(dragIdx===null||dragIdx===targetIdx){setDragIdx(null);setDropIdx(null);return;}
+    const [start,end]=getItemRange(dragIdx);
+    const chunk=items.slice(start,end);
+    /* Don't allow dropping inside own children */
+    if(targetIdx>=start&&targetIdx<end){setDragIdx(null);setDropIdx(null);return;}
+    setItems(prev=>{
+      const without=[...prev];
+      without.splice(start,end-start);
+      /* Adjust target index if it was after the removed chunk */
+      let insertAt=targetIdx>start?targetIdx-(end-start):targetIdx;
+      /* Determine drop position: insert after target row's range */
+      const rect=e.currentTarget.getBoundingClientRect();
+      const y=(e.clientY-rect.top)/rect.height;
+      if(y>0.5) insertAt++;
+      without.splice(insertAt,0,...chunk);
+      return without;
+    });
+    setDragIdx(null);setDropIdx(null);
+  };
+
+  /* Reconstruct tree from flat list for confirm */
+  const buildTree=()=>{
+    const roots=[];
+    const stack=[{children:roots,depth:-1}];
+    items.forEach(it=>{
+      if(!it._selected) return;
+      const node={title:it.title,completed:it.completed,category:it._depth===0?it.category:null,date:it._depth===0?it.date:null,is_duplicate_of:it._depth===0?it.is_duplicate_of:null,subtasks:[]};
+      while(stack.length>1 && stack[stack.length-1].depth>=it._depth) stack.pop();
+      stack[stack.length-1].children.push(node);
+      stack.push({children:node.subtasks,depth:it._depth});
+    });
+    return roots;
+  };
+
+  const topLevelCount=items.filter(it=>it._selected&&it._depth===0).length;
 
   const commitNewList = () => {
     if(didCommit.current) return;
@@ -728,13 +836,10 @@ const ScanResultsModal = ({results,onConfirm,onClose,lists}) => {
     const val=newInputVal.trim();
     const idx=newInputIdx;
     if(val && idx!==null){
-      if(!lists.includes(val) && !localLists.includes(val)){
-        setLocalLists(prev=>[...prev, val]);
-      }
+      if(!lists.includes(val) && !localLists.includes(val)) setLocalLists(prev=>[...prev, val]);
       updateItem(idx, {category:val});
     }
-    setNewInputIdx(null);
-    setNewInputVal("");
+    setNewInputIdx(null);setNewInputVal("");
     setTimeout(()=>{didCommit.current=false;},50);
   };
 
@@ -744,60 +849,90 @@ const ScanResultsModal = ({results,onConfirm,onClose,lists}) => {
         <span style={{color:"var(--accent)"}}>{Icons.sparkle}</span>
         <h2 style={{margin:0,fontSize:19,fontFamily:"var(--font-display)"}}>Found {items.length} Item{items.length!==1?"s":""}</h2>
       </div>
-      <p style={{fontSize:13,color:"var(--muted)",margin:"0 0 16px"}}>Edit task names or reassign lists before adding.</p>
+      <p style={{fontSize:13,color:"var(--muted)",margin:"0 0 8px"}}>Drag ⠿ to reorder, ← → to adjust nesting. Top-level = tasks, indented = subtasks.</p>
       {results.page_date&&(<div style={{padding:"8px 12px",background:"var(--accent-bg)",borderRadius:8,marginBottom:14,fontSize:13,color:"var(--accent-dark)",display:"flex",alignItems:"center",gap:6}}>{Icons.calendar} Page dated {formatDate(results.page_date)}</div>)}
       <div style={{flex:1,overflowY:"auto",marginBottom:20,maxHeight:"50vh"}}>
-        {items.map((item,idx)=>(
-          <div key={idx} style={{padding:"12px 8px",borderBottom:"1px solid var(--border-light)",opacity:item._selected?1:0.3,transition:"opacity 0.15s"}}>
-            <div style={{display:"flex",alignItems:"flex-start",gap:10}}>
-              <div style={{paddingTop:2}}><Checkbox checked={item._selected} onChange={()=>toggle(idx)}/></div>
-              <div style={{flex:1,minWidth:0}}>
-                <input value={item.title} onChange={e=>updateItem(idx,{title:e.target.value})}
-                  style={{width:"100%",border:"1px solid transparent",borderRadius:6,padding:"4px 8px",fontSize:14,fontWeight:500,color:"var(--ink)",background:"transparent",outline:"none",fontFamily:"inherit",boxSizing:"border-box",textDecoration:item.completed?"line-through":"none"}}
-                  onFocus={e=>{e.target.style.borderColor="var(--accent)";e.target.style.background="white";}}
-                  onBlur={e=>{e.target.style.borderColor="transparent";e.target.style.background="transparent";}}/>
-                <div style={{display:"flex",alignItems:"center",gap:8,marginTop:4,paddingLeft:8,flexWrap:"wrap"}}>
-                  <select value={item.category||""} onChange={e=>{
-                    const v=e.target.value;
-                    if(v==="__new__"){
-                      didCommit.current=false;
-                      setNewInputIdx(idx);
-                      setNewInputVal("");
-                      return;
-                    }
-                    updateItem(idx,{category:v||null});
-                  }} style={{fontSize:12,padding:"2px 6px",borderRadius:4,border:"1px solid var(--border)",background:"white",color:"var(--text)",cursor:"pointer",fontFamily:"inherit"}}>
-                    <option value="">Inbox</option>
-                    {allLists.filter(l=>l!=="Inbox").map(l=><option key={l} value={l}>{l}</option>)}
-                    <option value="__new__">+ New list...</option>
-                  </select>
+        {items.map((item,idx)=>{
+          const isTask=item._depth===0;
+          const indentPx=item._depth*28;
+          const isDropTarget=dropIdx===idx&&dragIdx!==null&&dragIdx!==idx;
+          return (
+          <div key={item._id} data-scan-row
+            onDragOver={e=>onRowDragOver(e,idx)}
+            onDrop={e=>onRowDrop(e,idx)}
+            style={{paddingLeft:indentPx,borderBottom:isTask?"1px solid var(--border-light)":"none",
+              opacity:item._selected?1:0.3,transition:"opacity 0.15s,padding 0.15s",
+              borderTop:isDropTarget?"2px solid var(--accent)":"2px solid transparent",position:"relative"}}>
+            <div style={{display:"flex",alignItems:"center",gap:4,padding:isTask?"10px 4px":"4px 4px"}}>
+              {/* Drag handle */}
+              <span draggable
+                onDragStart={e=>onRowDragStart(e,idx)}
+                onDragEnd={onRowDragEnd}
+                style={{cursor:"grab",color:"var(--border)",fontSize:12,flexShrink:0,padding:"0 2px",userSelect:"none",touchAction:"none",lineHeight:1}}>⠿</span>
 
-                  {newInputIdx===idx&&(
-                    <input autoFocus value={newInputVal}
-                      onChange={e=>setNewInputVal(e.target.value)}
-                      placeholder="List name, Enter to save"
-                      onKeyDown={e=>{
-                        if(e.key==="Enter"){e.preventDefault();commitNewList();}
-                        if(e.key==="Escape"){setNewInputIdx(null);setNewInputVal("");}
-                      }}
-                      onBlur={()=>commitNewList()}
-                      style={{fontSize:12,padding:"3px 8px",borderRadius:4,border:"1px solid var(--accent)",width:140,outline:"none",fontFamily:"inherit",background:"#fffbeb"}}/>
-                  )}
+              {/* Select checkbox */}
+              <div style={{flexShrink:0,paddingTop:1}}><Checkbox checked={item._selected} size={isTask?18:14} onChange={()=>toggle(idx)}/></div>
+              
+              {/* Depth indicator */}
+              {item._depth>0&&<span style={{fontSize:10,color:"var(--border)",flexShrink:0,width:14,textAlign:"center"}}>{item._depth===1?"↳":"↳↳"}</span>}
 
-                  <input type="date" value={item.date||results.page_date||""} onChange={e=>updateItem(idx,{date:e.target.value||null})}
-                    style={{fontSize:12,padding:"2px 6px",borderRadius:4,border:"1px solid var(--border)",background:"white",color:"var(--text)",cursor:"pointer",fontFamily:"inherit"}}/>
+              {/* Title */}
+              <input value={item.title} onChange={e=>updateItem(idx,{title:e.target.value})}
+                style={{flex:1,border:"1px solid transparent",borderRadius:6,padding:"3px 6px",
+                  fontSize:isTask?14:12,fontWeight:isTask?600:400,
+                  color:item.completed?"var(--muted)":"var(--ink)",background:"transparent",outline:"none",
+                  fontFamily:"inherit",boxSizing:"border-box",minWidth:0,
+                  textDecoration:item.completed?"line-through":"none"}}
+                onFocus={e=>{e.target.style.borderColor="var(--accent)";e.target.style.background="white";}}
+                onBlur={e=>{e.target.style.borderColor="transparent";e.target.style.background="transparent";}}/>
 
-                  {item.completed&&<span style={{fontSize:11,background:"#dcfce7",color:"#166534",padding:"1px 7px",borderRadius:4,fontWeight:600}}>DONE</span>}
-                  {item.is_duplicate_of&&<span style={{fontSize:11,color:"#d97706",fontWeight:500}}>↻ match</span>}
-                </div>
+              {/* Indent/outdent + remove buttons */}
+              <div style={{display:"flex",gap:1,flexShrink:0}}>
+                <button onClick={()=>outdent(idx)} disabled={item._depth<=0} title="Outdent (promote)"
+                  style={{background:"none",border:"none",cursor:item._depth>0?"pointer":"default",color:item._depth>0?"var(--muted)":"var(--border-light)",fontSize:14,padding:"2px 3px",borderRadius:4,fontWeight:700,lineHeight:1,display:"flex"}}>←</button>
+                <button onClick={()=>indent(idx)} disabled={idx===0||item._depth>=2} title="Indent (make subtask)"
+                  style={{background:"none",border:"none",cursor:idx>0&&item._depth<2?"pointer":"default",color:idx>0&&item._depth<2?"var(--muted)":"var(--border-light)",fontSize:14,padding:"2px 3px",borderRadius:4,fontWeight:700,lineHeight:1,display:"flex"}}>→</button>
+                <button onClick={()=>removeRow(idx)} title="Remove"
+                  style={{background:"none",border:"none",cursor:"pointer",color:"var(--muted)",fontSize:13,padding:"2px 3px",borderRadius:4,lineHeight:1,display:"flex"}}>✕</button>
               </div>
             </div>
+
+            {/* Task-level controls: category, date, status badges */}
+            {isTask&&item._selected&&(
+              <div style={{display:"flex",alignItems:"center",gap:8,paddingLeft:30,paddingBottom:8,flexWrap:"wrap"}}>
+                <select value={item.category||""} onChange={e=>{
+                  const v=e.target.value;
+                  if(v==="__new__"){didCommit.current=false;setNewInputIdx(idx);setNewInputVal("");return;}
+                  updateItem(idx,{category:v||null});
+                }} style={{fontSize:12,padding:"2px 6px",borderRadius:4,border:"1px solid var(--border)",background:"white",color:"var(--text)",cursor:"pointer",fontFamily:"inherit"}}>
+                  <option value="">Inbox</option>
+                  {allLists.filter(l=>l!=="Inbox").map(l=><option key={l} value={l}>{l}</option>)}
+                  <option value="__new__">+ New list...</option>
+                </select>
+
+                {newInputIdx===idx&&(
+                  <input autoFocus value={newInputVal}
+                    onChange={e=>setNewInputVal(e.target.value)}
+                    placeholder="List name, Enter to save"
+                    onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();commitNewList();}if(e.key==="Escape"){setNewInputIdx(null);setNewInputVal("");}}}
+                    onBlur={()=>commitNewList()}
+                    style={{fontSize:12,padding:"3px 8px",borderRadius:4,border:"1px solid var(--accent)",width:140,outline:"none",fontFamily:"inherit",background:"#fffbeb"}}/>
+                )}
+
+                <input type="date" value={item.date||results.page_date||""} onChange={e=>updateItem(idx,{date:e.target.value||null})}
+                  style={{fontSize:12,padding:"2px 6px",borderRadius:4,border:"1px solid var(--border)",background:"white",color:"var(--text)",cursor:"pointer",fontFamily:"inherit"}}/>
+
+                {item.completed&&<span style={{fontSize:11,background:"#dcfce7",color:"#166534",padding:"1px 7px",borderRadius:4,fontWeight:600}}>DONE</span>}
+                {item.is_duplicate_of&&<span style={{fontSize:11,color:"#d97706",fontWeight:500}}>↻ match</span>}
+              </div>
+            )}
           </div>
-        ))}
+        );})}
       </div>
-      <div style={{display:"flex",gap:10,flexShrink:0}}>
+      <div style={{display:"flex",gap:10,flexShrink:0,alignItems:"center"}}>
         <Btn variant="secondary" onClick={onClose}>Cancel</Btn>
-        <Btn onClick={()=>onConfirm(selected)}>Add {selected.length} Task{selected.length!==1?"s":""}</Btn>
+        <Btn onClick={()=>onConfirm(buildTree())}>Add {topLevelCount} Task{topLevelCount!==1?"s":""}</Btn>
+        <span style={{fontSize:12,color:"var(--muted)"}}>{items.filter(it=>it._selected&&it._depth>0).length} subtask{items.filter(it=>it._selected&&it._depth>0).length!==1?"s":""}</span>
       </div>
     </Overlay>
   );
@@ -1828,7 +1963,9 @@ export default function InkwellApp() {
   const handleScan=async(b64,mt)=>{setProcessing(true);try{const res=await fetch("/api/scan",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({imageData:b64,mediaType:mt,existingTasks:tasks.map(t=>t.title),existingLists:lists})});if(!res.ok){const err=await res.json();throw new Error(err.error||"Scan failed");}const results=await res.json();setShowPhoto(false);setScanResults(results);}catch(e){flash("⚠ "+(e.message||"Failed"));}setProcessing(false);};
 
   const confirmScan=items=>{let added=0,checked=0;const pageDate=scanResults?.page_date;const newCats=new Set();items.forEach(it=>{if(it.category?.trim()&&!lists.includes(it.category.trim()))newCats.add(it.category.trim());});if(newCats.size>0)setLists(prev=>[...prev,...Array.from(newCats)]);const all=[...lists,...Array.from(newCats)];
-    items.forEach(item=>{if(item.is_duplicate_of){const ex=tasks.find(t=>t.title.toLowerCase().trim()===item.is_duplicate_of.toLowerCase().trim());if(ex&&item.completed&&!ex.completed){updateTask({...ex,completed:true,completedAt:new Date().toISOString()});checked++;return;}if(ex)return;}const tl=item.category&&all.includes(item.category.trim())?item.category.trim():"Inbox";addTask({title:item.title,completed:item.completed,dueDate:item.date||pageDate||todayStr(),list:tl});added++;});
+    /* Convert scanned subtask tree to app format */
+    const convertSubs=(subs)=>(subs||[]).map(s=>({id:uid(),title:s.title,completed:s.completed||false,dueDate:null,startDate:null,endDate:null,priority:"none",notes:"",tags:[],subtasks:convertSubs(s.subtasks)}));
+    items.forEach(item=>{if(item.is_duplicate_of){const ex=tasks.find(t=>t.title.toLowerCase().trim()===item.is_duplicate_of.toLowerCase().trim());if(ex&&item.completed&&!ex.completed){updateTask({...ex,completed:true,completedAt:new Date().toISOString()});checked++;return;}if(ex)return;}const tl=item.category&&all.includes(item.category.trim())?item.category.trim():"Inbox";addTask({title:item.title,completed:item.completed,dueDate:item.date||pageDate||todayStr(),list:tl,subtasks:convertSubs(item.subtasks)});added++;});
     setScanResults(null);const lm=newCats.size>0?`, created ${newCats.size} list${newCats.size!==1?"s":""}`:""
     flash(`✓ Added ${added} task${added!==1?"s":""}${checked?`, checked off ${checked}`:""}${lm}`);};
 
