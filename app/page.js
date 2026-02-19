@@ -1001,9 +1001,16 @@ const KanbanBoard = ({tasks, columns, onColumnsChange, onResetColumns, onSelect,
     <div data-kanban-scroll style={{display:"flex",gap:16,height:"100%",overflowX:"auto",paddingBottom:16}}>
       {overdueTasks.length > 0 && (
         <div style={{minWidth:220,maxWidth:280,flex:"1 0 220px",display:"flex",flexDirection:"column",background:"#fef2f2",borderRadius:14,border:"1px solid #fecaca",overflow:"hidden"}}>
-          <div style={{padding:"14px 14px 10px",borderBottom:"1px solid #fecaca"}}>
-            <div style={{fontSize:14,fontWeight:700,color:"#ef4444"}}>Overdue</div>
-            <div style={{fontSize:12,color:"#f87171",marginTop:2}}>{overdueTasks.length} task{overdueTasks.length !== 1 ? "s" : ""}</div>
+          <div style={{padding:"14px 14px 10px",borderBottom:"1px solid #fecaca",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+            <div>
+              <div style={{fontSize:14,fontWeight:700,color:"#ef4444"}}>Overdue</div>
+              <div style={{fontSize:12,color:"#f87171",marginTop:2}}>{overdueTasks.length} task{overdueTasks.length !== 1 ? "s" : ""}</div>
+            </div>
+            <button onClick={()=>{overdueTasks.forEach(t=>onUpdate({...t,dueDate:todayStr()}));if(flash)flash(`Moved ${overdueTasks.length} task${overdueTasks.length!==1?"s":""} to today`);}}
+              style={{fontSize:11,fontWeight:700,color:"#ef4444",background:"white",border:"1px solid #fecaca",borderRadius:8,padding:"5px 10px",cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap",transition:"background 0.15s"}}
+              onMouseEnter={e=>e.currentTarget.style.background="#fef2f2"}
+              onMouseLeave={e=>e.currentTarget.style.background="white"}
+              title="Move all overdue tasks to today">→ Today</button>
           </div>
           <div style={{flex:1,overflowY:"auto",padding:8}}>
             {overdueTasks.map(t => (
