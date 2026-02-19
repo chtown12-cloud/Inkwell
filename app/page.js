@@ -114,7 +114,8 @@ const useTouchDrag = (onDrop, onDragStateChange, onSidebarShow) => {
       phase: "idle", /* idle | waiting | dragging | scrolling */
       dragId: null, dragSource: null, ghost: null, timer: null,
       startX: 0, startY: 0, lastY: 0, moved: false,
-      lastTarget: null, srcEl: null, scrollEl: null, sidebarShown: false
+      lastTarget: null, srcEl: null, scrollEl: null, sidebarShown: false,
+      autoScrollTimer: null, autoScrollEl: null, _scrollDir: 0
     };
 
     /* Track if current interaction is touch-based. When it is, prevent the
@@ -177,6 +178,7 @@ const useTouchDrag = (onDrop, onDragStateChange, onSidebarShow) => {
 
     const reset = () => {
       clearTimeout(s.timer); s.timer = null;
+      clearInterval(s.autoScrollTimer); s.autoScrollTimer = null; s.autoScrollEl = null;
       if (s.ghost) { s.ghost.remove(); s.ghost = null; }
       if (s.srcEl) { try { s.srcEl.style.opacity = ""; } catch(e){} s.srcEl = null; }
       clearHL();
@@ -295,9 +297,36 @@ const useTouchDrag = (onDrop, onDragStateChange, onSidebarShow) => {
         s.sidebarShown = true;
         if (onSidebarRef.current) onSidebarRef.current(true);
       } else if (t.clientX > EDGE + 200 && s.sidebarShown) {
-        /* Hide once finger is well past sidebar width */
         s.sidebarShown = false;
         if (onSidebarRef.current) onSidebarRef.current(false);
+      }
+
+      /* Auto-scroll horizontally scrollable containers (e.g. kanban board)
+         Right edge (last 70px): scroll right
+         Left zone (70-160px, after sidebar edge): scroll left
+         Center: stop auto-scrolling */
+      const screenW = window.innerWidth;
+      const R_ZONE = screenW - 70;
+      const L_ZONE_START = s.sidebarShown ? 280 : 70;
+      const L_ZONE_END = s.sidebarShown ? 350 : 160;
+
+      if (t.clientX > R_ZONE) {
+        s._scrollDir = 1;
+      } else if (t.clientX > L_ZONE_START && t.clientX < L_ZONE_END) {
+        s._scrollDir = -1;
+      } else {
+        s._scrollDir = 0;
+      }
+
+      if (s._scrollDir !== 0) {
+        if (!s.autoScrollEl) s.autoScrollEl = document.querySelector("[data-kanban-scroll]");
+        if (s.autoScrollEl && !s.autoScrollTimer) {
+          s.autoScrollTimer = setInterval(() => {
+            if (s.autoScrollEl && s._scrollDir) s.autoScrollEl.scrollLeft += s._scrollDir * 4;
+          }, 16);
+        }
+      } else if (s.autoScrollTimer) {
+        clearInterval(s.autoScrollTimer); s.autoScrollTimer = null;
       }
 
       const target = findDropTarget(t.clientX, t.clientY);
@@ -928,23 +957,13 @@ const TaskDetail = ({task, onUpdate, onDelete, onClose, lists}) => {
 };
 
 /* ═══════════════════════════════════════════════════════════════════════
-   KANBAN BOARD — Today view as draggable columns for today+3 days
+   KANBAN BOARD — editable columns with configurable names & dates
    ═══════════════════════════════════════════════════════════════════════ */
-const KanbanBoard = ({tasks, onSelect, onUpdate, onToggle, flash, setIsDragging, animatingTasks}) => {
+const KanbanBoard = ({tasks, columns, onColumnsChange, onResetColumns, onSelect, onUpdate, onToggle, flash, setIsDragging, animatingTasks}) => {
   const [hoverCol, setHoverCol] = useState(null);
-
-  const columns = useMemo(() => {
-    const cols = [];
-    for (let i = 0; i < 4; i++) {
-      const d = new Date();
-      d.setDate(d.getDate() + i);
-      const ds = d.toISOString().split("T")[0];
-      const label = i === 0 ? "Today" : i === 1 ? "Tomorrow" : d.toLocaleDateString("en-IE", { weekday: "short" });
-      const dateFmt = d.toLocaleDateString("en-IE", { day: "numeric", month: "short" });
-      cols.push({ dateStr: ds, label, dateFmt, isToday: i === 0 });
-    }
-    return cols;
-  }, []);
+  const [editingCol, setEditingCol] = useState(null);
+  const [editName, setEditName] = useState("");
+  const [editDate, setEditDate] = useState("");
 
   const overdueTasks = useMemo(() => tasks.filter(t => !t.completed && t.dueDate && t.dueDate < todayStr()), [tasks]);
 
@@ -963,9 +982,23 @@ const KanbanBoard = ({tasks, onSelect, onUpdate, onToggle, flash, setIsDragging,
     if (t) onUpdate({ ...t, dueDate: ds });
   };
 
+  const startEdit = (col) => { setEditingCol(col.id); setEditName(col.name); setEditDate(col.dateStr); };
+  const saveEdit = () => {
+    if (!editingCol) return;
+    onColumnsChange(columns.map(c => c.id === editingCol ? { ...c, name: editName.trim() || c.name, dateStr: editDate || c.dateStr } : c));
+    setEditingCol(null);
+  };
+  const removeCol = (id) => { if (columns.length <= 1) return; onColumnsChange(columns.filter(c => c.id !== id)); };
+  const addCol = () => {
+    const lastDate = columns[columns.length - 1]?.dateStr || todayStr();
+    const d = new Date(lastDate + "T12:00:00"); d.setDate(d.getDate() + 1);
+    const ds = d.toISOString().split("T")[0];
+    const label = d.toLocaleDateString("en-IE", { weekday: "long" });
+    onColumnsChange([...columns, { id: uid(), name: label, dateStr: ds }]);
+  };
+
   return (
-    <div style={{display:"flex",gap:16,height:"100%",overflowX:"auto",paddingBottom:16}}>
-      {/* Overdue column */}
+    <div data-kanban-scroll style={{display:"flex",gap:16,height:"100%",overflowX:"auto",paddingBottom:16}}>
       {overdueTasks.length > 0 && (
         <div style={{minWidth:220,maxWidth:280,flex:"1 0 220px",display:"flex",flexDirection:"column",background:"#fef2f2",borderRadius:14,border:"1px solid #fecaca",overflow:"hidden"}}>
           <div style={{padding:"14px 14px 10px",borderBottom:"1px solid #fecaca"}}>
@@ -982,25 +1015,41 @@ const KanbanBoard = ({tasks, onSelect, onUpdate, onToggle, flash, setIsDragging,
       {columns.map(col => {
         const colTasks = byDate[col.dateStr] || [];
         const isHover = hoverCol === col.dateStr;
+        const isToday = col.dateStr === todayStr();
+        const isEditing = editingCol === col.id;
         return (
-          <div key={col.dateStr}
+          <div key={col.id}
             data-drop-type="date" data-drop-value={col.dateStr}
             onDragOver={e => onColDragOver(e, col.dateStr)}
             onDragLeave={() => setHoverCol(null)}
             onDrop={e => onColDrop(e, col.dateStr)}
             style={{minWidth:220,maxWidth:280,flex:"1 0 220px",display:"flex",flexDirection:"column",
-              background:isHover?"rgba(217,119,6,0.08)":col.isToday?"rgba(217,119,6,0.04)":"var(--surface)",
-              borderRadius:14,border:isHover?"2px solid var(--accent)":`1px solid ${col.isToday?"rgba(217,119,6,0.3)":"var(--border)"}`,
+              background:isHover?"rgba(217,119,6,0.08)":isToday?"rgba(217,119,6,0.04)":"var(--surface)",
+              borderRadius:14,border:isHover?"2px solid var(--accent)":`1px solid ${isToday?"rgba(217,119,6,0.3)":"var(--border)"}`,
               overflow:"hidden",transition:"border 0.15s, background 0.15s"}}>
-            <div style={{padding:"14px 14px 10px",borderBottom:`1px solid ${col.isToday?"rgba(217,119,6,0.2)":"var(--border)"}`}}>
-              <div style={{fontSize:14,fontWeight:700,color:col.isToday?"var(--accent)":"var(--ink)"}}>{col.label}</div>
-              <div style={{fontSize:12,color:"var(--muted)",marginTop:2}}>{col.dateFmt} · {colTasks.length} task{colTasks.length !== 1 ? "s" : ""}</div>
+            <div style={{padding:"10px 14px 8px",borderBottom:`1px solid ${isToday?"rgba(217,119,6,0.2)":"var(--border)"}`}}>
+              {isEditing ? (
+                <div style={{display:"flex",flexDirection:"column",gap:6}} onClick={e=>e.stopPropagation()}>
+                  <input autoFocus value={editName} onChange={e=>setEditName(e.target.value)}
+                    onKeyDown={e=>{if(e.key==="Enter")saveEdit();if(e.key==="Escape")setEditingCol(null);}}
+                    style={{fontSize:14,fontWeight:700,border:"1px solid var(--accent)",borderRadius:6,padding:"3px 8px",outline:"none",fontFamily:"inherit",background:"white",color:"var(--ink)",width:"100%",boxSizing:"border-box"}}/>
+                  <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                    <input type="date" value={editDate} onChange={e=>setEditDate(e.target.value)}
+                      style={{fontSize:12,border:"1px solid var(--border)",borderRadius:6,padding:"3px 6px",fontFamily:"inherit",flex:1}}/>
+                    <button onClick={saveEdit} style={{fontSize:11,fontWeight:700,color:"white",background:"var(--accent)",border:"none",borderRadius:6,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit"}}>Save</button>
+                    {columns.length > 1 && <button onClick={()=>{removeCol(col.id);setEditingCol(null);}} title="Remove column" style={{fontSize:13,fontWeight:700,color:"#ef4444",background:"#fef2f2",border:"none",borderRadius:6,padding:"3px 7px",cursor:"pointer",fontFamily:"inherit",lineHeight:1}}>✕</button>}
+                  </div>
+                </div>
+              ) : (
+                <div onClick={()=>startEdit(col)} style={{cursor:"pointer"}} title="Click to edit column">
+                  <div style={{fontSize:14,fontWeight:700,color:isToday?"var(--accent)":"var(--ink)"}}>{col.name}</div>
+                  <div style={{fontSize:12,color:"var(--muted)",marginTop:2}}>{formatDate(col.dateStr)} · {colTasks.length} task{colTasks.length !== 1 ? "s" : ""}</div>
+                </div>
+              )}
             </div>
             <div style={{flex:1,overflowY:"auto",padding:8,minHeight:100}}>
               {colTasks.length === 0 && (
-                <div style={{textAlign:"center",padding:"24px 8px",color:"var(--muted)",fontSize:12,fontStyle:"italic"}}>
-                  Drop tasks here
-                </div>
+                <div style={{textAlign:"center",padding:"24px 8px",color:"var(--muted)",fontSize:12,fontStyle:"italic"}}>Drop tasks here</div>
               )}
               {colTasks.map(t => (
                 <KanbanCard key={t.id} task={t} onSelect={onSelect} onToggle={onToggle} onDragBegin={setIsDragging} animateState={animatingTasks?.[t.id]} />
@@ -1009,6 +1058,20 @@ const KanbanBoard = ({tasks, onSelect, onUpdate, onToggle, flash, setIsDragging,
           </div>
         );
       })}
+      {/* Add column */}
+      <div style={{minWidth:100,flex:"0 0 100px",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:12}}>
+        <div onClick={addCol} style={{width:"100%",flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",borderRadius:14,border:"2px dashed var(--border)",cursor:"pointer",transition:"border-color 0.15s,background 0.15s",background:"transparent",gap:4}}
+          onMouseEnter={e=>{e.currentTarget.style.borderColor="var(--accent)";e.currentTarget.style.background="rgba(217,119,6,0.04)";}}
+          onMouseLeave={e=>{e.currentTarget.style.borderColor="var(--border)";e.currentTarget.style.background="transparent";}}>
+          <span style={{fontSize:22,color:"var(--muted)",lineHeight:1}}>+</span>
+          <span style={{fontSize:11,color:"var(--muted)",fontWeight:600}}>Column</span>
+        </div>
+        {onResetColumns && (
+          <button onClick={onResetColumns} style={{fontSize:11,color:"var(--muted)",background:"none",border:"none",cursor:"pointer",fontFamily:"inherit",padding:"4px 8px",borderRadius:6,transition:"color 0.15s",whiteSpace:"nowrap"}}
+            onMouseEnter={e=>e.currentTarget.style.color="var(--accent)"}
+            onMouseLeave={e=>e.currentTarget.style.color="var(--muted)"}>↻ Reset defaults</button>
+        )}
+      </div>
     </div>
   );
 };
@@ -1482,6 +1545,21 @@ export default function InkwellApp() {
   const [showViewCounts,setShowViewCounts]=useState(()=>load("inkwell-showViewCounts",true));
   const [showListCounts,setShowListCounts]=useState(()=>load("inkwell-showListCounts",true));
   const [todayMode,setTodayMode]=useState(()=>load("inkwell-todayMode","kanban")); /* "kanban" | "list" */
+  const [kanbanColumns, setKanbanColumns] = useState(() => load("inkwell-kanbanCols", null));
+  useEffect(() => { save("inkwell-kanbanCols", kanbanColumns); }, [kanbanColumns]);
+  const activeKanbanCols = useMemo(() => {
+    if (kanbanColumns && kanbanColumns.length > 0) return kanbanColumns;
+    /* Default: today + next 3 days */
+    const cols = [];
+    for (let i = 0; i < 4; i++) {
+      const d = new Date(); d.setDate(d.getDate() + i);
+      const ds = d.toISOString().split("T")[0];
+      const label = i === 0 ? "Today" : i === 1 ? "Tomorrow" : d.toLocaleDateString("en-IE", { weekday: "long" });
+      cols.push({ id: `default-${i}`, name: label, dateStr: ds });
+    }
+    return cols;
+  }, [kanbanColumns]);
+  const resetKanbanCols = useCallback(() => { setKanbanColumns(null); }, []);
   useEffect(()=>{save("inkwell-showViewCounts",showViewCounts);},[showViewCounts]);
   useEffect(()=>{save("inkwell-showListCounts",showListCounts);},[showListCounts]);
   useEffect(()=>{save("inkwell-todayMode",todayMode);},[todayMode]);
@@ -1939,7 +2017,7 @@ export default function InkwellApp() {
                 <button onClick={()=>setTodayMode("kanban")} style={{padding:"5px 12px",borderRadius:6,border:"none",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:todayMode==="kanban"?"white":"transparent",color:todayMode==="kanban"?"var(--ink)":"var(--muted)",boxShadow:todayMode==="kanban"?"0 1px 3px rgba(0,0,0,0.08)":"none",transition:"all 0.15s"}}>Board</button>
                 <button onClick={()=>setTodayMode("list")} style={{padding:"5px 12px",borderRadius:6,border:"none",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:todayMode==="list"?"white":"transparent",color:todayMode==="list"?"var(--ink)":"var(--muted)",boxShadow:todayMode==="list"?"0 1px 3px rgba(0,0,0,0.08)":"none",transition:"all 0.15s"}}>List</button>
               </div>
-              <div style={{flex:1,minHeight:0}}><KanbanBoard tasks={tasks} onSelect={t=>setSelectedTask(t)} onUpdate={updateTask} onToggle={toggleTask} flash={flash} setIsDragging={setIsDragging} animatingTasks={animatingTasks}/></div>
+              <div style={{flex:1,minHeight:0}}><KanbanBoard tasks={tasks} columns={activeKanbanCols} onColumnsChange={setKanbanColumns} onResetColumns={kanbanColumns?resetKanbanCols:null} onSelect={t=>setSelectedTask(t)} onUpdate={updateTask} onToggle={toggleTask} flash={flash} setIsDragging={setIsDragging} animatingTasks={animatingTasks}/></div>
             </div>):(<>
               {view!=="completed"&&(<div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",background:"white",borderRadius:14,border:"1px solid var(--border)",marginBottom:view==="today"?10:16,boxShadow:"0 1px 3px rgba(0,0,0,0.04)"}}>
                 <span style={{color:"var(--accent)",flexShrink:0}}>{Icons.plus}</span>
