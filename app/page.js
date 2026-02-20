@@ -1092,6 +1092,91 @@ const TaskDetail = ({task, onUpdate, onDelete, onClose, lists}) => {
 };
 
 /* ═══════════════════════════════════════════════════════════════════════
+   SCAN TIPS MODAL — notebook formatting guide for best photo recognition
+   ═══════════════════════════════════════════════════════════════════════ */
+const ScanTipsModal = ({onClose}) => {
+  const tipStyle={marginBottom:18};
+  const numStyle={display:"inline-flex",alignItems:"center",justifyContent:"center",width:22,height:22,borderRadius:"50%",background:"var(--accent)",color:"white",fontSize:12,fontWeight:700,marginRight:8,flexShrink:0};
+  const headStyle={fontSize:14,fontWeight:700,color:"var(--ink)",display:"flex",alignItems:"center",marginBottom:6};
+  const bodyStyle={fontSize:13,color:"var(--muted)",lineHeight:1.6,paddingLeft:30};
+  const codeStyle={display:"block",background:"var(--surface)",borderRadius:8,padding:"10px 14px",fontSize:12,fontFamily:"monospace",lineHeight:1.7,color:"var(--ink)",marginTop:8,whiteSpace:"pre",overflowX:"auto"};
+
+  return (
+    <Overlay onClose={onClose}>
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:4}}>
+        <span style={{fontSize:22}}>📓</span>
+        <h2 style={{margin:0,fontSize:19,fontFamily:"var(--font-display)"}}>Scan Tips</h2>
+      </div>
+      <p style={{fontSize:13,color:"var(--muted)",margin:"0 0 20px"}}>Format your notebook pages like this for the best scan accuracy.</p>
+
+      <div style={{overflowY:"auto",maxHeight:"55vh"}}>
+        <div style={tipStyle}>
+          <div style={headStyle}><span style={numStyle}>1</span>Date at the top</div>
+          <div style={bodyStyle}>Write the date clearly at the top of the page — <b>19/2</b>, <b>Feb 19</b>, or <b>2026-02-19</b> all work. This becomes the default due date for everything on the page.</div>
+        </div>
+
+        <div style={tipStyle}>
+          <div style={headStyle}><span style={numStyle}>2</span>Underline category headers</div>
+          <div style={bodyStyle}>Underline or box each section name so it stands out. Inkwell fuzzy-matches headers to your existing lists — e.g. "Work tasks" matches your "Work" list.</div>
+        </div>
+
+        <div style={tipStyle}>
+          <div style={headStyle}><span style={numStyle}>3</span>Indent for subtasks</div>
+          <div style={bodyStyle}>
+            Use indentation to show hierarchy. Anything indented beneath a task becomes its subtask, and further indentation becomes a sub-subtask.
+            <span style={codeStyle}>{`☐ Plan team offsite
+    - Book venue
+    - Send invitations
+        - Draft email template
+☐ Update project roadmap`}</span>
+          </div>
+        </div>
+
+        <div style={tipStyle}>
+          <div style={headStyle}><span style={numStyle}>4</span>Use clear markers</div>
+          <div style={bodyStyle}>
+            <b>Open tasks:</b> ☐  □  [ ]  –  •<br/>
+            <b>Completed:</b> ☑  ✓  [x]  or strikethrough<br/>
+            <b>Subtasks:</b> indented –  →  {'>'}  or letters (a, b, c)
+          </div>
+        </div>
+
+        <div style={tipStyle}>
+          <div style={headStyle}><span style={numStyle}>5</span>Example page</div>
+          <div style={bodyStyle}>
+            <span style={codeStyle}>{`Feb 19
+
+Work
+──────
+☐ Prepare quarterly review
+    - Gather metrics
+    - Draft slides
+        - Add charts
+☐ Schedule 1:1 meetings
+✓ Submit expense report
+
+Personal
+────────
+☐ Book dentist appointment
+☐ Research weekend trips
+    - Compare prices
+    - Check availability`}</span>
+          </div>
+        </div>
+
+        <div style={{padding:"12px 14px",background:"#fffbeb",borderRadius:10,border:"1px solid rgba(217,119,6,0.2)",fontSize:12,color:"var(--accent-dark)",lineHeight:1.6}}>
+          <b>💡 Tip:</b> After scanning, you can drag rows to reorder, use ← → to fix nesting, edit titles, and reassign lists — all before importing.
+        </div>
+      </div>
+
+      <div style={{marginTop:16,flexShrink:0}}>
+        <Btn onClick={onClose} style={{width:"100%"}}>Got it</Btn>
+      </div>
+    </Overlay>
+  );
+};
+
+/* ═══════════════════════════════════════════════════════════════════════
    KANBAN BOARD — editable columns with configurable names & dates
    ═══════════════════════════════════════════════════════════════════════ */
 const KanbanBoard = ({tasks, columns, onColumnsChange, onResetColumns, onSelect, onUpdate, onToggle, flash, setIsDragging, animatingTasks}) => {
@@ -1686,6 +1771,7 @@ export default function InkwellApp() {
   },[isDragging,dragTask]);
   const [showShortcuts,setShowShortcuts]=useState(false);
   const [showSettings,setShowSettings]=useState(false);
+  const [showTips,setShowTips]=useState(()=>{if(typeof window==="undefined")return false;if(!localStorage.getItem("inkwell-welcomed")){localStorage.setItem("inkwell-welcomed","1");return true;}return false;});
   const [listMenu,setListMenu]=useState(null); // {name, x, y}
   const [editingList,setEditingList]=useState(null);
   const [dragList,setDragList]=useState(null);
@@ -1979,7 +2065,7 @@ export default function InkwellApp() {
   const todayCount=useMemo(()=>tasks.filter(t=>!t.completed&&t.dueDate===todayStr()).length,[tasks]);
 
   /* Keyboard shortcuts — must be after filtered/bulkDelete definitions */
-  useEffect(()=>{const h=e=>{if(["INPUT","TEXTAREA","SELECT"].includes(e.target.tagName))return;if(e.key==="n"&&!e.metaKey){e.preventDefault();document.getElementById("quick-add")?.focus();}if(e.key==="/"||((e.metaKey||e.ctrlKey)&&e.key==="f")){e.preventDefault();setShowSearch(true);}if(e.key==="b"&&!e.metaKey&&!e.ctrlKey){setSidebar(s=>!s);}if(e.key==="?")setShowShortcuts(s=>!s);if(e.key==="Escape"){setShowSearch(false);setSearch("");setSelectedTask(null);setShowShortcuts(false);setSelectedIds(new Set());}if(e.key==="a"&&(e.metaKey||e.ctrlKey)){e.preventDefault();setSelectedIds(new Set(filtered.map(t=>t.id)));}if((e.key==="Delete"||e.key==="Backspace")&&selectedIds.size>0&&!e.metaKey){bulkDelete();}};window.addEventListener("keydown",h);return()=>window.removeEventListener("keydown",h);},[filtered,selectedIds]);
+  useEffect(()=>{const h=e=>{if(["INPUT","TEXTAREA","SELECT"].includes(e.target.tagName))return;if(e.key==="n"&&!e.metaKey){e.preventDefault();document.getElementById("quick-add")?.focus();}if(e.key==="/"||((e.metaKey||e.ctrlKey)&&e.key==="f")){e.preventDefault();setShowSearch(true);}if(e.key==="b"&&!e.metaKey&&!e.ctrlKey){setSidebar(s=>!s);}if(e.key==="?")setShowShortcuts(s=>!s);if(e.key==="Escape"){setShowSearch(false);setSearch("");setSelectedTask(null);setShowShortcuts(false);setShowTips(false);setSelectedIds(new Set());}if(e.key==="a"&&(e.metaKey||e.ctrlKey)){e.preventDefault();setSelectedIds(new Set(filtered.map(t=>t.id)));}if((e.key==="Delete"||e.key==="Backspace")&&selectedIds.size>0&&!e.metaKey){bulkDelete();}};window.addEventListener("keydown",h);return()=>window.removeEventListener("keydown",h);},[filtered,selectedIds]);
   const titles={today:"Today",upcoming:"Upcoming",all:"All Tasks",completed:"Completed",inbox:"Inbox",calendar:"Calendar"};
   const iconsMap={today:Icons.today,upcoming:Icons.upcoming,all:Icons.all,completed:Icons.done,inbox:Icons.inbox,calendar:Icons.calendar};
   const viewTitle=titles[view]||(view.startsWith("list:")?view.replace("list:",""):"Tasks");
@@ -2137,8 +2223,17 @@ export default function InkwellApp() {
           </div>
         )}
         <div style={{padding:"8px 16px 12px",borderTop:"1px solid var(--border)",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-          <button onClick={()=>setShowShortcuts(true)} style={{background:"none",border:"none",cursor:"pointer",fontSize:12,color:"var(--muted)",display:"flex",alignItems:"center",gap:6,fontFamily:"inherit",padding:0}}>{Icons.keyboard} Press ? for shortcuts</button>
-          <button onClick={()=>setShowSettings(true)} style={{background:"none",border:"none",cursor:"pointer",color:"var(--muted)",padding:4,display:"flex",borderRadius:6}} aria-label="Settings" title="Settings">{Icons.settings}</button>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <button onClick={()=>setShowShortcuts(true)} style={{background:"none",border:"none",cursor:"pointer",fontSize:12,color:"var(--muted)",display:"flex",alignItems:"center",gap:6,fontFamily:"inherit",padding:0}}>{Icons.keyboard} Press ? for shortcuts</button>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:4}}>
+            <button onClick={()=>setShowTips(true)} style={{background:"none",border:"none",cursor:"pointer",color:"var(--muted)",padding:4,display:"flex",borderRadius:6,transition:"color 0.15s"}} aria-label="Scan tips" title="Scan tips"
+              onMouseEnter={e=>e.currentTarget.style.color="var(--accent)"}
+              onMouseLeave={e=>e.currentTarget.style.color="var(--muted)"}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/><path d="M8 7h6"/><path d="M8 11h8"/></svg>
+            </button>
+            <button onClick={()=>setShowSettings(true)} style={{background:"none",border:"none",cursor:"pointer",color:"var(--muted)",padding:4,display:"flex",borderRadius:6}} aria-label="Settings" title="Settings">{Icons.settings}</button>
+          </div>
         </div>
       </nav>
 
@@ -2197,6 +2292,7 @@ export default function InkwellApp() {
 
       {showPhoto&&<PhotoModal onClose={()=>setShowPhoto(false)} onProcess={handleScan} processing={processing}/>}
       {scanResults&&<ScanResultsModal results={scanResults} onConfirm={confirmScan} onClose={()=>setScanResults(null)} lists={lists}/>}
+      {showTips&&<ScanTipsModal onClose={()=>setShowTips(false)}/>}
       {showShortcuts&&(<Overlay onClose={()=>setShowShortcuts(false)}><h2 style={{fontSize:19,fontFamily:"var(--font-display)",marginBottom:16}}>Keyboard Shortcuts</h2>{[["N","New task"],["B","Toggle sidebar"],["/ or ⌘F","Search"],["⌘A","Select all tasks"],["Shift+Click","Select range"],["⌘/Ctrl+Click","Toggle select"],["Delete","Delete selected"],["Esc","Clear selection / close"],["?","This help"],["Double-click","Edit any name"]].map(([k,d])=>(<div key={k} style={{display:"flex",alignItems:"center",gap:12,padding:"8px 0",borderBottom:"1px solid var(--border-light)"}}><kbd style={{fontSize:12,fontWeight:600,background:"var(--surface)",padding:"3px 8px",borderRadius:6,border:"1px solid var(--border)",fontFamily:"inherit",minWidth:50,textAlign:"center"}}>{k}</kbd><span style={{fontSize:14,color:"var(--text)"}}>{d}</span></div>))}</Overlay>)}
       {showSettings&&(<Overlay onClose={()=>setShowSettings(false)}>
         <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20}}>
