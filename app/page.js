@@ -81,10 +81,11 @@ function useSupabaseSync() {
 const TASKS_KEY = "inkwell-tasks-v2";
 const LISTS_KEY = "inkwell-lists-v2";
 const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
-const todayStr = () => new Date().toISOString().split("T")[0];
-const tomorrowStr = () => { const d = new Date(); d.setDate(d.getDate() + 1); return d.toISOString().split("T")[0]; };
-const nextMondayStr = () => { const d = new Date(); const day = d.getDay(); const diff = day === 0 ? 1 : day === 1 ? 7 : 8 - day; d.setDate(d.getDate() + diff); return d.toISOString().split("T")[0]; };
-const dateOffset = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return d.toISOString().split("T")[0]; };
+const localDateStr = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+const todayStr = () => { const d=new Date(); return localDateStr(d); };
+const tomorrowStr = () => { const d = new Date(); d.setDate(d.getDate() + 1); return localDateStr(d); };
+const nextMondayStr = () => { const d = new Date(); const day = d.getDay(); const diff = day === 0 ? 1 : day === 1 ? 7 : 8 - day; d.setDate(d.getDate() + diff); return localDateStr(d); };
+const dateOffset = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return localDateStr(d); };
 
 /* ═══════════════════════════════════════════════════════════════════════
    TOUCH DRAG SYSTEM — long-press to drag on mobile
@@ -474,13 +475,17 @@ const Icons = {
 /* ═══════════════════════════════════════════════════════════════════════
    SHARED UI COMPONENTS
    ═══════════════════════════════════════════════════════════════════════ */
-const Checkbox = ({checked, onChange, priority="none", size=20}) => (
+const Checkbox = ({checked, onChange, priority="none", size=20, animating=false}) => (
   <button onClick={e=>{e.stopPropagation();onChange(!checked);}}
     aria-label={checked?"Mark incomplete":"Mark complete"} role="checkbox" aria-checked={checked}
     style={{width:size,height:size,borderRadius:6,flexShrink:0,padding:0,
       border:`2px solid ${checked?PRIORITY[priority].color:(priority!=="none"?PRIORITY[priority].color:"#cbd5e1")}`,
-      background:checked?PRIORITY[priority].color:"transparent",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.2s ease"}}>
-    {checked && <svg width={size*.6} height={size*.6} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
+      background:checked?PRIORITY[priority].color:"transparent",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",
+      transition:animating?"none":"all 0.2s ease",
+      boxShadow:animating&&checked?`0 0 0 4px ${PRIORITY[priority].color}33`:"none"}}>
+    {checked && <svg width={size*.6} height={size*.6} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={3.5} strokeLinecap="round" strokeLinejoin="round"
+      style={{strokeDasharray:animating?24:undefined,strokeDashoffset:0,animation:animating?"checkmarkDraw 0.3s ease 0.1s both":"none"}}>
+      <polyline points="20 6 9 17 4 12"/></svg>}
   </button>
 );
 
@@ -922,17 +927,19 @@ const ScanResultsModal = ({results,onConfirm,onClose,lists}) => {
                 <input type="date" value={item.date||results.page_date||""} onChange={e=>updateItem(idx,{date:e.target.value||null})}
                   style={{fontSize:12,padding:"2px 6px",borderRadius:4,border:"1px solid var(--border)",background:"white",color:"var(--text)",cursor:"pointer",fontFamily:"inherit"}}/>
 
-                {item.completed&&<span style={{fontSize:11,background:"#dcfce7",color:"#166534",padding:"1px 7px",borderRadius:4,fontWeight:600}}>DONE</span>}
-                {item.is_duplicate_of&&<span style={{fontSize:11,color:"#d97706",fontWeight:500}}>↻ match</span>}
+                {item.completed&&!item.is_duplicate_of&&<span style={{fontSize:11,background:"#dcfce7",color:"#166534",padding:"1px 7px",borderRadius:4,fontWeight:600}}>DONE</span>}
+                {item.is_duplicate_of&&item.completed&&<span style={{fontSize:11,background:"#dcfce7",color:"#166534",padding:"2px 8px",borderRadius:4,fontWeight:700,display:"flex",alignItems:"center",gap:4}}>✓ Will complete "{item.is_duplicate_of}"</span>}
+                {item.is_duplicate_of&&!item.completed&&<span style={{fontSize:11,background:"var(--surface)",color:"var(--muted)",padding:"2px 8px",borderRadius:4,fontWeight:600}}>↻ Already exists</span>}
               </div>
             )}
           </div>
         );})}
       </div>
-      <div style={{display:"flex",gap:10,flexShrink:0,alignItems:"center"}}>
+      <div style={{display:"flex",gap:10,flexShrink:0,alignItems:"center",flexWrap:"wrap"}}>
         <Btn variant="secondary" onClick={onClose}>Cancel</Btn>
         <Btn onClick={()=>onConfirm(buildTree())}>Add {topLevelCount} Task{topLevelCount!==1?"s":""}</Btn>
-        <span style={{fontSize:12,color:"var(--muted)"}}>{items.filter(it=>it._selected&&it._depth>0).length} subtask{items.filter(it=>it._selected&&it._depth>0).length!==1?"s":""}</span>
+        {items.filter(it=>it._selected&&it._depth>0).length>0&&<span style={{fontSize:12,color:"var(--muted)"}}>{items.filter(it=>it._selected&&it._depth>0).length} subtask{items.filter(it=>it._selected&&it._depth>0).length!==1?"s":""}</span>}
+        {items.filter(it=>it._selected&&it.is_duplicate_of&&it.completed).length>0&&<span style={{fontSize:12,color:"#166534",fontWeight:600}}>✓ {items.filter(it=>it._selected&&it.is_duplicate_of&&it.completed).length} to complete</span>}
       </div>
     </Overlay>
   );
@@ -1212,7 +1219,7 @@ const KanbanBoard = ({tasks, columns, onColumnsChange, onResetColumns, onSelect,
   const addCol = () => {
     const lastDate = columns[columns.length - 1]?.dateStr || todayStr();
     const d = new Date(lastDate + "T12:00:00"); d.setDate(d.getDate() + 1);
-    const ds = d.toISOString().split("T")[0];
+    const ds = localDateStr(d);
     const label = d.toLocaleDateString("en-IE", { weekday: "long" });
     onColumnsChange([...columns, { id: uid(), name: label, dateStr: ds }]);
   };
@@ -1313,11 +1320,11 @@ const KanbanCard = ({task, onSelect, onToggle, onDragBegin, animateState}) => {
       onClick={() => onSelect(task)}
       style={{padding:"10px 12px",background:"white",borderRadius:10,marginBottom:6,cursor:"grab",touchAction:"none",
         borderLeft:`3px solid ${pc}`,boxShadow:"0 1px 3px rgba(0,0,0,0.06)",
-        animation:animateState==="complete"?"cardComplete 0.5s ease forwards":animateState==="uncomplete"?"taskUncomplete 0.4s ease forwards":"none",
+        animation:animateState==="complete"?"cardComplete 0.6s ease forwards":animateState==="uncomplete"?"cardUncomplete 0.5s ease forwards":"none",
         transition:"box-shadow 0.15s,transform 0.15s"}}>
       <div style={{display:"flex",alignItems:"flex-start",gap:8}}>
-        <div style={{paddingTop:1,animation:animateState?"checkPop 0.35s ease":"none"}}>
-          <Checkbox checked={task.completed} priority={task.priority} size={16} onChange={()=>onToggle(task.id)}/>
+        <div style={{paddingTop:1,animation:animateState?"checkPop 0.45s ease":"none"}}>
+          <Checkbox checked={task.completed} priority={task.priority} size={16} onChange={()=>onToggle(task.id)} animating={!!animateState}/>
         </div>
         <div style={{flex:1,minWidth:0}}>
           <div style={{fontSize:13,fontWeight:500,color:"var(--ink)",lineHeight:1.4,wordWrap:"break-word"}}>{task.title}</div>
@@ -1451,7 +1458,7 @@ const CalendarView = ({tasks, onSelect, onUpdate}) => {
       if (t.startDate && t.endDate && t.startDate !== t.endDate) {
         const anchor = t.dueDate || t.startDate;
         const diff = Math.round((new Date(d) - new Date(anchor)) / 864e5);
-        const shift = (s) => { if (!s) return s; const x = new Date(s); x.setDate(x.getDate() + diff); return x.toISOString().split("T")[0]; };
+        const shift = (s) => { if (!s) return s; const x = new Date(s+"T12:00:00"); x.setDate(x.getDate() + diff); return localDateStr(x); };
         u.dueDate = d; u.startDate = shift(t.startDate); u.endDate = shift(t.endDate);
       } else {
         u.dueDate = d;
@@ -1601,7 +1608,7 @@ const TaskRow = ({task,isActive,isSelected,onSelect,onToggle,onUpdateTask,onDrag
       style={{marginBottom:2,borderRadius:12,position:"relative",touchAction:"none",
         background:isSelected?"rgba(217,119,6,0.1)":dtZone==="nest"?"rgba(217,119,6,0.08)":isActive?"var(--active-bg)":"transparent",
         outline:isSelected?"2px solid var(--accent)":dtZone==="nest"?"2px dashed var(--accent)":"none",
-        animation:animateState==="complete"?"taskComplete 0.6s ease forwards":animateState==="uncomplete"?"taskUncomplete 0.5s ease forwards":"none",
+        animation:animateState==="complete"?"taskComplete 0.7s ease forwards":animateState==="uncomplete"?"taskUncomplete 0.6s ease forwards":"none",
         transition:"background 0.15s,opacity 0.3s,outline 0.1s",opacity:task.completed&&!animateState?0.45:animateState?undefined:1}}>
       {/* Drop indicator lines */}
       {dtZone==="before"&&<div style={{position:"absolute",top:-1,left:12,right:12,height:2,background:"var(--accent)",borderRadius:1,zIndex:5}}/>}
@@ -1610,7 +1617,7 @@ const TaskRow = ({task,isActive,isSelected,onSelect,onToggle,onUpdateTask,onDrag
 
       <div onClick={handleRowClick} style={{display:"flex",alignItems:"flex-start",gap:8,padding:"11px 12px",cursor:"pointer"}}>
         <div style={{paddingTop:3,cursor:"grab",color:"var(--border)"}} onMouseDown={e=>e.stopPropagation()}>{Icons.grip}</div>
-        <div style={{paddingTop:2,animation:animateState?"checkPop 0.35s ease":"none"}}><Checkbox checked={task.completed} priority={task.priority} onChange={()=>onToggle(task.id)}/></div>
+        <div style={{paddingTop:2,animation:animateState?"checkPop 0.45s ease":"none"}}><Checkbox checked={task.completed} priority={task.priority} onChange={()=>onToggle(task.id)} animating={!!animateState}/></div>
         <div style={{flex:1,minWidth:0}}>
           <EditableText value={task.title} onSave={t=>onUpdateTask({...task,title:t})} onEditStart={cancelRowClick}
             style={{fontSize:15,fontWeight:task.completed?400:500,lineHeight:1.4,color:task.completed?"var(--muted)":"var(--ink)",textDecoration:task.completed?"line-through":"none",display:"block",marginBottom:3}}/>
@@ -1779,7 +1786,15 @@ export default function InkwellApp() {
   const [showViewCounts,setShowViewCounts]=useState(()=>load("inkwell-showViewCounts",true));
   const [showListCounts,setShowListCounts]=useState(()=>load("inkwell-showListCounts",true));
   const [todayMode,setTodayMode]=useState(()=>load("inkwell-todayMode","kanban")); /* "kanban" | "list" */
-  const [kanbanColumns, setKanbanColumns] = useState(() => load("inkwell-kanbanCols", null));
+  const [kanbanColumns, setKanbanColumns] = useState(() => {
+    const saved = load("inkwell-kanbanCols", null);
+    if (!saved || saved.length === 0) return null;
+    /* Auto-expire: if the first column date is before today, the window has drifted → reset */
+    const today = todayStr();
+    const firstDate = saved[0]?.dateStr;
+    if (firstDate && firstDate < today) return null;
+    return saved;
+  });
   useEffect(() => { save("inkwell-kanbanCols", kanbanColumns); }, [kanbanColumns]);
   const activeKanbanCols = useMemo(() => {
     if (kanbanColumns && kanbanColumns.length > 0) return kanbanColumns;
@@ -1787,13 +1802,26 @@ export default function InkwellApp() {
     const cols = [];
     for (let i = 0; i < 4; i++) {
       const d = new Date(); d.setDate(d.getDate() + i);
-      const ds = d.toISOString().split("T")[0];
+      const ds = localDateStr(d);
       const label = i === 0 ? "Today" : i === 1 ? "Tomorrow" : d.toLocaleDateString("en-IE", { weekday: "long" });
       cols.push({ id: `default-${i}`, name: label, dateStr: ds });
     }
     return cols;
   }, [kanbanColumns]);
   const resetKanbanCols = useCallback(() => { setKanbanColumns(null); }, []);
+  /* Auto-reset stale columns when tab regains focus (handles overnight) */
+  useEffect(() => {
+    const check = () => {
+      if (document.hidden) return;
+      setKanbanColumns(prev => {
+        if (!prev || prev.length === 0) return prev;
+        if (prev[0]?.dateStr < todayStr()) return null;
+        return prev;
+      });
+    };
+    document.addEventListener("visibilitychange", check);
+    return () => document.removeEventListener("visibilitychange", check);
+  }, []);
   useEffect(()=>{save("inkwell-showViewCounts",showViewCounts);},[showViewCounts]);
   useEffect(()=>{save("inkwell-showListCounts",showListCounts);},[showListCounts]);
   useEffect(()=>{save("inkwell-todayMode",todayMode);},[todayMode]);
@@ -1862,7 +1890,7 @@ export default function InkwellApp() {
       const task = tasks.find(t=>t.id===id);
       return {...prev, [id]: task?.completed ? "uncomplete" : "complete"};
     });
-    setTimeout(()=>setAnimatingTasks(prev=>{const n={...prev};delete n[id];return n;}), 700);
+    setTimeout(()=>setAnimatingTasks(prev=>{const n={...prev};delete n[id];return n;}), 900);
   },[tasks]);
   const deleteTask=useCallback(id=>{setTasks(prev=>prev.filter(t=>t.id!==id));if(selectedTask?.id===id)setSelectedTask(null);},[selectedTask]);
 
@@ -2089,10 +2117,49 @@ export default function InkwellApp() {
         .list-row:hover .list-menu-btn{opacity:1!important;}
         @keyframes fadeIn{from{opacity:0;transform:scale(0.95)}to{opacity:1;transform:scale(1)}}
         @keyframes fanOut{from{max-height:0;opacity:0;transform:translateY(-8px)}to{max-height:50px;opacity:1;transform:translateY(0)}}
-        @keyframes taskComplete{0%{background:transparent}15%{background:rgba(34,197,94,0.12)}50%{background:rgba(34,197,94,0.08)}100%{background:transparent;opacity:0.45}}
-        @keyframes taskUncomplete{0%{opacity:0.45;background:rgba(217,119,6,0.12)}50%{background:rgba(217,119,6,0.08)}100%{opacity:1;background:transparent}}
-        @keyframes checkPop{0%{transform:scale(1)}30%{transform:scale(1.3)}60%{transform:scale(0.9)}100%{transform:scale(1)}}
-        @keyframes cardComplete{0%{transform:scale(1);opacity:1}40%{transform:scale(0.97);opacity:0.7;background:rgba(34,197,94,0.1)}100%{transform:scale(0.95);opacity:0}}
+        @keyframes taskComplete{
+          0%{background:transparent;transform:translateX(0)}
+          10%{background:rgba(34,197,94,0.15);transform:translateX(4px)}
+          25%{background:rgba(34,197,94,0.2);transform:translateX(0)}
+          50%{background:rgba(34,197,94,0.12)}
+          100%{background:transparent;opacity:0.45}
+        }
+        @keyframes taskUncomplete{
+          0%{opacity:0.45;transform:scale(0.98)}
+          15%{opacity:0.7;background:rgba(217,119,6,0.18);transform:scale(1.01)}
+          40%{background:rgba(217,119,6,0.12);transform:scale(1)}
+          100%{opacity:1;background:transparent;transform:scale(1)}
+        }
+        @keyframes checkPop{
+          0%{transform:scale(1)}
+          20%{transform:scale(0.8)}
+          45%{transform:scale(1.4)}
+          65%{transform:scale(0.95)}
+          85%{transform:scale(1.05)}
+          100%{transform:scale(1)}
+        }
+        @keyframes cardComplete{
+          0%{transform:scale(1);opacity:1}
+          15%{transform:scale(1.02);opacity:1;background:rgba(34,197,94,0.15)}
+          35%{transform:scale(0.98);opacity:0.8;background:rgba(34,197,94,0.12)}
+          60%{transform:scale(0.96);opacity:0.4}
+          100%{transform:scale(0.94);opacity:0}
+        }
+        @keyframes cardUncomplete{
+          0%{transform:scale(0.96);opacity:0.5}
+          30%{transform:scale(1.03);opacity:0.8;background:rgba(217,119,6,0.15)}
+          60%{transform:scale(0.99);opacity:0.95}
+          100%{transform:scale(1);opacity:1;background:transparent}
+        }
+        @keyframes strikeReveal{
+          0%{text-decoration-color:transparent}
+          40%{text-decoration-color:var(--muted)}
+          100%{text-decoration-color:var(--muted)}
+        }
+        @keyframes checkmarkDraw{
+          0%{stroke-dashoffset:24}
+          100%{stroke-dashoffset:0}
+        }
         ::-webkit-scrollbar{width:6px;}::-webkit-scrollbar-track{background:transparent;}::-webkit-scrollbar-thumb{background:#d6d3d1;border-radius:3px;}
         input::placeholder,textarea::placeholder{color:#a8a29e;}
         @keyframes fadeIn{from{opacity:0}to{opacity:1}}
@@ -2107,7 +2174,7 @@ export default function InkwellApp() {
       {isMobile&&sidebar&&<div onClick={()=>setSidebar(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.3)",zIndex:99}}/>}
 
       {/* ═══ SIDEBAR ═══ */}
-      <nav className="sidebar" aria-label="Navigation" style={{width:sidebar?264:0,...(isMobile?{position:"fixed",zIndex:100,height:"100vh"}:{}),background:"var(--surface)",borderRight:"1px solid var(--border)",display:"flex",flexDirection:"column",transition:"width 0.25s ease",overflow:"hidden",flexShrink:0}}>
+      <nav className="sidebar" aria-label="Navigation" style={{width:sidebar?264:0,...(isMobile?{position:"fixed",zIndex:100,height:"100dvh"}:{}),background:"var(--surface)",borderRight:"1px solid var(--border)",display:"flex",flexDirection:"column",transition:"width 0.25s ease",overflow:"hidden",flexShrink:0}}>
         <div style={{padding:"20px 16px 12px",flexShrink:0}}>
           <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20}}>
             <div style={{width:34,height:34,borderRadius:10,background:"linear-gradient(135deg,#d97706,#ea580c)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:17,fontWeight:800,color:"white",fontFamily:"var(--font-display)"}}>I</div>
@@ -2216,15 +2283,15 @@ export default function InkwellApp() {
               onBlur={()=>{setShowNewList(false);setNewList("");}} placeholder="List name..." style={{width:"100%",padding:"8px 10px",borderRadius:8,border:"1px solid var(--accent)",fontSize:13,outline:"none",background:"white",fontFamily:"inherit"}}/></div>)}
           </NavSection>
         </div>
-        {overdueCount>0&&<div style={{margin:"0 8px 8px",padding:"10px 14px",borderRadius:10,background:"#fef2f2",border:"1px solid #fecaca",fontSize:13,color:"#ef4444",fontWeight:600}}>⚠ {overdueCount} overdue</div>}
+        {overdueCount>0&&<div style={{margin:"0 8px 8px",padding:"10px 14px",borderRadius:10,background:"#fef2f2",border:"1px solid #fecaca",fontSize:13,color:"#ef4444",fontWeight:600,flexShrink:0}}>⚠ {overdueCount} overdue</div>}
         {hasSupabase && user && (
-          <div style={{padding:"6px 16px",fontSize:11,color:"var(--muted)",display:"flex",alignItems:"center",gap:5}}>
+          <div style={{padding:"6px 16px",fontSize:11,color:"var(--muted)",display:"flex",alignItems:"center",gap:5,flexShrink:0}}>
             <span>☁️</span><span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{user.email}</span>
           </div>
         )}
-        <div style={{padding:"8px 16px 12px",borderTop:"1px solid var(--border)",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+        <div style={{padding:"8px 16px 12px",borderTop:"1px solid var(--border)",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0}}>
           <div style={{display:"flex",alignItems:"center",gap:10}}>
-            <button onClick={()=>setShowShortcuts(true)} style={{background:"none",border:"none",cursor:"pointer",fontSize:12,color:"var(--muted)",display:"flex",alignItems:"center",gap:6,fontFamily:"inherit",padding:0}}>{Icons.keyboard} Press ? for shortcuts</button>
+            <button onClick={()=>setShowShortcuts(true)} style={{background:"none",border:"none",cursor:"pointer",fontSize:12,color:"var(--muted)",display:"flex",alignItems:"center",gap:6,fontFamily:"inherit",padding:0}}>{Icons.keyboard}{!isMobile&&" Press ? for shortcuts"}</button>
           </div>
           <div style={{display:"flex",alignItems:"center",gap:4}}>
             <button onClick={()=>setShowTips(true)} style={{background:"none",border:"none",cursor:"pointer",color:"var(--muted)",padding:4,display:"flex",borderRadius:6,transition:"color 0.15s"}} aria-label="Scan tips" title="Scan tips"
