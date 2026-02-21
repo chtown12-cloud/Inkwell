@@ -734,20 +734,22 @@ const ScanResultsModal = ({results,onConfirm,onClose,lists}) => {
   const didCommit=useRef(false);
   const [dragIdx,setDragIdx]=useState(null);
   const [dropIdx,setDropIdx]=useState(null);
+  const [showSkipped,setShowSkipped]=useState(false);
 
   const allLists = [...lists, ...localLists.filter(l=>!lists.includes(l))];
   const updateItem=(idx,changes)=>setItems(prev=>prev.map((it,i)=>i===idx?{...it,...changes}:it));
-  const toggle=idx=>updateItem(idx,{_selected:!items[idx]._selected});
+  const excludeItem=(idx)=>updateItem(idx,{_selected:false});
+  const restoreItem=(idx)=>updateItem(idx,{_selected:true});
 
-  /* Get the range of an item + its children (items at deeper depth immediately following) */
+  /* Get the range of an item + its children */
   const getItemRange=(idx)=>{
     const baseDepth=items[idx]._depth;
     let end=idx+1;
     while(end<items.length && items[end]._depth>baseDepth) end++;
-    return [idx,end]; /* [start, exclusiveEnd] */
+    return [idx,end];
   };
 
-  /* Indent: increase depth (max 2), only if previous item is at same or higher depth */
+  /* Indent/outdent */
   const indent=(idx)=>{
     if(idx===0) return;
     const item=items[idx];
@@ -756,7 +758,6 @@ const ScanResultsModal = ({results,onConfirm,onClose,lists}) => {
     if(prev._depth<item._depth) return;
     updateItem(idx,{_depth:item._depth+1});
   };
-  /* Outdent: decrease depth (min 0), also outdent children */
   const outdent=(idx)=>{
     const item=items[idx];
     if(item._depth<=0) return;
@@ -776,53 +777,32 @@ const ScanResultsModal = ({results,onConfirm,onClose,lists}) => {
     setItems(prev=>prev.filter((_,i)=>i<start||i>=end));
   };
 
-  /* Drag reorder */
+  /* Drag reorder (only used in "Tasks to add" section) */
   const onRowDragStart=(e,idx)=>{
-    setDragIdx(idx);
-    e.dataTransfer.effectAllowed="move";
-    e.dataTransfer.setData("text/plain",String(idx));
-    /* Slightly transparent the dragged row */
-    requestAnimationFrame(()=>{
-      const el=e.target.closest("[data-scan-row]");
-      if(el) el.style.opacity="0.4";
-    });
+    setDragIdx(idx);e.dataTransfer.effectAllowed="move";e.dataTransfer.setData("text/plain",String(idx));
+    requestAnimationFrame(()=>{const el=e.target.closest("[data-scan-row]");if(el)el.style.opacity="0.4";});
   };
-  const onRowDragEnd=(e)=>{
-    const el=e.target.closest("[data-scan-row]");
-    if(el) el.style.opacity="";
-    setDragIdx(null);setDropIdx(null);
-  };
-  const onRowDragOver=(e,idx)=>{
-    e.preventDefault();e.dataTransfer.dropEffect="move";
-    if(dragIdx===null||idx===dragIdx) return;
-    setDropIdx(idx);
-  };
+  const onRowDragEnd=(e)=>{const el=e.target.closest("[data-scan-row]");if(el)el.style.opacity="";setDragIdx(null);setDropIdx(null);};
+  const onRowDragOver=(e,idx)=>{e.preventDefault();e.dataTransfer.dropEffect="move";if(dragIdx===null||idx===dragIdx)return;setDropIdx(idx);};
   const onRowDrop=(e,targetIdx)=>{
     e.preventDefault();
     if(dragIdx===null||dragIdx===targetIdx){setDragIdx(null);setDropIdx(null);return;}
     const [start,end]=getItemRange(dragIdx);
     const chunk=items.slice(start,end);
-    /* Don't allow dropping inside own children */
     if(targetIdx>=start&&targetIdx<end){setDragIdx(null);setDropIdx(null);return;}
     setItems(prev=>{
-      const without=[...prev];
-      without.splice(start,end-start);
-      /* Adjust target index if it was after the removed chunk */
+      const without=[...prev];without.splice(start,end-start);
       let insertAt=targetIdx>start?targetIdx-(end-start):targetIdx;
-      /* Determine drop position: insert after target row's range */
       const rect=e.currentTarget.getBoundingClientRect();
-      const y=(e.clientY-rect.top)/rect.height;
-      if(y>0.5) insertAt++;
-      without.splice(insertAt,0,...chunk);
-      return without;
+      if((e.clientY-rect.top)/rect.height>0.5) insertAt++;
+      without.splice(insertAt,0,...chunk);return without;
     });
     setDragIdx(null);setDropIdx(null);
   };
 
   /* Reconstruct tree from flat list for confirm */
   const buildTree=()=>{
-    const roots=[];
-    const stack=[{children:roots,depth:-1}];
+    const roots=[];const stack=[{children:roots,depth:-1}];
     items.forEach(it=>{
       if(!it._selected) return;
       const node={title:it.title,completed:it.completed,category:it._depth===0?it.category:null,date:it._depth===0?it.date:null,is_duplicate_of:it._depth===0?it.is_duplicate_of:null,subtasks:[]};
@@ -833,113 +813,207 @@ const ScanResultsModal = ({results,onConfirm,onClose,lists}) => {
     return roots;
   };
 
-  const topLevelCount=items.filter(it=>it._selected&&it._depth===0).length;
-
   const commitNewList = () => {
     if(didCommit.current) return;
     didCommit.current=true;
-    const val=newInputVal.trim();
-    const idx=newInputIdx;
-    if(val && idx!==null){
-      if(!lists.includes(val) && !localLists.includes(val)) setLocalLists(prev=>[...prev, val]);
-      updateItem(idx, {category:val});
-    }
-    setNewInputIdx(null);setNewInputVal("");
-    setTimeout(()=>{didCommit.current=false;},50);
+    const val=newInputVal.trim();const idx=newInputIdx;
+    if(val&&idx!==null){if(!lists.includes(val)&&!localLists.includes(val))setLocalLists(prev=>[...prev,val]);updateItem(idx,{category:val});}
+    setNewInputIdx(null);setNewInputVal("");setTimeout(()=>{didCommit.current=false;},50);
   };
+
+  /* ── Group items into runs (each depth-0 starts a new group) ── */
+  const groups=[];
+  items.forEach((it,idx)=>{
+    if(it._depth===0) groups.push({root:it,rootIdx:idx,children:[]});
+    else if(groups.length>0) groups[groups.length-1].children.push({item:it,idx});
+  });
+
+  /* Categorize groups by outcome */
+  const tasksToAdd=[];    /* new incomplete tasks */
+  const markingComplete=[]; /* completed tasks (new or matched) */
+  const alreadyInApp=[];  /* pure duplicates, unchanged */
+
+  groups.forEach(g=>{
+    const r=g.root;
+    if(r.is_duplicate_of && !r.completed) alreadyInApp.push(g);
+    else if(r.completed) markingComplete.push(g);
+    else tasksToAdd.push(g);
+  });
+
+  const newTaskCount=tasksToAdd.filter(g=>g.root._selected).length;
+  const completeCount=markingComplete.filter(g=>g.root._selected).length;
+
+  /* ── Render helpers ── */
+  const renderEditableRow=(item,idx,{showDrag=true,showIndent=true,showControls=true}={})=>{
+    const isTask=item._depth===0;
+    const indentPx=item._depth*28;
+    const isDropTarget=dropIdx===idx&&dragIdx!==null&&dragIdx!==idx;
+    return (
+      <div key={item._id} data-scan-row
+        onDragOver={showDrag?e=>onRowDragOver(e,idx):undefined}
+        onDrop={showDrag?e=>onRowDrop(e,idx):undefined}
+        style={{paddingLeft:indentPx,borderBottom:isTask?"1px solid var(--border-light)":"none",
+          opacity:item._selected?1:0.3,transition:"opacity 0.15s,padding 0.15s",
+          borderTop:isDropTarget?"2px solid var(--accent)":"2px solid transparent",position:"relative"}}>
+        <div style={{display:"flex",alignItems:"center",gap:4,padding:isTask?"10px 4px":"4px 4px"}}>
+          {showDrag&&<span draggable onDragStart={e=>onRowDragStart(e,idx)} onDragEnd={onRowDragEnd}
+            style={{cursor:"grab",color:"var(--border)",fontSize:12,flexShrink:0,padding:"0 2px",userSelect:"none",touchAction:"none",lineHeight:1}}>⠿</span>}
+
+          {item._depth>0&&<span style={{fontSize:10,color:"var(--border)",flexShrink:0,width:14,textAlign:"center"}}>{item._depth===1?"↳":"↳↳"}</span>}
+
+          <input value={item.title} onChange={e=>updateItem(idx,{title:e.target.value})}
+            style={{flex:1,border:"1px solid transparent",borderRadius:6,padding:"3px 6px",
+              fontSize:isTask?14:12,fontWeight:isTask?600:400,
+              color:item.completed?"var(--muted)":"var(--ink)",background:"transparent",outline:"none",
+              fontFamily:"inherit",boxSizing:"border-box",minWidth:0,
+              textDecoration:item.completed?"line-through":"none"}}
+            onFocus={e=>{e.target.style.borderColor="var(--accent)";e.target.style.background="white";}}
+            onBlur={e=>{e.target.style.borderColor="transparent";e.target.style.background="transparent";}}/>
+
+          {showIndent&&<div style={{display:"flex",gap:1,flexShrink:0}}>
+            <button onClick={()=>outdent(idx)} disabled={item._depth<=0} title="Outdent"
+              style={{background:"none",border:"none",cursor:item._depth>0?"pointer":"default",color:item._depth>0?"var(--muted)":"var(--border-light)",fontSize:14,padding:"2px 3px",borderRadius:4,fontWeight:700,lineHeight:1,display:"flex"}}>←</button>
+            <button onClick={()=>indent(idx)} disabled={idx===0||item._depth>=2} title="Indent"
+              style={{background:"none",border:"none",cursor:idx>0&&item._depth<2?"pointer":"default",color:idx>0&&item._depth<2?"var(--muted)":"var(--border-light)",fontSize:14,padding:"2px 3px",borderRadius:4,fontWeight:700,lineHeight:1,display:"flex"}}>→</button>
+          </div>}
+          <button onClick={()=>removeRow(idx)} title="Remove"
+            style={{background:"none",border:"none",cursor:"pointer",color:"var(--muted)",fontSize:13,padding:"2px 3px",borderRadius:4,lineHeight:1,display:"flex",flexShrink:0}}>✕</button>
+        </div>
+
+        {showControls&&isTask&&item._selected&&(
+          <div style={{display:"flex",alignItems:"center",gap:8,paddingLeft:showDrag?24:8,paddingBottom:8,flexWrap:"wrap"}}>
+            <select value={item.category||""} onChange={e=>{
+              const v=e.target.value;
+              if(v==="__new__"){didCommit.current=false;setNewInputIdx(idx);setNewInputVal("");return;}
+              updateItem(idx,{category:v||null});
+            }} style={{fontSize:12,padding:"2px 6px",borderRadius:4,border:"1px solid var(--border)",background:"white",color:"var(--text)",cursor:"pointer",fontFamily:"inherit"}}>
+              <option value="">Inbox</option>
+              {allLists.filter(l=>l!=="Inbox").map(l=><option key={l} value={l}>{l}</option>)}
+              <option value="__new__">+ New list...</option>
+            </select>
+            {newInputIdx===idx&&(
+              <input autoFocus value={newInputVal} onChange={e=>setNewInputVal(e.target.value)}
+                placeholder="List name, Enter to save"
+                onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();commitNewList();}if(e.key==="Escape"){setNewInputIdx(null);setNewInputVal("");}}}
+                onBlur={()=>commitNewList()}
+                style={{fontSize:12,padding:"3px 8px",borderRadius:4,border:"1px solid var(--accent)",width:140,outline:"none",fontFamily:"inherit",background:"#fffbeb"}}/>
+            )}
+            <input type="date" value={item.date||results.page_date||""} onChange={e=>updateItem(idx,{date:e.target.value||null})}
+              style={{fontSize:12,padding:"2px 6px",borderRadius:4,border:"1px solid var(--border)",background:"white",color:"var(--text)",cursor:"pointer",fontFamily:"inherit"}}/>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  /* Section header */
+  const SectionHead=({icon,title,count,color,bg,children})=>(
+    <div style={{padding:"10px 12px",background:bg||"var(--surface)",borderRadius:10,marginBottom:2,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+      <span style={{fontSize:15}}>{icon}</span>
+      <span style={{fontSize:14,fontWeight:700,color:color||"var(--ink)"}}>{title}</span>
+      <span style={{fontSize:12,color:color||"var(--muted)",fontWeight:600}}>{count}</span>
+      {children}
+    </div>
+  );
 
   return (
     <Overlay onClose={onClose} wide>
       <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6}}>
         <span style={{color:"var(--accent)"}}>{Icons.sparkle}</span>
-        <h2 style={{margin:0,fontSize:19,fontFamily:"var(--font-display)"}}>Found {items.length} Item{items.length!==1?"s":""}</h2>
+        <h2 style={{margin:0,fontSize:19,fontFamily:"var(--font-display)"}}>Scanned {items.length} Item{items.length!==1?"s":""}</h2>
       </div>
-      <p style={{fontSize:13,color:"var(--muted)",margin:"0 0 8px"}}>Drag ⠿ to reorder, ← → to adjust nesting. Top-level = tasks, indented = subtasks.</p>
-      {results.page_date&&(<div style={{padding:"8px 12px",background:"var(--accent-bg)",borderRadius:8,marginBottom:14,fontSize:13,color:"var(--accent-dark)",display:"flex",alignItems:"center",gap:6}}>{Icons.calendar} Page dated {formatDate(results.page_date)}</div>)}
-      <div style={{flex:1,overflowY:"auto",marginBottom:20,maxHeight:"50vh"}}>
-        {items.map((item,idx)=>{
-          const isTask=item._depth===0;
-          const indentPx=item._depth*28;
-          const isDropTarget=dropIdx===idx&&dragIdx!==null&&dragIdx!==idx;
-          return (
-          <div key={item._id} data-scan-row
-            onDragOver={e=>onRowDragOver(e,idx)}
-            onDrop={e=>onRowDrop(e,idx)}
-            style={{paddingLeft:indentPx,borderBottom:isTask?"1px solid var(--border-light)":"none",
-              opacity:item._selected?1:0.3,transition:"opacity 0.15s,padding 0.15s",
-              borderTop:isDropTarget?"2px solid var(--accent)":"2px solid transparent",position:"relative"}}>
-            <div style={{display:"flex",alignItems:"center",gap:4,padding:isTask?"10px 4px":"4px 4px"}}>
-              {/* Drag handle */}
-              <span draggable
-                onDragStart={e=>onRowDragStart(e,idx)}
-                onDragEnd={onRowDragEnd}
-                style={{cursor:"grab",color:"var(--border)",fontSize:12,flexShrink:0,padding:"0 2px",userSelect:"none",touchAction:"none",lineHeight:1}}>⠿</span>
+      {results.page_date&&(<div style={{padding:"8px 12px",background:"var(--accent-bg)",borderRadius:8,marginBottom:10,fontSize:13,color:"var(--accent-dark)",display:"flex",alignItems:"center",gap:6}}>{Icons.calendar} Page dated {formatDate(results.page_date)}</div>)}
 
-              {/* Select checkbox */}
-              <div style={{flexShrink:0,paddingTop:1}}><Checkbox checked={item._selected} size={isTask?18:14} onChange={()=>toggle(idx)}/></div>
-              
-              {/* Depth indicator */}
-              {item._depth>0&&<span style={{fontSize:10,color:"var(--border)",flexShrink:0,width:14,textAlign:"center"}}>{item._depth===1?"↳":"↳↳"}</span>}
+      <div style={{flex:1,overflowY:"auto",marginBottom:16,maxHeight:"55vh"}}>
 
-              {/* Title */}
-              <input value={item.title} onChange={e=>updateItem(idx,{title:e.target.value})}
-                style={{flex:1,border:"1px solid transparent",borderRadius:6,padding:"3px 6px",
-                  fontSize:isTask?14:12,fontWeight:isTask?600:400,
-                  color:item.completed?"var(--muted)":"var(--ink)",background:"transparent",outline:"none",
-                  fontFamily:"inherit",boxSizing:"border-box",minWidth:0,
-                  textDecoration:item.completed?"line-through":"none"}}
-                onFocus={e=>{e.target.style.borderColor="var(--accent)";e.target.style.background="white";}}
-                onBlur={e=>{e.target.style.borderColor="transparent";e.target.style.background="transparent";}}/>
+        {/* ── Section 1: Tasks to add ── */}
+        {tasksToAdd.length>0&&(<>
+          <SectionHead icon="＋" title="Tasks to add" count={newTaskCount} color="var(--accent)" bg="rgba(217,119,6,0.06)"/>
+          <p style={{fontSize:12,color:"var(--muted)",margin:"4px 0 8px 12px"}}>Drag ⠿ to reorder, ← → to nest as subtasks</p>
+          <div style={{marginBottom:16}}>
+            {tasksToAdd.map(g=>[
+              renderEditableRow(g.root,g.rootIdx),
+              ...g.children.map(c=>renderEditableRow(c.item,c.idx))
+            ])}
+          </div>
+        </>)}
 
-              {/* Indent/outdent + remove buttons */}
-              <div style={{display:"flex",gap:1,flexShrink:0}}>
-                <button onClick={()=>outdent(idx)} disabled={item._depth<=0} title="Outdent (promote)"
-                  style={{background:"none",border:"none",cursor:item._depth>0?"pointer":"default",color:item._depth>0?"var(--muted)":"var(--border-light)",fontSize:14,padding:"2px 3px",borderRadius:4,fontWeight:700,lineHeight:1,display:"flex"}}>←</button>
-                <button onClick={()=>indent(idx)} disabled={idx===0||item._depth>=2} title="Indent (make subtask)"
-                  style={{background:"none",border:"none",cursor:idx>0&&item._depth<2?"pointer":"default",color:idx>0&&item._depth<2?"var(--muted)":"var(--border-light)",fontSize:14,padding:"2px 3px",borderRadius:4,fontWeight:700,lineHeight:1,display:"flex"}}>→</button>
-                <button onClick={()=>removeRow(idx)} title="Remove"
-                  style={{background:"none",border:"none",cursor:"pointer",color:"var(--muted)",fontSize:13,padding:"2px 3px",borderRadius:4,lineHeight:1,display:"flex"}}>✕</button>
-              </div>
-            </div>
+        {/* ── Section 2: Marking complete ── */}
+        {markingComplete.length>0&&(<>
+          <SectionHead icon="✓" title="Marking complete" count={completeCount} color="#166534" bg="rgba(34,197,94,0.08)"/>
+          <div style={{marginBottom:16}}>
+            {markingComplete.map(g=>{
+              const r=g.root; const idx=g.rootIdx;
+              const isMatch=!!r.is_duplicate_of;
+              return (
+                <div key={r._id} style={{padding:"8px 12px",borderBottom:"1px solid var(--border-light)",
+                  opacity:r._selected?1:0.3,transition:"opacity 0.15s",
+                  display:"flex",alignItems:"center",gap:8}}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                  <div style={{flex:1,minWidth:0}}>
+                    <span style={{fontSize:14,fontWeight:500,color:"var(--muted)",textDecoration:"line-through"}}>{r.title}</span>
+                    <div style={{display:"flex",gap:6,marginTop:2,alignItems:"center",flexWrap:"wrap"}}>
+                      {isMatch
+                        ?<span style={{fontSize:11,color:"#166534",fontWeight:600}}>Updates existing task</span>
+                        :<span style={{fontSize:11,color:"#166534",fontWeight:600}}>New completed task</span>}
+                      {r.category&&<span style={{fontSize:11,color:"var(--muted)"}}>{r.category}</span>}
+                    </div>
+                    {/* Show subtasks inline */}
+                    {g.children.length>0&&(
+                      <div style={{marginTop:4,paddingLeft:8}}>
+                        {g.children.map(c=>(
+                          <div key={c.item._id} style={{fontSize:12,color:"var(--muted)",padding:"1px 0"}}>
+                            <span style={{textDecoration:c.item.completed?"line-through":"none"}}>↳ {c.item.title}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  {r._selected
+                    ?<button onClick={()=>excludeItem(idx)} title="Don't import"
+                      style={{background:"none",border:"none",cursor:"pointer",color:"var(--muted)",fontSize:13,padding:"2px 4px",borderRadius:4,lineHeight:1,display:"flex",flexShrink:0}}>✕</button>
+                    :<button onClick={()=>restoreItem(idx)} title="Restore"
+                      style={{background:"none",border:"none",cursor:"pointer",color:"var(--accent)",fontSize:12,padding:"2px 6px",borderRadius:4,fontWeight:600,flexShrink:0}}>Undo</button>
+                  }
+                </div>
+              );
+            })}
+          </div>
+        </>)}
 
-            {/* Task-level controls: category, date, status badges */}
-            {isTask&&item._selected&&(
-              <div style={{display:"flex",alignItems:"center",gap:8,paddingLeft:30,paddingBottom:8,flexWrap:"wrap"}}>
-                <select value={item.category||""} onChange={e=>{
-                  const v=e.target.value;
-                  if(v==="__new__"){didCommit.current=false;setNewInputIdx(idx);setNewInputVal("");return;}
-                  updateItem(idx,{category:v||null});
-                }} style={{fontSize:12,padding:"2px 6px",borderRadius:4,border:"1px solid var(--border)",background:"white",color:"var(--text)",cursor:"pointer",fontFamily:"inherit"}}>
-                  <option value="">Inbox</option>
-                  {allLists.filter(l=>l!=="Inbox").map(l=><option key={l} value={l}>{l}</option>)}
-                  <option value="__new__">+ New list...</option>
-                </select>
-
-                {newInputIdx===idx&&(
-                  <input autoFocus value={newInputVal}
-                    onChange={e=>setNewInputVal(e.target.value)}
-                    placeholder="List name, Enter to save"
-                    onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();commitNewList();}if(e.key==="Escape"){setNewInputIdx(null);setNewInputVal("");}}}
-                    onBlur={()=>commitNewList()}
-                    style={{fontSize:12,padding:"3px 8px",borderRadius:4,border:"1px solid var(--accent)",width:140,outline:"none",fontFamily:"inherit",background:"#fffbeb"}}/>
-                )}
-
-                <input type="date" value={item.date||results.page_date||""} onChange={e=>updateItem(idx,{date:e.target.value||null})}
-                  style={{fontSize:12,padding:"2px 6px",borderRadius:4,border:"1px solid var(--border)",background:"white",color:"var(--text)",cursor:"pointer",fontFamily:"inherit"}}/>
-
-                {item.completed&&!item.is_duplicate_of&&<span style={{fontSize:11,background:"#dcfce7",color:"#166534",padding:"1px 7px",borderRadius:4,fontWeight:600}}>DONE</span>}
-                {item.is_duplicate_of&&item.completed&&<span style={{fontSize:11,background:"#dcfce7",color:"#166534",padding:"2px 8px",borderRadius:4,fontWeight:700,display:"flex",alignItems:"center",gap:4}}>✓ Will complete "{item.is_duplicate_of}"</span>}
-                {item.is_duplicate_of&&!item.completed&&<span style={{fontSize:11,background:"var(--surface)",color:"var(--muted)",padding:"2px 8px",borderRadius:4,fontWeight:600}}>↻ Already exists</span>}
+        {/* ── Section 3: Already in app ── */}
+        {alreadyInApp.length>0&&(
+          <div style={{marginBottom:8}}>
+            <button onClick={()=>setShowSkipped(!showSkipped)}
+              style={{display:"flex",alignItems:"center",gap:8,padding:"10px 12px",background:"var(--surface)",borderRadius:10,border:"none",cursor:"pointer",width:"100%",fontFamily:"inherit"}}>
+              <span style={{fontSize:15}}>↻</span>
+              <span style={{fontSize:14,fontWeight:700,color:"var(--muted)"}}>Already in app</span>
+              <span style={{fontSize:12,color:"var(--muted)"}}>{alreadyInApp.length}</span>
+              <span style={{marginLeft:"auto",fontSize:12,color:"var(--muted)",transform:showSkipped?"rotate(0)":"rotate(-90deg)",transition:"transform 0.15s",display:"flex"}}>{Icons.chevD}</span>
+            </button>
+            {showSkipped&&(
+              <div style={{padding:"4px 0"}}>
+                {alreadyInApp.map(g=>(
+                  <div key={g.root._id} style={{padding:"6px 12px 6px 40px",fontSize:13,color:"var(--muted)",display:"flex",alignItems:"center",gap:6}}>
+                    <span>↻</span> <span>{g.root.title}</span>
+                    <span style={{fontSize:11,fontStyle:"italic"}}>— no changes</span>
+                  </div>
+                ))}
               </div>
             )}
           </div>
-        );})}
+        )}
       </div>
+
+      {/* ── Footer ── */}
       <div style={{display:"flex",gap:10,flexShrink:0,alignItems:"center",flexWrap:"wrap"}}>
         <Btn variant="secondary" onClick={onClose}>Cancel</Btn>
-        <Btn onClick={()=>onConfirm(buildTree())}>Add {topLevelCount} Task{topLevelCount!==1?"s":""}</Btn>
-        {items.filter(it=>it._selected&&it._depth>0).length>0&&<span style={{fontSize:12,color:"var(--muted)"}}>{items.filter(it=>it._selected&&it._depth>0).length} subtask{items.filter(it=>it._selected&&it._depth>0).length!==1?"s":""}</span>}
-        {items.filter(it=>it._selected&&it.is_duplicate_of&&it.completed).length>0&&<span style={{fontSize:12,color:"#166534",fontWeight:600}}>✓ {items.filter(it=>it._selected&&it.is_duplicate_of&&it.completed).length} to complete</span>}
+        <Btn onClick={()=>onConfirm(buildTree())}>
+          {newTaskCount>0&&`Add ${newTaskCount}`}
+          {newTaskCount>0&&completeCount>0&&" · "}
+          {completeCount>0&&`Complete ${completeCount}`}
+          {newTaskCount===0&&completeCount===0&&"Nothing to import"}
+        </Btn>
       </div>
     </Overlay>
   );
