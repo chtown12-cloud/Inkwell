@@ -542,11 +542,13 @@ const InlineDatePicker = ({value, overdue, onChange}) => {
   );
 };
 
-/* Depth styling for subtask hierarchy visualization */
+/* Depth styling for subtask hierarchy — warm amber→orange→rose gradient
+   All backgrounds pass WCAG AA contrast (>4.5:1) against --text #44403c.
+   Borders 3px thick for clear visibility at every nesting level. */
 const DEPTH_STYLES = [
-  { border: "var(--accent)", bg: "transparent", prefix: "" },         // depth 0: direct subtasks
-  { border: "#94a3b8", bg: "rgba(0,0,0,0.02)", prefix: "↳ " },      // depth 1: sub-subtasks
-  { border: "#cbd5e1", bg: "rgba(0,0,0,0.03)", prefix: "↳↳ " },     // depth 2+
+  { border: "#b45309", bg: "rgba(217,119,6,0.06)",  prefix: "",     prefixColor: "#b45309" },  // depth 0: dark amber
+  { border: "#ea580c", bg: "rgba(234,88,12,0.08)",   prefix: "↳ ",  prefixColor: "#ea580c" },  // depth 1: orange
+  { border: "#dc2626", bg: "rgba(220,38,38,0.07)",   prefix: "↳↳ ", prefixColor: "#dc2626" },  // depth 2+: rose-red
 ];
 const getDepthStyle = (d) => DEPTH_STYLES[Math.min(d, DEPTH_STYLES.length - 1)];
 
@@ -557,8 +559,8 @@ const DraggableSubtaskTree = ({subtasks, onAction, onDragStart, onDragEnd, depth
   if(!subtasks?.length) return null;
   const ds = getDepthStyle(depth);
   return (
-    <div style={{marginLeft: depth > 0 ? 10 : 0, borderLeft: depth > 0 ? `2px solid ${ds.border}` : "none",
-      background: ds.bg, borderRadius: depth > 0 ? "0 6px 6px 0" : 0, paddingLeft: depth > 0 ? 8 : 0}}>
+    <div style={{marginLeft: depth > 0 ? 10 : 0, borderLeft: `3px solid ${ds.border}`,
+      background: ds.bg, borderRadius: "0 6px 6px 0", paddingLeft: 8}}>
       {subtasks.map(sub => {
         const childCount = countSubs(sub.subtasks);
         const hasChildren = (sub.subtasks||[]).length > 0;
@@ -569,7 +571,7 @@ const DraggableSubtaskTree = ({subtasks, onAction, onDragStart, onDragEnd, depth
               data-drag-id={sub.id} data-drag-source="subtask" data-drag-label={sub.title}
               style={{display:"flex",alignItems:"center",gap:8,padding:"4px 4px",fontSize:13,cursor:"grab",touchAction:"none"}}>
               <span style={{color:"var(--border)",flexShrink:0,cursor:"grab"}}>{Icons.grip}</span>
-              {depth > 0 && <span style={{fontSize:9,color:ds.border,flexShrink:0,fontWeight:700}}>{ds.prefix.trim()}</span>}
+              {depth > 0 && <span style={{fontSize:9,color:ds.prefixColor,flexShrink:0,fontWeight:700}}>{ds.prefix.trim()}</span>}
               <Checkbox checked={sub.completed} size={15} onChange={c=>onAction("update",sub.id,{completed:c,completedAt:c?new Date().toISOString():null})}/>
               <span style={{flex:1,color:sub.completed?"var(--muted)":"var(--text)",textDecoration:sub.completed?"line-through":"none",minWidth:0,fontSize:13}}>{sub.title}</span>
               {sub.dueDate&&<span style={{fontSize:10,color:isOverdue(sub.dueDate)?"#ef4444":"var(--muted)",fontWeight:500,flexShrink:0}}>{formatDate(sub.dueDate)}</span>}
@@ -623,8 +625,8 @@ const SubtaskTree = ({subtasks, onAction, onOpenSub, depth=0, compact=false}) =>
   useEffect(()=>{if(editingId&&editRef.current){editRef.current.focus();editRef.current.select();}},[editingId]);
 
   return (
-    <div style={{marginLeft: depth > 0 ? 12 : 0, borderLeft: depth > 0 ? `2px solid ${ds.border}` : "none",
-      background: ds.bg, borderRadius: depth > 0 ? "0 8px 8px 0" : 0, paddingLeft: depth > 0 ? 10 : 0}}>
+    <div style={{marginLeft: depth > 0 ? 12 : 0, borderLeft: `3px solid ${ds.border}`,
+      background: ds.bg, borderRadius: "0 8px 8px 0", paddingLeft: 10}}>
       {(subtasks||[]).map(sub => {
         const childCount = countSubs(sub.subtasks);
         const hasChildren = (sub.subtasks||[]).length > 0;
@@ -637,7 +639,7 @@ const SubtaskTree = ({subtasks, onAction, onOpenSub, depth=0, compact=false}) =>
               <Checkbox checked={sub.completed} size={compact?16:15} onChange={c=>onAction("update",sub.id,{completed:c,completedAt:c?new Date().toISOString():null})}/>
 
               {/* Depth prefix indicator */}
-              {depth > 0 && <span style={{fontSize:10,color:ds.border,flexShrink:0,fontWeight:700,lineHeight:1}}>{ds.prefix.trim()}</span>}
+              {depth > 0 && <span style={{fontSize:10,color:ds.prefixColor,flexShrink:0,fontWeight:700,lineHeight:1}}>{ds.prefix.trim()}</span>}
 
               {isEditing ? (
                 <input ref={editRef} value={editText} onChange={e=>setEditText(e.target.value)}
@@ -888,20 +890,23 @@ const ScanResultsModal = ({results,onConfirm,onClose,lists}) => {
     const isTask=item._depth===0;
     const indentPx=item._depth*28;
     const dt=dropTarget&&dropTarget.idx===idx&&dragIdx!==null&&dragIdx!==idx&&!dropTarget.section?dropTarget:null;
+    const scanDepthBg = item._depth > 0 ? getDepthStyle(item._depth).bg : "transparent";
     return (
       <div key={item._id} data-scan-row
         onDragOver={e=>onRowDragOver(e,idx)} onDrop={e=>onRowDrop(e,idx)}
         style={{paddingLeft:indentPx,borderBottom:isTask?"1px solid var(--border-light)":"none",
+          borderLeft:item._depth>0?`3px solid ${getDepthStyle(item._depth).border}`:"none",
           opacity:item._selected?1:0.3,transition:"opacity 0.15s,padding 0.15s",position:"relative",
-          background:dt?.zone==="nest"?"rgba(217,119,6,0.06)":"transparent",
-          outline:dt?.zone==="nest"?"2px dashed var(--accent)":"none",borderRadius:dt?.zone==="nest"?8:0}}>
+          background:dt?.zone==="nest"?"rgba(217,119,6,0.06)":scanDepthBg,
+          outline:dt?.zone==="nest"?"2px dashed var(--accent)":"none",borderRadius:dt?.zone==="nest"?8:item._depth>0?"0 4px 4px 0":0,
+          marginLeft:item._depth>0?4:0}}>
         {dt?.zone==="before"&&<div style={{position:"absolute",top:-1,left:8,right:8,height:2,background:"var(--accent)",borderRadius:1,zIndex:5}}/>}
         {dt?.zone==="after"&&<div style={{position:"absolute",bottom:-1,left:8,right:8,height:2,background:"var(--accent)",borderRadius:1,zIndex:5}}/>}
         {dt?.zone==="nest"&&<div style={{position:"absolute",left:indentPx+32,top:"50%",transform:"translateY(-50%)",fontSize:10,color:"var(--accent)",fontWeight:700,zIndex:5,pointerEvents:"none"}}>↳ nest</div>}
         <div style={{display:"flex",alignItems:"center",gap:4,padding:isTask?"10px 4px":"4px 4px"}}>
           <span draggable onDragStart={e=>onRowDragStart(e,idx)} onDragEnd={onRowDragEnd}
             style={{cursor:"grab",color:"var(--border)",fontSize:12,flexShrink:0,padding:"0 2px",userSelect:"none",touchAction:"none",lineHeight:1}}>⠿</span>
-          {item._depth>0&&<span style={{fontSize:10,color:"var(--border)",flexShrink:0,width:14,textAlign:"center"}}>{item._depth===1?"↳":"↳↳"}</span>}
+          {item._depth>0&&<span style={{fontSize:10,color:getDepthStyle(item._depth).prefixColor,flexShrink:0,width:14,textAlign:"center",fontWeight:700}}>{item._depth===1?"↳":"↳↳"}</span>}
           <input value={item.title} onChange={e=>updateItem(idx,{title:e.target.value})}
             style={{flex:1,border:"1px solid transparent",borderRadius:6,padding:"3px 6px",
               fontSize:isTask?14:12,fontWeight:isTask?600:400,
@@ -1004,10 +1009,11 @@ const ScanResultsModal = ({results,onConfirm,onClose,lists}) => {
                       {r.category&&<span style={{fontSize:11,color:"var(--muted)"}}>{r.category}</span>}
                     </div>
                     {g.children.length>0&&(
-                      <div style={{marginTop:4,paddingLeft:8}}>
+                      <div style={{marginTop:4,paddingLeft:8,borderLeft:"3px solid #d97706",borderRadius:"0 4px 4px 0",marginLeft:4}}>
                         {g.children.map(c=>(
-                          <div key={c.item._id} style={{fontSize:12,color:"var(--muted)",padding:"1px 0"}}>
-                            <span style={{textDecoration:c.item.completed?"line-through":"none"}}>↳ {c.item.title}</span>
+                          <div key={c.item._id} style={{fontSize:12,color:"var(--muted)",padding:"2px 0"}}>
+                            <span style={{color:"#d97706",fontWeight:700,fontSize:10,marginRight:4}}>↳</span>
+                            <span style={{textDecoration:c.item.completed?"line-through":"none"}}>{c.item.title}</span>
                           </div>
                         ))}
                       </div>
@@ -1196,7 +1202,7 @@ const TaskDetail = ({task, onUpdate, onDelete, onClose, lists}) => {
         {/* Subtasks — recursive, with clickable items to drill in */}
         <Field label={`Subtasks (${countSubs(current.subtasks).done}/${countSubs(current.subtasks).total})`}>
           {(current.subtasks||[]).length>0&&(
-            <div style={{background:"white",borderRadius:10,border:"1px solid var(--border)",overflow:"hidden",marginBottom:8,padding:"6px 12px"}}>
+            <div style={{background:"white",borderRadius:10,border:"1px solid var(--border)",marginBottom:8,padding:"6px 12px"}}>
               <SubtaskTree subtasks={current.subtasks} compact={true}
                 onAction={handleSubAction}
                 onOpenSub={(subId)=>setSubPath(p=>[...p, subId])}/>
