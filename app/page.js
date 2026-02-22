@@ -556,7 +556,7 @@ const DraggableSubtaskTree = ({subtasks, onAction, onDragStart, onDragEnd, depth
         const isOpen = openIds[sub.id];
         return (
           <div key={sub.id}>
-            <div draggable onDragStart={e=>onDragStart(e,sub,"subtask")} onDragEnd={onDragEnd}
+            <div draggable onDragStart={e=>{e.stopPropagation();onDragStart(e,sub,"subtask");}} onDragEnd={onDragEnd}
               data-drag-id={sub.id} data-drag-source="subtask" data-drag-label={sub.title}
               style={{display:"flex",alignItems:"center",gap:8,padding:"4px 0",fontSize:13,cursor:"grab",touchAction:"none"}}>
               <span style={{color:"var(--border)",flexShrink:0,cursor:"grab"}}>{Icons.grip}</span>
@@ -2173,15 +2173,12 @@ export default function InkwellApp() {
 
     if (dropType === "date" && dropValue) {
       if (dragSource === "subtask") {
-        setTasks(prev => {
-          let sub = null;
-          for (const t of prev) { sub = findSubById(t.subtasks, dragId); if (sub) break; }
-          if (!sub) return prev;
-          const cleaned = prev.map(t => ({...t, subtasks: removeSubById(t.subtasks||[], dragId)}));
-          const promoted = {id:sub.id,title:sub.title,completed:sub.completed||false,dueDate:dropValue,startDate:sub.startDate||null,endDate:sub.endDate||null,priority:sub.priority||"none",list:"Inbox",subtasks:sub.subtasks||[],notes:sub.notes||"",tags:sub.tags||[],createdAt:new Date().toISOString(),completedAt:null};
-          return [promoted,...cleaned];
-        });
-        flash("Promoted with date set");
+        setTasks(prev => prev.map(t => {
+          const found = findSubById(t.subtasks, dragId);
+          if (!found) return t;
+          return {...t, subtasks: updateSubById(t.subtasks, dragId, {dueDate: dropValue})};
+        }));
+        flash("Subtask due date updated");
       } else {
         setTasks(prev => prev.map(t => t.id === dragId ? {...t, dueDate: dropValue} : t));
         flash(`Due date set to ${formatDate(dropValue)}`);
@@ -2355,7 +2352,7 @@ export default function InkwellApp() {
                 onDragOver:e=>{e.preventDefault();e.currentTarget.style.background="var(--accent-bg)";e.currentTarget.style.outline="2px solid var(--accent)";e.currentTarget.style.borderRadius="10px";},
                 onDragLeave:e=>{e.currentTarget.style.background="";e.currentTarget.style.outline="";},
                 onDrop:e=>{e.preventDefault();e.currentTarget.style.background="";e.currentTarget.style.outline="";const tid=e.dataTransfer.getData("text/plain");if(!tid)return;const src=e.dataTransfer.getData("application/x-source");
-                  if(src==="subtask"){setTasks(prev=>{let sub=null;for(const t of prev){sub=findSubById(t.subtasks,tid);if(sub)break;}if(!sub)return prev;const cleaned=prev.map(t=>({...t,subtasks:removeSubById(t.subtasks||[],tid)}));const promoted={id:sub.id,title:sub.title,completed:sub.completed||false,dueDate:dateStr,startDate:sub.startDate||null,endDate:sub.endDate||null,priority:sub.priority||"none",list:"Inbox",subtasks:sub.subtasks||[],notes:sub.notes||"",tags:sub.tags||[],createdAt:new Date().toISOString(),completedAt:null};return[promoted,...cleaned];});flash(`Promoted to ${label}`);setIsDragging(false);}
+                  if(src==="subtask"){setTasks(prev=>prev.map(t=>{const found=findSubById(t.subtasks,tid);if(!found)return t;return{...t,subtasks:updateSubById(t.subtasks,tid,{dueDate:dateStr})};}));flash(`Subtask due ${label}`);setIsDragging(false);}
                   else{const ids=selectedIds.size>1&&selectedIds.has(tid)?selectedIds:new Set([tid]);setTasks(prev=>prev.map(t=>ids.has(t.id)?{...t,dueDate:dateStr}:t));flash(`Set ${ids.size>1?ids.size+" tasks":"task"} to ${label}`);setSelectedIds(new Set());setIsDragging(false);}
                 }
               });
