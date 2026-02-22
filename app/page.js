@@ -542,13 +542,12 @@ const InlineDatePicker = ({value, overdue, onChange}) => {
   );
 };
 
-/* Depth styling for subtask hierarchy — warm amber→orange→rose gradient
-   All backgrounds pass WCAG AA contrast (>4.5:1) against --text #44403c.
-   Borders 3px thick for clear visibility at every nesting level. */
+/* Depth styling for subtask hierarchy — warm amber→gold→honey gradient
+   No reds (avoids urgency connotation). All pass WCAG AA contrast. */
 const DEPTH_STYLES = [
   { border: "#b45309", bg: "rgba(217,119,6,0.06)",  prefix: "",     prefixColor: "#b45309" },  // depth 0: dark amber
-  { border: "#ea580c", bg: "rgba(234,88,12,0.08)",   prefix: "↳ ",  prefixColor: "#ea580c" },  // depth 1: orange
-  { border: "#dc2626", bg: "rgba(220,38,38,0.07)",   prefix: "↳↳ ", prefixColor: "#dc2626" },  // depth 2+: rose-red
+  { border: "#a16207", bg: "rgba(194,125,44,0.07)",  prefix: "↳ ",  prefixColor: "#a16207" },  // depth 1: golden
+  { border: "#a16207", bg: "rgba(202,138,4,0.06)",   prefix: "↳↳ ", prefixColor: "#92400e" },  // depth 2+: honey
 ];
 const getDepthStyle = (d) => DEPTH_STYLES[Math.min(d, DEPTH_STYLES.length - 1)];
 
@@ -1009,10 +1008,10 @@ const ScanResultsModal = ({results,onConfirm,onClose,lists}) => {
                       {r.category&&<span style={{fontSize:11,color:"var(--muted)"}}>{r.category}</span>}
                     </div>
                     {g.children.length>0&&(
-                      <div style={{marginTop:4,paddingLeft:8,borderLeft:"3px solid #d97706",borderRadius:"0 4px 4px 0",marginLeft:4}}>
+                      <div style={{marginTop:4,paddingLeft:8,borderLeft:"3px solid #b45309",borderRadius:"0 4px 4px 0",marginLeft:4}}>
                         {g.children.map(c=>(
                           <div key={c.item._id} style={{fontSize:12,color:"var(--muted)",padding:"2px 0"}}>
-                            <span style={{color:"#d97706",fontWeight:700,fontSize:10,marginRight:4}}>↳</span>
+                            <span style={{color:"#b45309",fontWeight:700,fontSize:10,marginRight:4}}>↳</span>
                             <span style={{textDecoration:c.item.completed?"line-through":"none"}}>{c.item.title}</span>
                           </div>
                         ))}
