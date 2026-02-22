@@ -713,10 +713,9 @@ const PhotoModal = ({onClose,onProcess,processing}) => {
 };
 
 /* ═══════════════════════════════════════════════════════════════════════
-   SCAN RESULTS MODAL — new lists persist across all dropdowns
+   SCAN RESULTS MODAL — outcome sections, zone-based drag (before/nest/after)
    ═══════════════════════════════════════════════════════════════════════ */
 const ScanResultsModal = ({results,onConfirm,onClose,lists}) => {
-  /* Flatten tree into [{title, completed, category, date, is_duplicate_of, _depth, _selected, _id}] */
   const [items,setItems]=useState(()=>{
     const flat=[];let id=0;
     const walk=(arr,depth)=>{
@@ -725,142 +724,169 @@ const ScanResultsModal = ({results,onConfirm,onClose,lists}) => {
         walk(it.subtasks,depth+1);
       });
     };
-    walk(results.items,0);
-    return flat;
+    walk(results.items,0);return flat;
   });
   const [localLists,setLocalLists]=useState([]);
   const [newInputIdx,setNewInputIdx]=useState(null);
   const [newInputVal,setNewInputVal]=useState("");
   const didCommit=useRef(false);
   const [dragIdx,setDragIdx]=useState(null);
-  const [dropIdx,setDropIdx]=useState(null);
+  const [dropTarget,setDropTarget]=useState(null); /* {idx, zone:'before'|'nest'|'after'} or {section:'complete'|'skip'} */
   const [showSkipped,setShowSkipped]=useState(false);
 
-  const allLists = [...lists, ...localLists.filter(l=>!lists.includes(l))];
+  const allLists=[...lists,...localLists.filter(l=>!lists.includes(l))];
   const updateItem=(idx,changes)=>setItems(prev=>prev.map((it,i)=>i===idx?{...it,...changes}:it));
-  const excludeItem=(idx)=>updateItem(idx,{_selected:false});
-  const restoreItem=(idx)=>updateItem(idx,{_selected:true});
 
-  /* Get the range of an item + its children */
   const getItemRange=(idx)=>{
-    const baseDepth=items[idx]._depth;
-    let end=idx+1;
-    while(end<items.length && items[end]._depth>baseDepth) end++;
+    const base=items[idx]._depth;let end=idx+1;
+    while(end<items.length&&items[end]._depth>base) end++;
     return [idx,end];
   };
 
-  /* Indent/outdent */
   const indent=(idx)=>{
-    if(idx===0) return;
-    const item=items[idx];
-    if(item._depth>=2) return;
-    const prev=items[idx-1];
-    if(prev._depth<item._depth) return;
+    if(idx===0) return;const item=items[idx];if(item._depth>=2) return;
+    const prev=items[idx-1];if(prev._depth<item._depth) return;
     updateItem(idx,{_depth:item._depth+1});
   };
   const outdent=(idx)=>{
-    const item=items[idx];
-    if(item._depth<=0) return;
+    const item=items[idx];if(item._depth<=0) return;
     setItems(prev=>{
-      const next=[...prev];
-      const oldDepth=next[idx]._depth;
-      next[idx]={...next[idx],_depth:oldDepth-1};
-      for(let i=idx+1;i<next.length;i++){
-        if(next[i]._depth<=oldDepth) break;
-        next[i]={...next[i],_depth:next[i]._depth-1};
-      }
+      const next=[...prev];const old=next[idx]._depth;
+      next[idx]={...next[idx],_depth:old-1};
+      for(let i=idx+1;i<next.length;i++){if(next[i]._depth<=old)break;next[i]={...next[i],_depth:next[i]._depth-1};}
       return next;
     });
   };
-  const removeRow=(idx)=>{
-    const [start,end]=getItemRange(idx);
-    setItems(prev=>prev.filter((_,i)=>i<start||i>=end));
-  };
+  const removeRow=(idx)=>{const[s,e]=getItemRange(idx);setItems(prev=>prev.filter((_,i)=>i<s||i>=e));};
 
-  /* Drag reorder (only used in "Tasks to add" section) */
+  /* ── Zone-based drag: before / nest / after ── */
   const onRowDragStart=(e,idx)=>{
     setDragIdx(idx);e.dataTransfer.effectAllowed="move";e.dataTransfer.setData("text/plain",String(idx));
     requestAnimationFrame(()=>{const el=e.target.closest("[data-scan-row]");if(el)el.style.opacity="0.4";});
   };
-  const onRowDragEnd=(e)=>{const el=e.target.closest("[data-scan-row]");if(el)el.style.opacity="";setDragIdx(null);setDropIdx(null);};
-  const onRowDragOver=(e,idx)=>{e.preventDefault();e.dataTransfer.dropEffect="move";if(dragIdx===null||idx===dragIdx)return;setDropIdx(idx);};
+  const onRowDragEnd=(e)=>{
+    const el=e.target.closest("[data-scan-row]");if(el)el.style.opacity="";
+    setDragIdx(null);setDropTarget(null);
+  };
+  const onRowDragOver=(e,idx)=>{
+    e.preventDefault();e.dataTransfer.dropEffect="move";
+    if(dragIdx===null||idx===dragIdx){setDropTarget(null);return;}
+    const [ds,de]=getItemRange(dragIdx);
+    if(idx>=ds&&idx<de){setDropTarget(null);return;}
+    const rect=e.currentTarget.getBoundingClientRect();
+    const y=(e.clientY-rect.top)/rect.height;
+    const zone=y<0.25?"before":y>0.75?"after":"nest";
+    setDropTarget({idx,zone});
+  };
   const onRowDrop=(e,targetIdx)=>{
     e.preventDefault();
-    if(dragIdx===null||dragIdx===targetIdx){setDragIdx(null);setDropIdx(null);return;}
+    if(dragIdx===null||!dropTarget||dropTarget.section){setDragIdx(null);setDropTarget(null);return;}
     const [start,end]=getItemRange(dragIdx);
-    const chunk=items.slice(start,end);
-    if(targetIdx>=start&&targetIdx<end){setDragIdx(null);setDropIdx(null);return;}
+    if(targetIdx>=start&&targetIdx<end){setDragIdx(null);setDropTarget(null);return;}
+    const zone=dropTarget.zone;
+
     setItems(prev=>{
-      const without=[...prev];without.splice(start,end-start);
-      let insertAt=targetIdx>start?targetIdx-(end-start):targetIdx;
-      const rect=e.currentTarget.getBoundingClientRect();
-      if((e.clientY-rect.top)/rect.height>0.5) insertAt++;
-      without.splice(insertAt,0,...chunk);return without;
+      const next=[...prev];
+      const chunk=next.splice(start,end-start);
+      /* Adjust target after removal */
+      let ti=targetIdx>start?targetIdx-(end-start):targetIdx;
+      const target=next[ti];
+
+      if(zone==="nest"){
+        /* Nest: set depth to target+1, clamp children */
+        const newBase=Math.min((target?._depth||0)+1,2);
+        const shift=newBase-chunk[0]._depth;
+        const adjusted=chunk.map(c=>({...c,_depth:Math.min(Math.max(c._depth+shift,0),2)}));
+        /* Insert after target + its children */
+        let ins=ti+1;
+        while(ins<next.length&&next[ins]._depth>(target?._depth||0)) ins++;
+        next.splice(ins,0,...adjusted);
+      } else {
+        const insertAt=zone==="before"?ti:ti+1;
+        /* Match depth to context */
+        const ctxDepth=target?._depth||0;
+        const shift=ctxDepth-chunk[0]._depth;
+        const adjusted=chunk.map(c=>({...c,_depth:Math.min(Math.max(c._depth+shift,0),2)}));
+        next.splice(insertAt,0,...adjusted);
+      }
+      return next;
     });
-    setDragIdx(null);setDropIdx(null);
+    setDragIdx(null);setDropTarget(null);
   };
 
-  /* Reconstruct tree from flat list for confirm */
+  /* ── Section drops: drag into Marking Complete or Already In App ── */
+  const onSectionDragOver=(e)=>{e.preventDefault();e.dataTransfer.dropEffect="move";};
+  const onSectionDrop=(e,section)=>{
+    e.preventDefault();
+    if(dragIdx===null) return;
+    const item=items[dragIdx];
+    if(section==="complete"){
+      updateItem(dragIdx,{completed:true,_depth:0});
+    } else if(section==="skip"){
+      updateItem(dragIdx,{is_duplicate_of:item.is_duplicate_of||item.title,completed:false,_depth:0});
+      setShowSkipped(true);
+    } else if(section==="add"){
+      /* Drag back from complete/skip to tasks-to-add */
+      updateItem(dragIdx,{completed:false,is_duplicate_of:null,_depth:0});
+    }
+    setDragIdx(null);setDropTarget(null);
+  };
+
+  /* Reconstruct tree */
   const buildTree=()=>{
     const roots=[];const stack=[{children:roots,depth:-1}];
     items.forEach(it=>{
       if(!it._selected) return;
       const node={title:it.title,completed:it.completed,category:it._depth===0?it.category:null,date:it._depth===0?it.date:null,is_duplicate_of:it._depth===0?it.is_duplicate_of:null,subtasks:[]};
-      while(stack.length>1 && stack[stack.length-1].depth>=it._depth) stack.pop();
+      while(stack.length>1&&stack[stack.length-1].depth>=it._depth) stack.pop();
       stack[stack.length-1].children.push(node);
       stack.push({children:node.subtasks,depth:it._depth});
     });
     return roots;
   };
 
-  const commitNewList = () => {
-    if(didCommit.current) return;
-    didCommit.current=true;
+  const commitNewList=()=>{
+    if(didCommit.current) return;didCommit.current=true;
     const val=newInputVal.trim();const idx=newInputIdx;
     if(val&&idx!==null){if(!lists.includes(val)&&!localLists.includes(val))setLocalLists(prev=>[...prev,val]);updateItem(idx,{category:val});}
     setNewInputIdx(null);setNewInputVal("");setTimeout(()=>{didCommit.current=false;},50);
   };
 
-  /* ── Group items into runs (each depth-0 starts a new group) ── */
+  /* ── Group & categorize ── */
   const groups=[];
   items.forEach((it,idx)=>{
     if(it._depth===0) groups.push({root:it,rootIdx:idx,children:[]});
     else if(groups.length>0) groups[groups.length-1].children.push({item:it,idx});
   });
-
-  /* Categorize groups by outcome */
-  const tasksToAdd=[];    /* new incomplete tasks */
-  const markingComplete=[]; /* completed tasks (new or matched) */
-  const alreadyInApp=[];  /* pure duplicates, unchanged */
-
+  const tasksToAdd=[];const markingComplete=[];const alreadyInApp=[];
   groups.forEach(g=>{
     const r=g.root;
-    if(r.is_duplicate_of && !r.completed) alreadyInApp.push(g);
+    if(r.is_duplicate_of&&!r.completed) alreadyInApp.push(g);
     else if(r.completed) markingComplete.push(g);
     else tasksToAdd.push(g);
   });
-
   const newTaskCount=tasksToAdd.filter(g=>g.root._selected).length;
   const completeCount=markingComplete.filter(g=>g.root._selected).length;
 
-  /* ── Render helpers ── */
-  const renderEditableRow=(item,idx,{showDrag=true,showIndent=true,showControls=true}={})=>{
+  /* ── Row renderer with zone indicators ── */
+  const renderRow=(item,idx,{showControls=true}={})=>{
     const isTask=item._depth===0;
     const indentPx=item._depth*28;
-    const isDropTarget=dropIdx===idx&&dragIdx!==null&&dragIdx!==idx;
+    const dt=dropTarget&&dropTarget.idx===idx&&dragIdx!==null&&dragIdx!==idx&&!dropTarget.section?dropTarget:null;
     return (
       <div key={item._id} data-scan-row
-        onDragOver={showDrag?e=>onRowDragOver(e,idx):undefined}
-        onDrop={showDrag?e=>onRowDrop(e,idx):undefined}
+        onDragOver={e=>onRowDragOver(e,idx)} onDrop={e=>onRowDrop(e,idx)}
         style={{paddingLeft:indentPx,borderBottom:isTask?"1px solid var(--border-light)":"none",
-          opacity:item._selected?1:0.3,transition:"opacity 0.15s,padding 0.15s",
-          borderTop:isDropTarget?"2px solid var(--accent)":"2px solid transparent",position:"relative"}}>
+          opacity:item._selected?1:0.3,transition:"opacity 0.15s,padding 0.15s",position:"relative",
+          background:dt?.zone==="nest"?"rgba(217,119,6,0.06)":"transparent",
+          outline:dt?.zone==="nest"?"2px dashed var(--accent)":"none",borderRadius:dt?.zone==="nest"?8:0}}>
+        {dt?.zone==="before"&&<div style={{position:"absolute",top:-1,left:8,right:8,height:2,background:"var(--accent)",borderRadius:1,zIndex:5}}/>}
+        {dt?.zone==="after"&&<div style={{position:"absolute",bottom:-1,left:8,right:8,height:2,background:"var(--accent)",borderRadius:1,zIndex:5}}/>}
+        {dt?.zone==="nest"&&<div style={{position:"absolute",left:indentPx+32,top:"50%",transform:"translateY(-50%)",fontSize:10,color:"var(--accent)",fontWeight:700,zIndex:5,pointerEvents:"none"}}>↳ nest</div>}
         <div style={{display:"flex",alignItems:"center",gap:4,padding:isTask?"10px 4px":"4px 4px"}}>
-          {showDrag&&<span draggable onDragStart={e=>onRowDragStart(e,idx)} onDragEnd={onRowDragEnd}
-            style={{cursor:"grab",color:"var(--border)",fontSize:12,flexShrink:0,padding:"0 2px",userSelect:"none",touchAction:"none",lineHeight:1}}>⠿</span>}
-
+          <span draggable onDragStart={e=>onRowDragStart(e,idx)} onDragEnd={onRowDragEnd}
+            style={{cursor:"grab",color:"var(--border)",fontSize:12,flexShrink:0,padding:"0 2px",userSelect:"none",touchAction:"none",lineHeight:1}}>⠿</span>
           {item._depth>0&&<span style={{fontSize:10,color:"var(--border)",flexShrink:0,width:14,textAlign:"center"}}>{item._depth===1?"↳":"↳↳"}</span>}
-
           <input value={item.title} onChange={e=>updateItem(idx,{title:e.target.value})}
             style={{flex:1,border:"1px solid transparent",borderRadius:6,padding:"3px 6px",
               fontSize:isTask?14:12,fontWeight:isTask?600:400,
@@ -869,19 +895,17 @@ const ScanResultsModal = ({results,onConfirm,onClose,lists}) => {
               textDecoration:item.completed?"line-through":"none"}}
             onFocus={e=>{e.target.style.borderColor="var(--accent)";e.target.style.background="white";}}
             onBlur={e=>{e.target.style.borderColor="transparent";e.target.style.background="transparent";}}/>
-
-          {showIndent&&<div style={{display:"flex",gap:1,flexShrink:0}}>
+          <div style={{display:"flex",gap:1,flexShrink:0}}>
             <button onClick={()=>outdent(idx)} disabled={item._depth<=0} title="Outdent"
               style={{background:"none",border:"none",cursor:item._depth>0?"pointer":"default",color:item._depth>0?"var(--muted)":"var(--border-light)",fontSize:14,padding:"2px 3px",borderRadius:4,fontWeight:700,lineHeight:1,display:"flex"}}>←</button>
             <button onClick={()=>indent(idx)} disabled={idx===0||item._depth>=2} title="Indent"
               style={{background:"none",border:"none",cursor:idx>0&&item._depth<2?"pointer":"default",color:idx>0&&item._depth<2?"var(--muted)":"var(--border-light)",fontSize:14,padding:"2px 3px",borderRadius:4,fontWeight:700,lineHeight:1,display:"flex"}}>→</button>
-          </div>}
-          <button onClick={()=>removeRow(idx)} title="Remove"
-            style={{background:"none",border:"none",cursor:"pointer",color:"var(--muted)",fontSize:13,padding:"2px 3px",borderRadius:4,lineHeight:1,display:"flex",flexShrink:0}}>✕</button>
+            <button onClick={()=>removeRow(idx)} title="Remove"
+              style={{background:"none",border:"none",cursor:"pointer",color:"var(--muted)",fontSize:13,padding:"2px 3px",borderRadius:4,lineHeight:1,display:"flex",flexShrink:0}}>✕</button>
+          </div>
         </div>
-
         {showControls&&isTask&&item._selected&&(
-          <div style={{display:"flex",alignItems:"center",gap:8,paddingLeft:showDrag?24:8,paddingBottom:8,flexWrap:"wrap"}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,paddingLeft:24,paddingBottom:8,flexWrap:"wrap"}}>
             <select value={item.category||""} onChange={e=>{
               const v=e.target.value;
               if(v==="__new__"){didCommit.current=false;setNewInputIdx(idx);setNewInputVal("");return;}
@@ -900,21 +924,14 @@ const ScanResultsModal = ({results,onConfirm,onClose,lists}) => {
             )}
             <input type="date" value={item.date||results.page_date||""} onChange={e=>updateItem(idx,{date:e.target.value||null})}
               style={{fontSize:12,padding:"2px 6px",borderRadius:4,border:"1px solid var(--border)",background:"white",color:"var(--text)",cursor:"pointer",fontFamily:"inherit"}}/>
+            {item.completed&&<span style={{fontSize:11,background:"#dcfce7",color:"#166534",padding:"1px 7px",borderRadius:4,fontWeight:600}}>✓ done</span>}
           </div>
         )}
       </div>
     );
   };
 
-  /* Section header */
-  const SectionHead=({icon,title,count,color,bg,children})=>(
-    <div style={{padding:"10px 12px",background:bg||"var(--surface)",borderRadius:10,marginBottom:2,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-      <span style={{fontSize:15}}>{icon}</span>
-      <span style={{fontSize:14,fontWeight:700,color:color||"var(--ink)"}}>{title}</span>
-      <span style={{fontSize:12,color:color||"var(--muted)",fontWeight:600}}>{count}</span>
-      {children}
-    </div>
-  );
+  const isDragging=dragIdx!==null;
 
   return (
     <Overlay onClose={onClose} wide>
@@ -927,38 +944,50 @@ const ScanResultsModal = ({results,onConfirm,onClose,lists}) => {
       <div style={{flex:1,overflowY:"auto",marginBottom:16,maxHeight:"55vh"}}>
 
         {/* ── Section 1: Tasks to add ── */}
-        {tasksToAdd.length>0&&(<>
-          <SectionHead icon="＋" title="Tasks to add" count={newTaskCount} color="var(--accent)" bg="rgba(217,119,6,0.06)"/>
-          <p style={{fontSize:12,color:"var(--muted)",margin:"4px 0 8px 12px"}}>Drag ⠿ to reorder, ← → to nest as subtasks</p>
+        <div onDragOver={isDragging?onSectionDragOver:undefined} onDrop={isDragging?e=>onSectionDrop(e,"add"):undefined}
+          style={{padding:"10px 12px",background:isDragging?"rgba(217,119,6,0.1)":"rgba(217,119,6,0.06)",borderRadius:10,marginBottom:2,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",transition:"background 0.15s"}}>
+          <span style={{fontSize:15}}>＋</span>
+          <span style={{fontSize:14,fontWeight:700,color:"var(--accent)"}}>Tasks to add</span>
+          <span style={{fontSize:12,color:"var(--accent)",fontWeight:600}}>{newTaskCount}</span>
+          {isDragging&&<span style={{fontSize:11,color:"var(--accent)",fontStyle:"italic",marginLeft:4}}>Drop to add as task</span>}
+        </div>
+        <p style={{fontSize:12,color:"var(--muted)",margin:"4px 0 8px 12px"}}>Drag onto a task to nest, between to reorder, or to a section header</p>
+        {tasksToAdd.length>0&&(
           <div style={{marginBottom:16}}>
             {tasksToAdd.map(g=>[
-              renderEditableRow(g.root,g.rootIdx),
-              ...g.children.map(c=>renderEditableRow(c.item,c.idx))
+              renderRow(g.root,g.rootIdx),
+              ...g.children.map(c=>renderRow(c.item,c.idx))
             ])}
           </div>
-        </>)}
+        )}
+        {tasksToAdd.length===0&&<div style={{padding:"12px",fontSize:13,color:"var(--muted)",fontStyle:"italic",marginBottom:16}}>No new tasks to add</div>}
 
         {/* ── Section 2: Marking complete ── */}
-        {markingComplete.length>0&&(<>
-          <SectionHead icon="✓" title="Marking complete" count={completeCount} color="#166534" bg="rgba(34,197,94,0.08)"/>
+        <div onDragOver={isDragging?onSectionDragOver:undefined} onDrop={isDragging?e=>onSectionDrop(e,"complete"):undefined}
+          style={{padding:"10px 12px",background:isDragging?"rgba(34,197,94,0.15)":"rgba(34,197,94,0.08)",borderRadius:10,marginBottom:2,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",transition:"background 0.15s"}}>
+          <span style={{fontSize:15}}>✓</span>
+          <span style={{fontSize:14,fontWeight:700,color:"#166534"}}>Marking complete</span>
+          <span style={{fontSize:12,color:"#166534",fontWeight:600}}>{completeCount}</span>
+          {isDragging&&<span style={{fontSize:11,color:"#166534",fontStyle:"italic",marginLeft:4}}>Drop to mark done</span>}
+        </div>
+        {markingComplete.length>0&&(
           <div style={{marginBottom:16}}>
             {markingComplete.map(g=>{
-              const r=g.root; const idx=g.rootIdx;
+              const r=g.root;const idx=g.rootIdx;
               const isMatch=!!r.is_duplicate_of;
               return (
                 <div key={r._id} style={{padding:"8px 12px",borderBottom:"1px solid var(--border-light)",
-                  opacity:r._selected?1:0.3,transition:"opacity 0.15s",
-                  display:"flex",alignItems:"center",gap:8}}>
+                  opacity:r._selected?1:0.3,transition:"opacity 0.15s",display:"flex",alignItems:"center",gap:8}}>
+                  <span draggable onDragStart={e=>onRowDragStart(e,idx)} onDragEnd={onRowDragEnd}
+                    style={{cursor:"grab",color:"var(--border)",fontSize:12,flexShrink:0,padding:"0 2px",userSelect:"none",lineHeight:1}}>⠿</span>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
                   <div style={{flex:1,minWidth:0}}>
                     <span style={{fontSize:14,fontWeight:500,color:"var(--muted)",textDecoration:"line-through"}}>{r.title}</span>
                     <div style={{display:"flex",gap:6,marginTop:2,alignItems:"center",flexWrap:"wrap"}}>
-                      {isMatch
-                        ?<span style={{fontSize:11,color:"#166534",fontWeight:600}}>Updates existing task</span>
+                      {isMatch?<span style={{fontSize:11,color:"#166534",fontWeight:600}}>Updates existing task</span>
                         :<span style={{fontSize:11,color:"#166534",fontWeight:600}}>New completed task</span>}
                       {r.category&&<span style={{fontSize:11,color:"var(--muted)"}}>{r.category}</span>}
                     </div>
-                    {/* Show subtasks inline */}
                     {g.children.length>0&&(
                       <div style={{marginTop:4,paddingLeft:8}}>
                         {g.children.map(c=>(
@@ -970,49 +999,49 @@ const ScanResultsModal = ({results,onConfirm,onClose,lists}) => {
                     )}
                   </div>
                   {r._selected
-                    ?<button onClick={()=>excludeItem(idx)} title="Don't import"
+                    ?<button onClick={()=>updateItem(idx,{_selected:false})} title="Exclude"
                       style={{background:"none",border:"none",cursor:"pointer",color:"var(--muted)",fontSize:13,padding:"2px 4px",borderRadius:4,lineHeight:1,display:"flex",flexShrink:0}}>✕</button>
-                    :<button onClick={()=>restoreItem(idx)} title="Restore"
+                    :<button onClick={()=>updateItem(idx,{_selected:true})} title="Restore"
                       style={{background:"none",border:"none",cursor:"pointer",color:"var(--accent)",fontSize:12,padding:"2px 6px",borderRadius:4,fontWeight:600,flexShrink:0}}>Undo</button>
                   }
                 </div>
               );
             })}
           </div>
-        </>)}
+        )}
+        {markingComplete.length===0&&<div style={{padding:"8px 12px",fontSize:13,color:"var(--muted)",fontStyle:"italic",marginBottom:16}}>None</div>}
 
-        {/* ── Section 3: Already in app ── */}
-        {alreadyInApp.length>0&&(
-          <div style={{marginBottom:8}}>
-            <button onClick={()=>setShowSkipped(!showSkipped)}
-              style={{display:"flex",alignItems:"center",gap:8,padding:"10px 12px",background:"var(--surface)",borderRadius:10,border:"none",cursor:"pointer",width:"100%",fontFamily:"inherit"}}>
-              <span style={{fontSize:15}}>↻</span>
-              <span style={{fontSize:14,fontWeight:700,color:"var(--muted)"}}>Already in app</span>
-              <span style={{fontSize:12,color:"var(--muted)"}}>{alreadyInApp.length}</span>
-              <span style={{marginLeft:"auto",fontSize:12,color:"var(--muted)",transform:showSkipped?"rotate(0)":"rotate(-90deg)",transition:"transform 0.15s",display:"flex"}}>{Icons.chevD}</span>
-            </button>
-            {showSkipped&&(
-              <div style={{padding:"4px 0"}}>
-                {alreadyInApp.map(g=>(
-                  <div key={g.root._id} style={{padding:"6px 12px 6px 40px",fontSize:13,color:"var(--muted)",display:"flex",alignItems:"center",gap:6}}>
-                    <span>↻</span> <span>{g.root.title}</span>
-                    <span style={{fontSize:11,fontStyle:"italic"}}>— no changes</span>
-                  </div>
-                ))}
+        {/* ── Section 3: Already in app (collapsible) ── */}
+        <button onClick={()=>setShowSkipped(!showSkipped)}
+          onDragOver={isDragging?e=>{e.preventDefault();e.dataTransfer.dropEffect="move";if(!showSkipped)setShowSkipped(true);}:undefined}
+          onDrop={isDragging?e=>onSectionDrop(e,"skip"):undefined}
+          style={{display:"flex",alignItems:"center",gap:8,padding:"10px 12px",
+            background:isDragging?"rgba(120,120,120,0.12)":"var(--surface)",
+            borderRadius:10,border:"none",cursor:"pointer",width:"100%",fontFamily:"inherit",transition:"background 0.15s"}}>
+          <span style={{fontSize:15}}>↻</span>
+          <span style={{fontSize:14,fontWeight:700,color:"var(--muted)"}}>Already in app</span>
+          <span style={{fontSize:12,color:"var(--muted)"}}>{alreadyInApp.length}</span>
+          {isDragging&&<span style={{fontSize:11,color:"var(--muted)",fontStyle:"italic",marginLeft:4}}>Drop to skip</span>}
+          <span style={{marginLeft:"auto",fontSize:12,color:"var(--muted)",transform:showSkipped?"rotate(0)":"rotate(-90deg)",transition:"transform 0.15s",display:"flex"}}>{Icons.chevD}</span>
+        </button>
+        {showSkipped&&alreadyInApp.length>0&&(
+          <div style={{padding:"4px 0",marginBottom:8}}>
+            {alreadyInApp.map(g=>(
+              <div key={g.root._id} style={{padding:"6px 12px 6px 20px",fontSize:13,color:"var(--muted)",display:"flex",alignItems:"center",gap:6}}>
+                <span draggable onDragStart={e=>onRowDragStart(e,g.rootIdx)} onDragEnd={onRowDragEnd}
+                  style={{cursor:"grab",color:"var(--border)",fontSize:12,userSelect:"none",lineHeight:1}}>⠿</span>
+                <span>↻</span><span>{g.root.title}</span>
+                <span style={{fontSize:11,fontStyle:"italic"}}>— no changes</span>
               </div>
-            )}
+            ))}
           </div>
         )}
       </div>
 
-      {/* ── Footer ── */}
       <div style={{display:"flex",gap:10,flexShrink:0,alignItems:"center",flexWrap:"wrap"}}>
         <Btn variant="secondary" onClick={onClose}>Cancel</Btn>
         <Btn onClick={()=>onConfirm(buildTree())}>
-          {newTaskCount>0&&`Add ${newTaskCount}`}
-          {newTaskCount>0&&completeCount>0&&" · "}
-          {completeCount>0&&`Complete ${completeCount}`}
-          {newTaskCount===0&&completeCount===0&&"Nothing to import"}
+          {newTaskCount>0?`Add ${newTaskCount}`:""}{newTaskCount>0&&completeCount>0?" · ":""}{completeCount>0?`Complete ${completeCount}`:""}{newTaskCount===0&&completeCount===0?"Nothing to import":""}
         </Btn>
       </div>
     </Overlay>
@@ -1260,7 +1289,25 @@ Personal
 /* ═══════════════════════════════════════════════════════════════════════
    KANBAN BOARD — editable columns with configurable names & dates
    ═══════════════════════════════════════════════════════════════════════ */
-const KanbanBoard = ({tasks, columns, onColumnsChange, onResetColumns, onSelect, onUpdate, onToggle, flash, setIsDragging, animatingTasks}) => {
+
+/* Collect subtasks (any depth) that have their own dueDate */
+const collectDatedSubtasks = (tasks) => {
+  const results = [];
+  const walk = (subs, parentTask, breadcrumb) => {
+    (subs || []).forEach(sub => {
+      if (sub.dueDate && !sub.completed) {
+        results.push({ _type: "subtask", sub, parentTask, breadcrumb: [...breadcrumb, sub.title] });
+      }
+      walk(sub.subtasks, parentTask, [...breadcrumb, sub.title]);
+    });
+  };
+  tasks.forEach(t => {
+    if (!t.completed) walk(t.subtasks, t, [t.title]);
+  });
+  return results;
+};
+
+const KanbanBoard = ({tasks, columns, onColumnsChange, onResetColumns, onSelect, onUpdate, onToggle, onUpdateSubtask, flash, setIsDragging, animatingTasks}) => {
   const [hoverCol, setHoverCol] = useState(null);
   const [editingCol, setEditingCol] = useState(null);
   const [editName, setEditName] = useState("");
@@ -1268,11 +1315,20 @@ const KanbanBoard = ({tasks, columns, onColumnsChange, onResetColumns, onSelect,
 
   const overdueTasks = useMemo(() => tasks.filter(t => !t.completed && t.dueDate && t.dueDate < todayStr()), [tasks]);
 
+  /* Collect subtasks with own due dates */
+  const datedSubs = useMemo(() => collectDatedSubtasks(tasks), [tasks]);
+
   const byDate = useMemo(() => {
     const map = {};
-    columns.forEach(c => { map[c.dateStr] = tasks.filter(t => !t.completed && t.dueDate === c.dateStr); });
+    const colDates = new Set(columns.map(c => c.dateStr));
+    columns.forEach(c => {
+      const directTasks = tasks.filter(t => !t.completed && t.dueDate === c.dateStr);
+      /* Add surfaced subtasks whose dueDate matches this column AND parent task isn't already in this column */
+      const surfaced = datedSubs.filter(ds => ds.sub.dueDate === c.dateStr && ds.parentTask.dueDate !== c.dateStr);
+      map[c.dateStr] = { tasks: directTasks, subtasks: surfaced };
+    });
     return map;
-  }, [tasks, columns]);
+  }, [tasks, columns, datedSubs]);
 
   const onColDragOver = (e, ds) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; setHoverCol(ds); };
   const onColDrop = (e, ds) => {
@@ -1321,7 +1377,10 @@ const KanbanBoard = ({tasks, columns, onColumnsChange, onResetColumns, onSelect,
         </div>
       )}
       {columns.map(col => {
-        const colTasks = byDate[col.dateStr] || [];
+        const colData = byDate[col.dateStr] || { tasks: [], subtasks: [] };
+        const colTasks = colData.tasks;
+        const colSubs = colData.subtasks;
+        const totalItems = colTasks.length + colSubs.length;
         const isHover = hoverCol === col.dateStr;
         const isToday = col.dateStr === todayStr();
         const isEditing = editingCol === col.id;
@@ -1351,16 +1410,20 @@ const KanbanBoard = ({tasks, columns, onColumnsChange, onResetColumns, onSelect,
               ) : (
                 <div onClick={()=>startEdit(col)} style={{cursor:"pointer"}} title="Click to edit column">
                   <div style={{fontSize:14,fontWeight:700,color:isToday?"var(--accent)":"var(--ink)"}}>{col.name}</div>
-                  <div style={{fontSize:12,color:"var(--muted)",marginTop:2}}>{formatDate(col.dateStr)} · {colTasks.length} task{colTasks.length !== 1 ? "s" : ""}</div>
+                  <div style={{fontSize:12,color:"var(--muted)",marginTop:2}}>{formatDate(col.dateStr)} · {totalItems} task{totalItems !== 1 ? "s" : ""}</div>
                 </div>
               )}
             </div>
             <div style={{flex:1,overflowY:"auto",padding:8,minHeight:100}}>
-              {colTasks.length === 0 && (
+              {totalItems === 0 && (
                 <div style={{textAlign:"center",padding:"24px 8px",color:"var(--muted)",fontSize:12,fontStyle:"italic"}}>Drop tasks here</div>
               )}
               {colTasks.map(t => (
                 <KanbanCard key={t.id} task={t} onSelect={onSelect} onToggle={onToggle} onDragBegin={setIsDragging} animateState={animatingTasks?.[t.id]} />
+              ))}
+              {colSubs.length > 0 && colTasks.length > 0 && <div style={{borderTop:"1px dashed var(--border)",margin:"6px 0"}} />}
+              {colSubs.map(ds => (
+                <SubtaskKanbanCard key={ds.sub.id} subInfo={ds} onSelect={onSelect} onToggleSub={onUpdateSubtask} />
               ))}
             </div>
           </div>
@@ -1408,6 +1471,35 @@ const KanbanCard = ({task, onSelect, onToggle, onDragBegin, animateState}) => {
             {task.notes && <span style={{color:"#cbd5e1",display:"flex",transform:"scale(0.8)"}}>{Icons.note}</span>}
             {(task.subtasks||[]).length > 0 && (() => { const {total,done} = countSubs(task.subtasks); return <span style={{fontSize:10,color:done===total?"#16a34a":"var(--muted)"}}>{Icons.subtask} {done}/{total}</span>; })()}
             <span style={{fontSize:10,color:"var(--muted)",background:"var(--surface)",padding:"1px 5px",borderRadius:3}}>{task.list}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/* Surfaced subtask card — shows a subtask on the kanban with parent breadcrumb */
+const SubtaskKanbanCard = ({subInfo, onSelect, onToggleSub}) => {
+  const {sub, parentTask, breadcrumb} = subInfo;
+  const parentLabel = breadcrumb.length > 1 ? breadcrumb.slice(0, -1).join(" › ") : parentTask.title;
+  const pc = PRIORITY[sub.priority || "none"].color;
+  return (
+    <div onClick={() => onSelect(parentTask)}
+      style={{padding:"10px 12px",background:"white",borderRadius:10,marginBottom:6,cursor:"pointer",touchAction:"none",
+        borderLeft:`3px solid ${pc}`,boxShadow:"0 1px 3px rgba(0,0,0,0.04)",
+        border:"1px dashed var(--border)",transition:"box-shadow 0.15s"}}>
+      <div style={{display:"flex",alignItems:"flex-start",gap:8}}>
+        <div style={{paddingTop:1}}>
+          <Checkbox checked={sub.completed} priority={sub.priority} size={16}
+            onChange={()=>onToggleSub(parentTask.id, sub.id)}/>
+        </div>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:13,fontWeight:500,color:"var(--ink)",lineHeight:1.4,wordWrap:"break-word"}}>{sub.title}</div>
+          <div style={{display:"flex",alignItems:"center",gap:4,marginTop:3,flexWrap:"wrap"}}>
+            <span style={{fontSize:10,color:"var(--accent)",fontWeight:500,display:"flex",alignItems:"center",gap:2}}>
+              ↳ {parentLabel}
+            </span>
+            <span style={{fontSize:10,color:"var(--muted)",background:"var(--surface)",padding:"1px 5px",borderRadius:3}}>{parentTask.list}</span>
           </div>
         </div>
       </div>
@@ -2403,7 +2495,7 @@ export default function InkwellApp() {
                 <button onClick={()=>setTodayMode("kanban")} style={{padding:"5px 12px",borderRadius:6,border:"none",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:todayMode==="kanban"?"white":"transparent",color:todayMode==="kanban"?"var(--ink)":"var(--muted)",boxShadow:todayMode==="kanban"?"0 1px 3px rgba(0,0,0,0.08)":"none",transition:"all 0.15s"}}>Board</button>
                 <button onClick={()=>setTodayMode("list")} style={{padding:"5px 12px",borderRadius:6,border:"none",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:todayMode==="list"?"white":"transparent",color:todayMode==="list"?"var(--ink)":"var(--muted)",boxShadow:todayMode==="list"?"0 1px 3px rgba(0,0,0,0.08)":"none",transition:"all 0.15s"}}>List</button>
               </div>
-              <div style={{flex:1,minHeight:0}}><KanbanBoard tasks={tasks} columns={activeKanbanCols} onColumnsChange={setKanbanColumns} onResetColumns={kanbanColumns?resetKanbanCols:null} onSelect={t=>setSelectedTask(t)} onUpdate={updateTask} onToggle={toggleTask} flash={flash} setIsDragging={setIsDragging} animatingTasks={animatingTasks}/></div>
+              <div style={{flex:1,minHeight:0}}><KanbanBoard tasks={tasks} columns={activeKanbanCols} onColumnsChange={setKanbanColumns} onResetColumns={kanbanColumns?resetKanbanCols:null} onSelect={t=>setSelectedTask(t)} onUpdate={updateTask} onToggle={toggleTask} onUpdateSubtask={(taskId,subId)=>{setTasks(prev=>prev.map(t=>t.id!==taskId?t:{...t,subtasks:updateSubById(t.subtasks,subId,{completed:!findSubById(t.subtasks,subId)?.completed,completedAt:!findSubById(t.subtasks,subId)?.completed?new Date().toISOString():null})}));}} flash={flash} setIsDragging={setIsDragging} animatingTasks={animatingTasks}/></div>
             </div>):(<>
               {view!=="completed"&&(<div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",background:"white",borderRadius:14,border:"1px solid var(--border)",marginBottom:view==="today"?10:16,boxShadow:"0 1px 3px rgba(0,0,0,0.04)"}}>
                 <span style={{color:"var(--accent)",flexShrink:0}}>{Icons.plus}</span>
