@@ -542,28 +542,39 @@ const InlineDatePicker = ({value, overdue, onChange}) => {
   );
 };
 
+/* Depth styling for subtask hierarchy visualization */
+const DEPTH_STYLES = [
+  { border: "var(--accent)", bg: "transparent", prefix: "" },         // depth 0: direct subtasks
+  { border: "#94a3b8", bg: "rgba(0,0,0,0.02)", prefix: "↳ " },      // depth 1: sub-subtasks
+  { border: "#cbd5e1", bg: "rgba(0,0,0,0.03)", prefix: "↳↳ " },     // depth 2+
+];
+const getDepthStyle = (d) => DEPTH_STYLES[Math.min(d, DEPTH_STYLES.length - 1)];
+
 /* Subtasks in TaskRow — draggable to promote to task */
 const DraggableSubtaskTree = ({subtasks, onAction, onDragStart, onDragEnd, depth=0}) => {
   const [openIds, setOpenIds] = useState({});
   const toggle = id => setOpenIds(p=>({...p,[id]:!p[id]}));
   if(!subtasks?.length) return null;
-  const indent = Math.min(depth * 18, 54);
+  const ds = getDepthStyle(depth);
   return (
-    <div style={{paddingLeft:indent}}>
+    <div style={{marginLeft: depth > 0 ? 10 : 0, borderLeft: depth > 0 ? `2px solid ${ds.border}` : "none",
+      background: ds.bg, borderRadius: depth > 0 ? "0 6px 6px 0" : 0, paddingLeft: depth > 0 ? 8 : 0}}>
       {subtasks.map(sub => {
         const childCount = countSubs(sub.subtasks);
         const hasChildren = (sub.subtasks||[]).length > 0;
-        const isOpen = openIds[sub.id];
+        const isOpen = openIds[sub.id] !== false;
         return (
           <div key={sub.id}>
             <div draggable onDragStart={e=>{e.stopPropagation();onDragStart(e,sub,"subtask");}} onDragEnd={onDragEnd}
               data-drag-id={sub.id} data-drag-source="subtask" data-drag-label={sub.title}
-              style={{display:"flex",alignItems:"center",gap:8,padding:"4px 0",fontSize:13,cursor:"grab",touchAction:"none"}}>
+              style={{display:"flex",alignItems:"center",gap:8,padding:"4px 4px",fontSize:13,cursor:"grab",touchAction:"none"}}>
               <span style={{color:"var(--border)",flexShrink:0,cursor:"grab"}}>{Icons.grip}</span>
-              <Checkbox checked={sub.completed} size={15} onChange={c=>onAction("update",sub.id,{completed:c})}/>
+              {depth > 0 && <span style={{fontSize:9,color:ds.border,flexShrink:0,fontWeight:700}}>{ds.prefix.trim()}</span>}
+              <Checkbox checked={sub.completed} size={15} onChange={c=>onAction("update",sub.id,{completed:c,completedAt:c?new Date().toISOString():null})}/>
               <span style={{flex:1,color:sub.completed?"var(--muted)":"var(--text)",textDecoration:sub.completed?"line-through":"none",minWidth:0,fontSize:13}}>{sub.title}</span>
+              {sub.dueDate&&<span style={{fontSize:10,color:isOverdue(sub.dueDate)?"#ef4444":"var(--muted)",fontWeight:500,flexShrink:0}}>{formatDate(sub.dueDate)}</span>}
               {hasChildren && (
-                <button onClick={()=>toggle(sub.id)} style={{background:"none",border:"none",cursor:"pointer",padding:2,color:"var(--muted)",display:"flex",alignItems:"center",gap:2,fontSize:11,fontFamily:"inherit"}}>
+                <button onClick={e=>{e.stopPropagation();toggle(sub.id);}} style={{background:"none",border:"none",cursor:"pointer",padding:2,color:"var(--muted)",display:"flex",alignItems:"center",gap:2,fontSize:11,fontFamily:"inherit",flexShrink:0}}>
                   {childCount.done}/{childCount.total}
                   <span style={{transform:isOpen?"rotate(0)":"rotate(-90deg)",transition:"transform 0.15s",display:"flex"}}>{Icons.chevD}</span>
                 </button>
@@ -596,6 +607,7 @@ const ToggleRow = ({label, sublabel, checked, onChange}) => (
 
 /* ═══════════════════════════════════════════════════════════════════════
    RECURSIVE SUBTASK TREE (infinite nesting, editable titles, clickable)
+   Visual depth cues: left border color, background tint, nesting prefix
    ═══════════════════════════════════════════════════════════════════════ */
 const SubtaskTree = ({subtasks, onAction, onOpenSub, depth=0, compact=false}) => {
   const [openIds, setOpenIds] = useState({});
@@ -606,23 +618,27 @@ const SubtaskTree = ({subtasks, onAction, onOpenSub, depth=0, compact=false}) =>
   const editRef = useRef(null);
   const toggle = id => setOpenIds(p=>({...p,[id]:!p[id]}));
   if(!subtasks?.length && !compact) return null;
-  const indent = compact ? 0 : Math.min(depth * 20, 60);
+  const ds = getDepthStyle(depth);
 
   useEffect(()=>{if(editingId&&editRef.current){editRef.current.focus();editRef.current.select();}},[editingId]);
 
   return (
-    <div style={{paddingLeft:indent}}>
+    <div style={{marginLeft: depth > 0 ? 12 : 0, borderLeft: depth > 0 ? `2px solid ${ds.border}` : "none",
+      background: ds.bg, borderRadius: depth > 0 ? "0 8px 8px 0" : 0, paddingLeft: depth > 0 ? 10 : 0}}>
       {(subtasks||[]).map(sub => {
         const childCount = countSubs(sub.subtasks);
         const hasChildren = (sub.subtasks||[]).length > 0;
-        const isOpen = openIds[sub.id];
+        const isOpen = openIds[sub.id] !== false; /* default open */
         const isEditing = editingId===sub.id;
         return (
           <div key={sub.id}>
-            <div style={{display:"flex",alignItems:"center",gap:8,padding:compact?"6px 0":"4px 0",fontSize:compact?14:13}}>
-              <Checkbox checked={sub.completed} size={compact?16:15} onChange={c=>onAction("update",sub.id,{completed:c})}/>
+            <div style={{display:"flex",alignItems:"center",gap:8,padding:compact?"7px 4px":"5px 4px",fontSize:compact?14:13,
+              borderBottom:"1px solid var(--border-light)"}}>
+              <Checkbox checked={sub.completed} size={compact?16:15} onChange={c=>onAction("update",sub.id,{completed:c,completedAt:c?new Date().toISOString():null})}/>
 
-              {/* Title: double-click to edit inline, single-click to open details */}
+              {/* Depth prefix indicator */}
+              {depth > 0 && <span style={{fontSize:10,color:ds.border,flexShrink:0,fontWeight:700,lineHeight:1}}>{ds.prefix.trim()}</span>}
+
               {isEditing ? (
                 <input ref={editRef} value={editText} onChange={e=>setEditText(e.target.value)}
                   onClick={e=>e.stopPropagation()}
@@ -636,22 +652,21 @@ const SubtaskTree = ({subtasks, onAction, onOpenSub, depth=0, compact=false}) =>
                   title={compact?"Click to edit details · Double-click to rename":"Double-click to rename"}
                   style={{flex:1,color:sub.completed?"var(--muted)":"var(--text)",textDecoration:sub.completed?"line-through":"none",
                     cursor:compact?"pointer":"default",minWidth:0,
-                    borderRadius:4,padding:"1px 4px",transition:"background 0.1s",
-                    ...(compact?{":hover":{background:"var(--surface)"}}:{})}}>
+                    borderRadius:4,padding:"1px 4px",transition:"background 0.1s"}}>
                   {sub.title}
                 </span>
               )}
 
               {sub.priority&&sub.priority!=="none"&&<span style={{width:6,height:6,borderRadius:"50%",background:PRIORITY[sub.priority].color,flexShrink:0}}/>}
-              {sub.dueDate&&<span style={{fontSize:10,color:isOverdue(sub.dueDate)?"#ef4444":"var(--muted)",fontWeight:500}}>{formatDate(sub.dueDate)}</span>}
+              {sub.dueDate&&<span style={{fontSize:10,color:isOverdue(sub.dueDate)?"#ef4444":"var(--muted)",fontWeight:500,flexShrink:0,whiteSpace:"nowrap"}}>{formatDate(sub.dueDate)}</span>}
               {hasChildren && (
-                <button onClick={e=>{e.stopPropagation();toggle(sub.id);}} style={{background:"none",border:"none",cursor:"pointer",padding:2,color:"var(--muted)",display:"flex",alignItems:"center",gap:2,fontSize:11,fontFamily:"inherit"}}>
+                <button onClick={e=>{e.stopPropagation();toggle(sub.id);}} style={{background:"none",border:"none",cursor:"pointer",padding:2,color:"var(--muted)",display:"flex",alignItems:"center",gap:2,fontSize:11,fontFamily:"inherit",flexShrink:0}}>
                   {childCount.done}/{childCount.total}
                   <span style={{transform:isOpen?"rotate(0)":"rotate(-90deg)",transition:"transform 0.15s",display:"flex"}}>{Icons.chevD}</span>
                 </button>
               )}
               {compact && (
-                <button onClick={e=>{e.stopPropagation();setAddingTo(addingTo===sub.id?null:sub.id);setAddText("");}} style={{background:"none",border:"none",cursor:"pointer",padding:2,color:"var(--muted)",display:"flex"}} title="Add sub-subtask">
+                <button onClick={e=>{e.stopPropagation();setAddingTo(addingTo===sub.id?null:sub.id);setAddText("");}} style={{background:"none",border:"none",cursor:"pointer",padding:2,color:"var(--muted)",display:"flex",flexShrink:0}} title="Add sub-subtask">
                   {Icons.plus}
                 </button>
               )}
@@ -1095,7 +1110,7 @@ const TaskDetail = ({task, onUpdate, onDelete, onClose, lists}) => {
 
   return (
     <div className="detail-panel" role="complementary" aria-label="Task details"
-      style={{width:380,borderLeft:"1px solid var(--border)",background:"var(--bg)",display:"flex",flexDirection:"column",height:"100%",flexShrink:0,animation:"slideIn 0.2s ease"}}>
+      style={{width:"33vw",minWidth:380,maxWidth:520,borderLeft:"1px solid var(--border)",background:"var(--bg)",display:"flex",flexDirection:"column",height:"100%",flexShrink:0,animation:"slideIn 0.2s ease"}}>
       {/* Header */}
       <div style={{padding:"12px 20px",borderBottom:"1px solid var(--border)",display:"flex",justifyContent:"space-between",alignItems:"center",minHeight:48}}>
         <div style={{display:"flex",alignItems:"center",gap:6,flex:1,minWidth:0}}>
@@ -1808,6 +1823,37 @@ const TaskRow = ({task,isActive,isSelected,onSelect,onToggle,onUpdateTask,onDrag
   );
 };
 
+/* Surfaced subtask row for list views (Today/Upcoming) */
+const SurfacedSubtaskRow = ({task, onSelect, onToggleSub, view, lists, animateState}) => {
+  const parentLabel = task._breadcrumb.slice(0, -1).join(" › ");
+  const lc = getListColor(task.list, lists);
+  return (
+    <div onClick={() => onSelect(task._parentTask)}
+      style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",
+        borderRadius:10,cursor:"pointer",transition:"background 0.1s",
+        borderLeft:"3px dashed var(--border)",marginLeft:4,
+        animation:animateState==="complete"?"taskComplete 0.7s ease forwards":animateState==="uncomplete"?"taskUncomplete 0.6s ease forwards":"none"}}
+      onMouseEnter={e=>e.currentTarget.style.background="var(--active-bg)"}
+      onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+      <div style={{animation:animateState?"checkPop 0.45s ease":"none"}} onClick={e=>e.stopPropagation()}>
+        <Checkbox checked={task.completed} priority={task.priority} size={18}
+          onChange={()=>onToggleSub(task._parentTask.id, task.id)} animating={!!animateState}/>
+      </div>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{fontSize:14,fontWeight:500,color:task.completed?"var(--muted)":"var(--ink)",
+          textDecoration:task.completed?"line-through":"none",lineHeight:1.4}}>{task.title}</div>
+        <div style={{display:"flex",alignItems:"center",gap:6,marginTop:2,flexWrap:"wrap"}}>
+          <span style={{fontSize:11,color:"var(--accent)",fontWeight:500,display:"flex",alignItems:"center",gap:2}}>
+            ↳ {parentLabel}
+          </span>
+          {view!=="today"&&task.dueDate&&<span style={{fontSize:11,color:isOverdue(task.dueDate)?"#ef4444":"var(--muted)",display:"flex",alignItems:"center",gap:3}}>{Icons.calendar} {formatDate(task.dueDate)}</span>}
+          <span style={{fontSize:11,fontWeight:600,color:lc,background:`${lc}14`,padding:"0 6px",borderRadius:3}}>{task.list}</span>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 /* ═══════════════════════════════════════════════════════════════════════
    MAIN APP
    ═══════════════════════════════════════════════════════════════════════ */
@@ -2249,11 +2295,30 @@ export default function InkwellApp() {
   const filtered=useMemo(()=>{let f=tasks;
     if(search){const q=search.toLowerCase();f=f.filter(t=>t.title.toLowerCase().includes(q)||(t.notes||"").toLowerCase().includes(q)||(t.tags||[]).some(tg=>tg.toLowerCase().includes(q)));}
     else{switch(view){case"today":f=f.filter(t=>t.dueDate===todayStr()||(!t.dueDate&&t.createdAt?.startsWith(todayStr())));break;case"upcoming":f=f.filter(t=>!t.completed&&t.dueDate&&t.dueDate>=todayStr());f.sort((a,b)=>(a.dueDate||"").localeCompare(b.dueDate||""));break;case"all":break;case"completed":return f.filter(t=>t.completed).sort((a,b)=>(b.completedAt||"").localeCompare(a.completedAt||""));case"inbox":f=f.filter(t=>t.list==="Inbox");break;default:if(view.startsWith("list:"))f=f.filter(t=>t.list===view.replace("list:",""));}}
-    return[...f.filter(t=>!t.completed),...f.filter(t=>t.completed)];
+    const result=[...f.filter(t=>!t.completed),...f.filter(t=>t.completed)];
+    /* Surface subtasks with their own due dates in Today/Upcoming views */
+    if(view==="today"||view==="upcoming"){
+      const dated=collectDatedSubtasks(tasks);
+      const surfaced=dated.filter(ds=>{
+        /* Only surface if parent's dueDate differs from subtask's — otherwise subtask is visible in parent's row */
+        if(ds.parentTask.dueDate===ds.sub.dueDate) return false;
+        if(view==="today") return ds.sub.dueDate===todayStr();
+        return ds.sub.dueDate&&ds.sub.dueDate>=todayStr();
+      }).map(ds=>({...ds.sub, _surfacedSub:true, _parentTask:ds.parentTask, _breadcrumb:ds.breadcrumb, list:ds.parentTask.list}));
+      /* Insert surfaced subs among incomplete tasks (before completed separator) */
+      const firstCompleted=result.findIndex(t=>t.completed);
+      const insertAt=firstCompleted===-1?result.length:firstCompleted;
+      result.splice(insertAt,0,...surfaced);
+    }
+    return result;
   },[tasks,view,search]);
 
   const overdueCount=useMemo(()=>tasks.filter(t=>!t.completed&&isOverdue(t.dueDate)).length,[tasks]);
-  const todayCount=useMemo(()=>tasks.filter(t=>!t.completed&&t.dueDate===todayStr()).length,[tasks]);
+  const todayCount=useMemo(()=>{
+    const direct=tasks.filter(t=>!t.completed&&t.dueDate===todayStr()).length;
+    const subs=collectDatedSubtasks(tasks).filter(ds=>ds.sub.dueDate===todayStr()&&ds.parentTask.dueDate!==todayStr()).length;
+    return direct+subs;
+  },[tasks]);
 
   /* Keyboard shortcuts — must be after filtered/bulkDelete definitions */
   useEffect(()=>{const h=e=>{if(["INPUT","TEXTAREA","SELECT"].includes(e.target.tagName))return;if(e.key==="n"&&!e.metaKey){e.preventDefault();document.getElementById("quick-add")?.focus();}if(e.key==="/"||((e.metaKey||e.ctrlKey)&&e.key==="f")){e.preventDefault();setShowSearch(true);}if(e.key==="b"&&!e.metaKey&&!e.ctrlKey){setSidebar(s=>!s);}if(e.key==="?")setShowShortcuts(s=>!s);if(e.key==="Escape"){setShowSearch(false);setSearch("");setSelectedTask(null);setShowShortcuts(false);setShowTips(false);setSelectedIds(new Set());}if(e.key==="a"&&(e.metaKey||e.ctrlKey)){e.preventDefault();setSelectedIds(new Set(filtered.map(t=>t.id)));}if((e.key==="Delete"||e.key==="Backspace")&&selectedIds.size>0&&!e.metaKey){bulkDelete();}};window.addEventListener("keydown",h);return()=>window.removeEventListener("keydown",h);},[filtered,selectedIds]);
@@ -2331,7 +2396,7 @@ export default function InkwellApp() {
         @keyframes toastIn{from{opacity:0;transform:translate(-50%,20px)}to{opacity:1;transform:translate(-50%,0)}}
         button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
         [draggable]{user-select:none;}
-        @media(max-width:768px){.sidebar{position:fixed!important;z-index:100!important;height:100vh!important;}.detail-panel{position:fixed!important;right:0;top:0;height:100vh!important;z-index:100;width:100%!important;max-width:420px;}}
+        @media(max-width:768px){.sidebar{position:fixed!important;z-index:100!important;height:100vh!important;}.detail-panel{position:fixed!important;right:0;top:0;height:100vh!important;z-index:100;width:100%!important;max-width:100%!important;min-width:0!important;}}
       `}</style>
 
       {isMobile&&sidebar&&<div onClick={()=>setSidebar(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.3)",zIndex:99}}/>}
@@ -2506,7 +2571,10 @@ export default function InkwellApp() {
               )}
               {filtered.length===0?(<div style={{textAlign:"center",padding:"50px 20px",color:"var(--muted)"}}><div style={{fontSize:44,marginBottom:14,opacity:0.4}}>{view==="completed"?"🎉":view==="today"?"☀️":search?"🔍":"📋"}</div><div style={{fontSize:16,fontWeight:600,marginBottom:4}}>{view==="completed"?"No completed tasks yet":search?"No matching tasks":"All clear!"}</div><div style={{fontSize:14}}>Add a task above or scan a notebook page</div></div>):(
                 <div role="list" aria-label="Tasks">
-                  {filtered.map((task,i)=>{const prev=i>0?filtered[i-1]:null;const showSep=task.completed&&prev&&!prev.completed;
+                  {filtered.map((task,i)=>{const prev=i>0?filtered[i-1]:null;const showSep=task.completed&&!task._surfacedSub&&prev&&!prev.completed;
+                    if(task._surfacedSub) return(<div key={`sub-${task.id}`} role="listitem">
+                      <SurfacedSubtaskRow task={task} onSelect={t=>setSelectedTask(t)} onToggleSub={(taskId,subId)=>{setTasks(prev=>prev.map(t=>t.id!==taskId?t:{...t,subtasks:updateSubById(t.subtasks,subId,{completed:!findSubById(t.subtasks,subId)?.completed,completedAt:!findSubById(t.subtasks,subId)?.completed?new Date().toISOString():null})}));}} view={view} lists={lists} animateState={animatingTasks[task.id]}/>
+                    </div>);
                     return(<div key={task.id} role="listitem">
                       {showSep&&(<div style={{display:"flex",alignItems:"center",gap:10,padding:"12px 12px 8px",marginTop:8}}><div style={{height:1,flex:1,background:"var(--border)"}}/><span style={{fontSize:12,fontWeight:600,color:"var(--muted)",textTransform:"uppercase",letterSpacing:0.8}}>Completed</span><div style={{height:1,flex:1,background:"var(--border)"}}/></div>)}
                       <TaskRow task={task} isActive={selectedTask?.id===task.id} isSelected={selectedIds.has(task.id)} onSelect={handleTaskClick} onToggle={toggleTask} onUpdateTask={updateTask} view={view} lists={lists} onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop} onDragEnd={onDragEnd} dropTarget={dropTarget?.id===task.id?dropTarget:null} animateState={animatingTasks[task.id]}/>
@@ -2517,7 +2585,7 @@ export default function InkwellApp() {
           </div>
           {selectedTask&&!isMobile&&<TaskDetail task={selectedTask} onUpdate={updateTask} onDelete={deleteTask} onClose={()=>setSelectedTask(null)} lists={lists}/>}
         </div>
-        {selectedTask&&isMobile&&(<div style={{position:"fixed",inset:0,background:"rgba(15,23,42,0.4)",zIndex:100,display:"flex",justifyContent:"flex-end"}} onClick={()=>setSelectedTask(null)}><div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:420}}><TaskDetail task={selectedTask} onUpdate={updateTask} onDelete={deleteTask} onClose={()=>setSelectedTask(null)} lists={lists}/></div></div>)}
+        {selectedTask&&isMobile&&(<div style={{position:"fixed",inset:0,background:"rgba(15,23,42,0.4)",zIndex:100,display:"flex",justifyContent:"flex-end"}} onClick={()=>setSelectedTask(null)}><div onClick={e=>e.stopPropagation()} style={{width:"100%"}}><TaskDetail task={selectedTask} onUpdate={updateTask} onDelete={deleteTask} onClose={()=>setSelectedTask(null)} lists={lists}/></div></div>)}
       </main>
 
       {showPhoto&&<PhotoModal onClose={()=>setShowPhoto(false)} onProcess={handleScan} processing={processing}/>}
