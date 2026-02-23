@@ -11,16 +11,20 @@ function useSupabaseSync() {
   const [authError, setAuthError] = useState(null);
   const saveTimer = useRef(null);
 
+  const accessTokenRef = useRef(null);
+
   useEffect(() => {
     if (!supabase) { setAuthLoading(false); return; }
 
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
+      accessTokenRef.current = session?.access_token ?? null;
       setAuthLoading(false);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
+      accessTokenRef.current = session?.access_token ?? null;
     });
 
     return () => subscription.unsubscribe();
@@ -69,10 +73,10 @@ function useSupabaseSync() {
         .from("user_data")
         .upsert({ user_id: user.id, tasks, lists, settings, updated_at: new Date().toISOString() }, { onConflict: "user_id" });
       if (error) console.warn("Cloud save failed:", error.message);
-    }, 1500); /* debounce 1.5s */
+    }, 800); /* debounce 800ms — fast enough for cross-device */
   }, [user]);
 
-  /* Immediate (non-debounced) cloud save — for flush on tab close */
+  /* Immediate (non-debounced) cloud save — for flush on tab hide */
   const saveToCloudNow = useCallback(async (tasks, lists, settings) => {
     if (!supabase || !user) return;
     clearTimeout(saveTimer.current);
@@ -83,7 +87,29 @@ function useSupabaseSync() {
     } catch(e) { /* best effort */ }
   }, [user]);
 
-  return { user, authLoading, authError, signInWithEmail, signInWithPassword, signOut, loadFromCloud, saveToCloud, saveToCloudNow, hasSupabase: !!supabase };
+  /* keepalive flush for beforeunload — survives page close/refresh */
+  const flushToCloudKeepalive = useCallback((tasks, lists, settings) => {
+    if (!supabase || !user) return;
+    clearTimeout(saveTimer.current);
+    try {
+      const token = accessTokenRef.current;
+      if (!token) return;
+      const url = `${supabase.supabaseUrl}/rest/v1/user_data?on_conflict=user_id`;
+      fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "apikey": supabase.supabaseKey,
+          "Authorization": `Bearer ${token}`,
+          "Prefer": "resolution=merge-duplicates"
+        },
+        body: JSON.stringify({ user_id: user.id, tasks, lists, settings, updated_at: new Date().toISOString() }),
+        keepalive: true
+      }).catch(() => {});
+    } catch(e) { /* best effort */ }
+  }, [user]);
+
+  return { user, authLoading, authError, signInWithEmail, signInWithPassword, signOut, loadFromCloud, saveToCloud, saveToCloudNow, flushToCloudKeepalive, hasSupabase: !!supabase };
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -2204,7 +2230,7 @@ const LoginScreen = ({ onSignIn, onSignInPassword, error }) => {
 };
 
 export default function InkwellApp() {
-  const { user, authLoading, authError, signInWithEmail, signInWithPassword, signOut, loadFromCloud, saveToCloud, saveToCloudNow, hasSupabase } = useSupabaseSync();
+  const { user, authLoading, authError, signInWithEmail, signInWithPassword, signOut, loadFromCloud, saveToCloud, saveToCloudNow, flushToCloudKeepalive, hasSupabase } = useSupabaseSync();
   const [tasks,setTasks]=useState([]);
   const [lists,setLists]=useState(DEFAULT_LISTS);
   const [view,setView]=useState("today");
@@ -2292,7 +2318,14 @@ export default function InkwellApp() {
   useEffect(()=>{save("inkwell-showListCounts",showListCounts);},[showListCounts]);
   useEffect(()=>{save("inkwell-todayMode",todayMode);},[todayMode]);
 
+  /* ── Guard: skip save effects that fire from init loads ── */
+  const initDoneRef = useRef(false);
+  const skipNextSaveRef = useRef(true); /* skip the very first save after ready */
+
   useEffect(()=>{
+    /* Reset guards at start of every init (covers auth state changes) */
+    initDoneRef.current = false;
+    skipNextSaveRef.current = true;
     const init = async () => {
       /* Load both sources and use whichever is newer */
       const localTasks = load(TASKS_KEY, []);
@@ -2309,7 +2342,6 @@ export default function InkwellApp() {
         const cloudTime = new Date(cloudData.updated_at).getTime();
         const localTime = new Date(localTs).getTime();
         if (cloudTime >= localTime) {
-          /* Cloud is newer or equal */
           setTasks(cloudData.tasks || []);
           setLists(cloudData.lists || DEFAULT_LISTS);
           if (cloudData.settings) {
@@ -2325,7 +2357,7 @@ export default function InkwellApp() {
           setLists(localLists);
         }
       } else if (cloudData) {
-        /* Only cloud exists (fresh device) */
+        /* Only cloud exists (fresh device / no local timestamp) — always trust cloud */
         setTasks(cloudData.tasks || []);
         setLists(cloudData.lists || DEFAULT_LISTS);
         if (cloudData.settings) {
@@ -2340,6 +2372,8 @@ export default function InkwellApp() {
         setTasks(localTasks);
         setLists(localLists);
       }
+      /* Mark init complete — save effects should only fire AFTER this */
+      initDoneRef.current = true;
       setReady(true);
     };
     init();
@@ -2349,19 +2383,31 @@ export default function InkwellApp() {
     if("serviceWorker" in navigator)navigator.serviceWorker.register("/sw.js").catch(()=>{});
     return()=>window.removeEventListener("resize",fn);
   },[user, hasSupabase]);
-  /* Save with timestamp on every change */
-  useEffect(()=>{if(ready){const ts=new Date().toISOString();save(TASKS_KEY,tasks);save("inkwell-updated-at",ts);saveToCloud(tasks,lists,{showViewCounts,showListCounts});}},[tasks,ready]);
-  useEffect(()=>{if(ready){save(LISTS_KEY,lists);saveToCloud(tasks,lists,{showViewCounts,showListCounts});}},[lists,ready]);
-  useEffect(()=>{if(ready)saveToCloud(tasks,lists,{showViewCounts,showListCounts});},[showViewCounts,showListCounts]);
-  /* Flush to cloud immediately when tab is hidden (covers refresh, close, tab switch) */
+
+  /* Save with timestamp on every USER change (not init loads) */
+  useEffect(()=>{
+    if(!ready) return;
+    if(!initDoneRef.current) return; /* init hasn't finished */
+    if(skipNextSaveRef.current){ skipNextSaveRef.current=false; return; } /* skip the first render after init */
+    const ts=new Date().toISOString();
+    save(TASKS_KEY,tasks);
+    save("inkwell-updated-at",ts);
+    saveToCloud(tasks,lists,{showViewCounts,showListCounts});
+  },[tasks,ready]);
+  useEffect(()=>{if(ready&&initDoneRef.current){save(LISTS_KEY,lists);saveToCloud(tasks,lists,{showViewCounts,showListCounts});}},[lists,ready]);
+  useEffect(()=>{if(ready&&initDoneRef.current)saveToCloud(tasks,lists,{showViewCounts,showListCounts});},[showViewCounts,showListCounts]);
+
+  /* Flush to cloud on tab hide AND page unload (covers refresh/close) */
   const tasksRef=useRef(tasks);const listsRef=useRef(lists);
   useEffect(()=>{tasksRef.current=tasks;},[tasks]);
   useEffect(()=>{listsRef.current=lists;},[lists]);
   useEffect(()=>{
-    const flush=()=>{if(document.hidden&&ready)saveToCloudNow(tasksRef.current,listsRef.current,{showViewCounts,showListCounts});};
-    document.addEventListener("visibilitychange",flush);
-    return()=>document.removeEventListener("visibilitychange",flush);
-  },[ready,saveToCloudNow,showViewCounts,showListCounts]);
+    const flushOnHide=()=>{if(document.hidden&&ready)saveToCloudNow(tasksRef.current,listsRef.current,{showViewCounts,showListCounts});};
+    const flushOnUnload=()=>{if(ready)flushToCloudKeepalive(tasksRef.current,listsRef.current,{showViewCounts,showListCounts});};
+    document.addEventListener("visibilitychange",flushOnHide);
+    window.addEventListener("beforeunload",flushOnUnload);
+    return()=>{document.removeEventListener("visibilitychange",flushOnHide);window.removeEventListener("beforeunload",flushOnUnload);};
+  },[ready,saveToCloudNow,flushToCloudKeepalive,showViewCounts,showListCounts]);
   useEffect(()=>{if(selectedTask){const u=tasks.find(t=>t.id===selectedTask.id);if(u)setSelectedTask(u);else setSelectedTask(null);}},[tasks]);
   const flash=msg=>{setToast(msg);setTimeout(()=>setToast(null),3000);};
 
