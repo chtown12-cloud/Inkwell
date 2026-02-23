@@ -2363,8 +2363,6 @@ export default function InkwellApp() {
     return()=>document.removeEventListener("visibilitychange",flush);
   },[ready,saveToCloudNow,showViewCounts,showListCounts]);
   useEffect(()=>{if(selectedTask){const u=tasks.find(t=>t.id===selectedTask.id);if(u)setSelectedTask(u);else setSelectedTask(null);}},[tasks]);
-  /* Auto-redirect from overdue view when all tasks resolved */
-  useEffect(()=>{if(view==="overdue"&&overdueCount===0)setView("today");},[view,overdueCount]);
   const flash=msg=>{setToast(msg);setTimeout(()=>setToast(null),3000);};
 
   /* ═══ UNDO / REDO ═══ */
@@ -2646,6 +2644,8 @@ export default function InkwellApp() {
   },[tasks,view,search]);
 
   const overdueCount=useMemo(()=>tasks.filter(t=>!t.completed&&isOverdue(t.dueDate)).length,[tasks]);
+  /* Auto-redirect from overdue view when all tasks resolved */
+  useEffect(()=>{if(view==="overdue"&&overdueCount===0)setView("today");},[view,overdueCount]);
   const todayCount=useMemo(()=>{
     const direct=tasks.filter(t=>!t.completed&&t.dueDate===todayStr()).length;
     const subs=collectDatedSubtasks(tasks).filter(ds=>ds.sub.dueDate===todayStr()&&ds.parentTask.dueDate!==todayStr()).length;
