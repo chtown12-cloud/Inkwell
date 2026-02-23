@@ -127,7 +127,7 @@ const useTouchDrag = (onDrop, onDragStateChange, onSidebarShow) => {
     const markTouch = () => { lastInputWasTouch = true; };
     const markMouse = () => { lastInputWasTouch = false; };
     const blockNativeDrag = (e) => {
-      if (lastInputWasTouch && e.target?.closest?.("[data-drag-id]")) {
+      if (lastInputWasTouch && (e.target?.closest?.("[data-drag-id]") || e.target?.closest?.("[data-sub-drag]"))) {
         e.preventDefault();
       }
     };
@@ -436,6 +436,17 @@ const findSubById = (subs, id) => {
   for(const s of subs){ if(s.id===id) return s; const f=findSubById(s.subtasks,id); if(f) return f; }
   return null;
 };
+/* Insert a subtask before or after a target sibling in the tree */
+const insertSubNear = (subs, targetId, newSub, position) => {
+  if(!subs) return [];
+  const idx = subs.findIndex(s => s.id === targetId);
+  if(idx !== -1) {
+    const result = [...subs];
+    result.splice(position === "before" ? idx : idx + 1, 0, newSub);
+    return result;
+  }
+  return subs.map(s => ({...s, subtasks: insertSubNear(s.subtasks, targetId, newSub, position)}));
+};
 
 /* ═══════════════════════════════════════════════════════════════════════
    SVG ICONS
@@ -607,15 +618,163 @@ const ToggleRow = ({label, sublabel, checked, onChange}) => (
 );
 
 /* ═══════════════════════════════════════════════════════════════════════
-   RECURSIVE SUBTASK TREE (infinite nesting, editable titles, clickable)
-   Visual depth cues: left border color, background tint, nesting prefix
+   SUBTASK TOUCH DRAG — self-contained long-press drag for detail panel
+   Handles reorder (before/after) and nest within the subtask tree.
    ═══════════════════════════════════════════════════════════════════════ */
-const SubtaskTree = ({subtasks, onAction, onOpenSub, depth=0, compact=false}) => {
+const useSubtaskTouchDrag = (containerRef, onReorder) => {
+  const onReorderRef = useRef(onReorder);
+  useEffect(() => { onReorderRef.current = onReorder; }, [onReorder]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const s = { phase:"idle", dragId:null, ghost:null, timer:null,
+      startX:0, startY:0, moved:false, srcEl:null, lastTarget:null, lastZone:null };
+
+    const closest = (el, sel) => {
+      if(!el) return null;
+      if(el.nodeType===3) el=el.parentElement;
+      try { return el?.closest?.(sel) || null; } catch(e) { return null; }
+    };
+
+    const clearHL = () => {
+      if(s.lastTarget) {
+        s.lastTarget.style.outline=""; s.lastTarget.style.background="";
+        const indicators = s.lastTarget.querySelectorAll("[data-zone-indicator]");
+        indicators.forEach(i => i.remove());
+        s.lastTarget = null; s.lastZone = null;
+      }
+    };
+
+    const reset = () => {
+      clearTimeout(s.timer);
+      if(s.ghost) { s.ghost.remove(); s.ghost=null; }
+      if(s.srcEl) { s.srcEl.style.opacity=""; s.srcEl=null; }
+      clearHL();
+      s.phase="idle"; s.dragId=null; s.moved=false;
+      document.body.style.userSelect="";
+    };
+
+    const onStart = (e) => {
+      if(s.phase!=="idle") return;
+      const el = e.target;
+      const tag = el?.tagName?.toLowerCase?.()||"";
+      if(tag==="input"||tag==="textarea"||tag==="select") return;
+      if(tag==="button"||closest(el,"button")) return;
+
+      const row = closest(el, "[data-sub-drag]");
+      if(!row || !container.contains(row)) return;
+
+      const t = e.touches[0];
+      s.startX=t.clientX; s.startY=t.clientY; s.moved=false;
+      s.dragId=row.dataset.subDrag;
+      s.srcEl=row;
+      s.phase="waiting";
+      s.timer = setTimeout(() => {
+        s.phase="dragging";
+        document.body.style.userSelect="none";
+        /* Ghost */
+        const rect = row.getBoundingClientRect();
+        const g = document.createElement("div");
+        g.textContent = row.dataset.subLabel||"•";
+        Object.assign(g.style, {
+          position:"fixed",top:rect.top+"px",left:rect.left+"px",zIndex:"9999",
+          padding:"8px 14px",background:"#1c1917",color:"white",borderRadius:"10px",
+          fontSize:"13px",fontWeight:"600",fontFamily:"sans-serif",
+          boxShadow:"0 8px 24px rgba(0,0,0,0.3)",pointerEvents:"none",
+          whiteSpace:"nowrap",maxWidth:"200px",overflow:"hidden",
+          textOverflow:"ellipsis",opacity:"0.95"
+        });
+        document.body.appendChild(g);
+        s.ghost=g;
+        row.style.opacity="0.3";
+        try { navigator.vibrate?.(30); } catch(e){}
+      }, 400);
+    };
+
+    const onMove = (e) => {
+      if(s.phase==="idle") return;
+      const t = e.touches[0];
+      if(s.phase==="waiting") {
+        if(Math.abs(t.clientX-s.startX)+Math.abs(t.clientY-s.startY)>12) { reset(); return; }
+        e.preventDefault(); return;
+      }
+      if(s.phase!=="dragging") return;
+      e.preventDefault();
+      s.moved=true;
+      if(s.ghost) { s.ghost.style.top=(t.clientY-20)+"px"; s.ghost.style.left=(t.clientX-10)+"px"; }
+
+      /* Find drop target */
+      if(s.ghost) s.ghost.style.display="none";
+      const el = document.elementFromPoint(t.clientX, t.clientY);
+      if(s.ghost) s.ghost.style.display="";
+      const target = closest(el, "[data-sub-drop]");
+
+      if(target !== s.lastTarget || target) {
+        clearHL();
+        if(target && target.dataset.subDrop !== s.dragId) {
+          const rect = target.getBoundingClientRect();
+          const y = (t.clientY - rect.top) / rect.height;
+          const zone = y < 0.25 ? "before" : y > 0.75 ? "after" : "nest";
+          s.lastTarget = target;
+          s.lastZone = zone;
+
+          if(zone==="nest") {
+            target.style.outline="2px dashed #b45309";
+            target.style.background="rgba(180,83,9,0.08)";
+          } else {
+            const indicator = document.createElement("div");
+            indicator.dataset.zoneIndicator = "1";
+            Object.assign(indicator.style, {
+              position:"absolute", left:"0", right:"0", height:"2px",
+              background:"#b45309", borderRadius:"1px", zIndex:"5", pointerEvents:"none",
+              [zone==="before"?"top":"bottom"]: "-1px"
+            });
+            if(getComputedStyle(target).position==="static") target.style.position="relative";
+            target.appendChild(indicator);
+          }
+        }
+      }
+    };
+
+    const onEnd = (e) => {
+      if(s.phase!=="dragging"||!s.moved) { reset(); return; }
+      if(s.lastTarget && s.lastZone && onReorderRef.current) {
+        const targetId = s.lastTarget.dataset.subDrop;
+        if(targetId && targetId !== s.dragId) {
+          onReorderRef.current(s.dragId, targetId, s.lastZone);
+        }
+      }
+      reset();
+    };
+
+    container.addEventListener("touchstart", onStart, {passive:true});
+    document.addEventListener("touchmove", onMove, {passive:false});
+    document.addEventListener("touchend", onEnd, {passive:true});
+    document.addEventListener("touchcancel", reset, {passive:true});
+
+    return () => {
+      container.removeEventListener("touchstart", onStart);
+      document.removeEventListener("touchmove", onMove);
+      document.removeEventListener("touchend", onEnd);
+      document.removeEventListener("touchcancel", reset);
+      reset();
+    };
+  }, [containerRef]);
+};
+
+/* ═══════════════════════════════════════════════════════════════════════
+   RECURSIVE SUBTASK TREE (infinite nesting, editable titles, clickable)
+   Visual depth cues + drag to reorder/nest (desktop + mobile)
+   ═══════════════════════════════════════════════════════════════════════ */
+const SubtaskTree = ({subtasks, onAction, onOpenSub, onReorder, depth=0, compact=false}) => {
   const [openIds, setOpenIds] = useState({});
   const [addingTo, setAddingTo] = useState(null);
   const [addText, setAddText] = useState("");
   const [editingId, setEditingId] = useState(null);
   const [editText, setEditText] = useState("");
+  const [dropZone, setDropZone] = useState(null); /* {id, zone} */
   const editRef = useRef(null);
   const toggle = id => setOpenIds(p=>({...p,[id]:!p[id]}));
   if(!subtasks?.length && !compact) return null;
@@ -623,21 +782,70 @@ const SubtaskTree = ({subtasks, onAction, onOpenSub, depth=0, compact=false}) =>
 
   useEffect(()=>{if(editingId&&editRef.current){editRef.current.focus();editRef.current.select();}},[editingId]);
 
+  const handleDragStart = (e, sub) => {
+    e.stopPropagation();
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", sub.id);
+    e.dataTransfer.setData("application/x-source", "detail-subtask");
+    requestAnimationFrame(() => { const el = e.target.closest("[data-sub-row]"); if(el) el.style.opacity = "0.4"; });
+  };
+  const handleDragEnd = (e) => {
+    const el = e.target.closest("[data-sub-row]"); if(el) el.style.opacity = "";
+    setDropZone(null);
+  };
+  const handleDragOver = (e, sub) => {
+    e.preventDefault(); e.stopPropagation();
+    e.dataTransfer.dropEffect = "move";
+    const dragId = e.dataTransfer.types.includes("text/plain") ? true : false;
+    if(!dragId) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const y = (e.clientY - rect.top) / rect.height;
+    const zone = y < 0.25 ? "before" : y > 0.75 ? "after" : "nest";
+    setDropZone({id: sub.id, zone});
+  };
+  const handleDrop = (e, targetSub) => {
+    e.preventDefault(); e.stopPropagation();
+    const dragId = e.dataTransfer.getData("text/plain");
+    const src = e.dataTransfer.getData("application/x-source");
+    if(!dragId || dragId === targetSub.id || src !== "detail-subtask") { setDropZone(null); return; }
+    if(onReorder && dropZone) onReorder(dragId, targetSub.id, dropZone.zone);
+    setDropZone(null);
+  };
+  const handleDragLeave = (e) => {
+    /* Only clear if truly leaving the element, not entering a child */
+    const related = e.relatedTarget;
+    if(related && e.currentTarget.contains(related)) return;
+    setDropZone(null);
+  };
+
   return (
     <div style={{marginLeft: depth > 0 ? 12 : 0, borderLeft: `3px solid ${ds.border}`,
       background: ds.bg, borderRadius: "0 8px 8px 0", paddingLeft: 10}}>
       {(subtasks||[]).map(sub => {
         const childCount = countSubs(sub.subtasks);
         const hasChildren = (sub.subtasks||[]).length > 0;
-        const isOpen = openIds[sub.id] !== false; /* default open */
+        const isOpen = openIds[sub.id] !== false;
         const isEditing = editingId===sub.id;
+        const dz = dropZone?.id === sub.id ? dropZone : null;
         return (
-          <div key={sub.id}>
-            <div style={{display:"flex",alignItems:"center",gap:8,padding:compact?"7px 4px":"5px 4px",fontSize:compact?14:13,
-              borderBottom:"1px solid var(--border-light)"}}>
+          <div key={sub.id} data-sub-row data-sub-drag={sub.id} data-sub-drop={sub.id} data-sub-label={sub.title}
+            onDragOver={e => handleDragOver(e, sub)}
+            onDrop={e => handleDrop(e, sub)}
+            onDragLeave={handleDragLeave}
+            style={{position:"relative",
+              background: dz?.zone === "nest" ? "rgba(180,83,9,0.08)" : "transparent",
+              outline: dz?.zone === "nest" ? "2px dashed var(--accent)" : "none",
+              borderRadius: dz?.zone === "nest" ? 6 : 0,
+              transition:"background 0.1s"}}>
+            {dz?.zone === "before" && <div style={{position:"absolute",top:-1,left:0,right:0,height:2,background:"var(--accent)",borderRadius:1,zIndex:5}}/>}
+            {dz?.zone === "after" && <div style={{position:"absolute",bottom:-1,left:0,right:0,height:2,background:"var(--accent)",borderRadius:1,zIndex:5}}/>}
+            {dz?.zone === "nest" && <div style={{position:"absolute",right:8,top:"50%",transform:"translateY(-50%)",fontSize:10,color:"var(--accent)",fontWeight:700,zIndex:5,pointerEvents:"none"}}>↳ nest</div>}
+            <div draggable onDragStart={e => handleDragStart(e, sub)} onDragEnd={handleDragEnd}
+              style={{display:"flex",alignItems:"center",gap:8,padding:compact?"7px 4px":"5px 4px",fontSize:compact?14:13,
+                borderBottom:"1px solid var(--border-light)",cursor:"grab"}}>
+              <span style={{color:"var(--border)",flexShrink:0,cursor:"grab",fontSize:12,lineHeight:1,userSelect:"none",touchAction:"none"}}>{Icons.grip}</span>
               <Checkbox checked={sub.completed} size={compact?16:15} onChange={c=>onAction("update",sub.id,{completed:c,completedAt:c?new Date().toISOString():null})}/>
 
-              {/* Depth prefix indicator */}
               {depth > 0 && <span style={{fontSize:10,color:ds.prefixColor,flexShrink:0,fontWeight:700,lineHeight:1}}>{ds.prefix.trim()}</span>}
 
               {isEditing ? (
@@ -682,7 +890,7 @@ const SubtaskTree = ({subtasks, onAction, onOpenSub, depth=0, compact=false}) =>
               </div>
             )}
             {hasChildren && isOpen && (
-              <SubtaskTree subtasks={sub.subtasks} onAction={onAction} onOpenSub={onOpenSub} depth={depth+1} compact={compact}/>
+              <SubtaskTree subtasks={sub.subtasks} onAction={onAction} onOpenSub={onOpenSub} onReorder={onReorder} depth={depth+1} compact={compact}/>
             )}
           </div>
         );
@@ -1076,6 +1284,7 @@ const TaskDetail = ({task, onUpdate, onDelete, onClose, lists}) => {
   const [subPath, setSubPath] = useState([]);
   const [newSub, setNewSub] = useState("");
   const [newTag, setNewTag] = useState("");
+  const subTreeRef = useRef(null);
 
   /* Reset path when switching tasks */
   useEffect(()=>{ setSubPath([]); },[task.id]);
@@ -1112,6 +1321,27 @@ const TaskDetail = ({task, onUpdate, onDelete, onClose, lists}) => {
     else newSubs = updateSubById(current.subtasks||[], targetId, data);
     updateCurrent({subtasks: newSubs});
   };
+
+  /* Drag-to-reorder/nest subtasks within the detail panel */
+  const handleSubReorder = (dragId, targetId, zone) => {
+    if(dragId === targetId) return;
+    const subs = current.subtasks || [];
+    const dragged = findSubById(subs, dragId);
+    if(!dragged) return;
+    /* Remove dragged from tree */
+    let cleaned = removeSubById(subs, dragId);
+    if(zone === "nest") {
+      /* Add as last child of target */
+      cleaned = addSubTo(cleaned, targetId, dragged);
+    } else {
+      /* Insert before or after target at same level */
+      cleaned = insertSubNear(cleaned, targetId, dragged, zone);
+    }
+    updateCurrent({subtasks: cleaned});
+  };
+
+  /* Mobile touch drag for subtasks */
+  useSubtaskTouchDrag(subTreeRef, handleSubReorder);
 
   return (
     <div className="detail-panel" role="complementary" aria-label="Task details"
@@ -1200,13 +1430,14 @@ const TaskDetail = ({task, onUpdate, onDelete, onClose, lists}) => {
 
         {/* Subtasks — recursive, with clickable items to drill in */}
         <Field label={`Subtasks (${countSubs(current.subtasks).done}/${countSubs(current.subtasks).total})`}>
-          {(current.subtasks||[]).length>0&&(
-            <div style={{background:"white",borderRadius:10,border:"1px solid var(--border)",marginBottom:8,padding:"6px 12px"}}>
+          <div ref={subTreeRef} style={(current.subtasks||[]).length>0?{background:"white",borderRadius:10,border:"1px solid var(--border)",marginBottom:8,padding:"6px 12px"}:{marginBottom:0}}>
+            {(current.subtasks||[]).length>0&&(
               <SubtaskTree subtasks={current.subtasks} compact={true}
                 onAction={handleSubAction}
+                onReorder={handleSubReorder}
                 onOpenSub={(subId)=>setSubPath(p=>[...p, subId])}/>
-            </div>
-          )}
+            )}
+          </div>
           <input value={newSub} onChange={e=>setNewSub(e.target.value)} placeholder="Add subtask, press Enter..."
             onKeyDown={e=>{if(e.key==="Enter"&&newSub.trim()){updateCurrent({subtasks:[...(current.subtasks||[]),newSubtask(newSub.trim())]});setNewSub("");}}}
             style={{...fieldInput,fontSize:13}}/>
