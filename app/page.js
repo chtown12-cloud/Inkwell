@@ -1343,19 +1343,30 @@ const TaskDetail = ({task, onUpdate, onDelete, onClose, lists}) => {
   const [newSub, setNewSub] = useState("");
   const [newTag, setNewTag] = useState("");
   const subTreeRef = useRef(null);
+  const [navDir, setNavDir] = useState("in"); /* "in"=drill deeper, "out"=go back */
+  const [animKey, setAnimKey] = useState(0);
 
   /* Reset path when switching tasks */
-  useEffect(()=>{ setSubPath([]); },[task.id]);
+  useEffect(()=>{ setSubPath([]); setAnimKey(k=>k+1); },[task.id]);
+
+  const drillIn = (subId) => { setNavDir("in"); setSubPath(p=>[...p, subId]); setAnimKey(k=>k+1); };
+  const goBack = () => { setNavDir("out"); setSubPath(p=>p.slice(0,-1)); setAnimKey(k=>k+1); };
 
   /* Resolve current item from path */
   let current = task;
-  let breadcrumbs = [{id:task.id, title:task.title}];
+  let breadcrumbs = [{id:task.id, title:task.title, depth:0}];
   for(const sid of subPath) {
     const found = findSubById(current.subtasks, sid);
-    if(found) { current = found; breadcrumbs.push({id:found.id, title:found.title}); }
+    if(found) { current = found; breadcrumbs.push({id:found.id, title:found.title, depth:breadcrumbs.length}); }
     else break;
   }
   const isSubtask = subPath.length > 0;
+  const depth = subPath.length;
+  const depthLabels = ["Task", "Subtask", "Sub-subtask", "Sub-sub-subtask"];
+  const depthLabel = depth < depthLabels.length ? depthLabels[depth] : `Depth ${depth}`;
+  const ds = getDepthStyle(depth);
+  const depthColors = ["var(--accent)", "#a16207", "#92400e", "#78350f"];
+  const accentColor = depthColors[Math.min(depth, depthColors.length - 1)];
 
   /* Update helpers — route changes through the correct path */
   const updateCurrent = (changes) => {
@@ -1412,39 +1423,57 @@ const TaskDetail = ({task, onUpdate, onDelete, onClose, lists}) => {
   return (
     <div className="detail-panel" role="complementary" aria-label="Task details"
       style={{width:"33vw",minWidth:380,maxWidth:520,borderLeft:"1px solid var(--border)",background:"var(--bg)",display:"flex",flexDirection:"column",height:"100%",flexShrink:0,animation:"slideIn 0.2s ease"}}>
-      {/* Header */}
-      <div style={{padding:"12px 20px",borderBottom:"1px solid var(--border)",display:"flex",justifyContent:"space-between",alignItems:"center",minHeight:48}}>
-        <div style={{display:"flex",alignItems:"center",gap:6,flex:1,minWidth:0}}>
-          {isSubtask && (
-            <button onClick={()=>setSubPath(p=>p.slice(0,-1))} style={{background:"none",border:"none",cursor:"pointer",color:"var(--accent)",padding:2,display:"flex",flexShrink:0}} aria-label="Back to parent">
-              {Icons.back}
-            </button>
-          )}
-          <div style={{fontSize:11,fontWeight:700,color:"var(--muted)",textTransform:"uppercase",letterSpacing:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-            {breadcrumbs.map((b,i)=>(
-              <span key={b.id}>
-                {i>0&&" › "}
-                {i<breadcrumbs.length-1 ? (
-                  <button onClick={()=>setSubPath(subPath.slice(0,i))} style={{background:"none",border:"none",cursor:"pointer",color:"var(--accent)",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,padding:0,fontFamily:"inherit"}}>{b.title.slice(0,12)}{b.title.length>12?"…":""}</button>
-                ) : (isSubtask ? "Subtask" : "Task Details")}
+
+      {/* ── Header: depth-colored accent bar + breadcrumbs ── */}
+      <div style={{borderBottom:"1px solid var(--border)"}}>
+        {/* Colored depth indicator strip */}
+        <div style={{height:3,background:accentColor,transition:"background 0.3s"}}/>
+
+        <div style={{padding:"10px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",minHeight:44}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,flex:1,minWidth:0}}>
+            {isSubtask && (
+              <button onClick={goBack} style={{background:"none",border:"none",cursor:"pointer",color:accentColor,padding:2,display:"flex",flexShrink:0,transition:"color 0.2s"}} aria-label="Back to parent">
+                {Icons.back}
+              </button>
+            )}
+            <div style={{display:"flex",flexDirection:"column",gap:2,minWidth:0}}>
+              {/* Type badge */}
+              <span style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:1.2,color:accentColor,lineHeight:1}}>
+                {depthLabel} Details
               </span>
-            ))}
+              {/* Breadcrumb trail */}
+              {isSubtask && (
+                <div style={{display:"flex",alignItems:"center",gap:0,fontSize:11,color:"var(--muted)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                  {breadcrumbs.slice(0,-1).map((b,i)=>(
+                    <span key={b.id} style={{display:"inline-flex",alignItems:"center",gap:0}}>
+                      {i>0&&<span style={{margin:"0 3px",color:"var(--border)"}}>›</span>}
+                      <button onClick={()=>{setNavDir("out");setSubPath(subPath.slice(0,i));setAnimKey(k=>k+1);}}
+                        style={{background:"none",border:"none",cursor:"pointer",color:depthColors[Math.min(i, depthColors.length-1)],fontSize:11,fontWeight:600,padding:0,fontFamily:"inherit",maxWidth:80,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}
+                        title={b.title}>
+                        {b.title.length>14?b.title.slice(0,14)+"…":b.title}
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-        <div style={{display:"flex",gap:2,flexShrink:0}}>
-          {!isSubtask && <IconBtn onClick={()=>onDelete(task.id)} title="Delete" aria-label="Delete task">{Icons.trash}</IconBtn>}
-          {isSubtask && <IconBtn onClick={()=>{handleSubAction("remove",current.id);setSubPath(p=>p.slice(0,-1));}} title="Delete subtask" aria-label="Delete subtask">{Icons.trash}</IconBtn>}
-          <IconBtn onClick={onClose} aria-label="Close">{Icons.x}</IconBtn>
+          <div style={{display:"flex",gap:2,flexShrink:0}}>
+            {!isSubtask && <IconBtn onClick={()=>onDelete(task.id)} title="Delete" aria-label="Delete task">{Icons.trash}</IconBtn>}
+            {isSubtask && <IconBtn onClick={()=>{handleSubAction("remove",current.id);goBack();}} title="Delete subtask" aria-label="Delete subtask">{Icons.trash}</IconBtn>}
+            <IconBtn onClick={onClose} aria-label="Close">{Icons.x}</IconBtn>
+          </div>
         </div>
       </div>
 
-      <div style={{flex:1,overflowY:"auto",padding:"18px 20px"}}>
+      {/* ── Animated content area ── */}
+      <div key={animKey} style={{flex:1,overflowY:"auto",padding:"18px 20px",animation:`${navDir==="in"?"drillIn":"drillOut"} 0.2s ease`}}>
         {/* Title + checkbox */}
         <div style={{display:"flex",alignItems:"flex-start",gap:12,marginBottom:20}}>
           <div style={{paddingTop:4}}><Checkbox checked={current.completed} priority={current.priority||"none"} onChange={c=>updateCurrent({completed:c,completedAt:c?new Date().toISOString():null})}/></div>
           <textarea ref={el=>{if(el){el.style.height="auto";el.style.height=el.scrollHeight+"px";}}} value={title} onChange={e=>{setTitle(e.target.value);e.target.style.height="auto";e.target.style.height=e.target.scrollHeight+"px";}} rows={1} onBlur={e=>{if(title.trim())updateCurrent({title:title.trim()});e.target.style.borderColor="transparent";e.target.style.background="none";}} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();e.target.blur();}}}
             style={{flex:1,border:"1px solid transparent",borderRadius:8,background:"none",fontSize:18,fontFamily:"var(--font-display)",fontWeight:700,color:current.completed?"var(--muted)":"var(--ink)",textDecoration:current.completed?"line-through":"none",outline:"none",padding:"6px 8px",resize:"none",lineHeight:1.3,overflow:"hidden",transition:"border-color 0.15s, background 0.15s",cursor:"text"}}
-            onFocus={e=>{e.target.style.borderColor="var(--accent)";e.target.style.background="white";}}
+            onFocus={e=>{e.target.style.borderColor=accentColor;e.target.style.background="white";}}
             onMouseEnter={e=>{if(document.activeElement!==e.target)e.target.style.borderColor="var(--border)";}}
             onMouseLeave={e=>{if(document.activeElement!==e.target)e.target.style.borderColor="transparent";}}/>
         </div>
@@ -1501,7 +1530,7 @@ const TaskDetail = ({task, onUpdate, onDelete, onClose, lists}) => {
               <SubtaskTree subtasks={current.subtasks} compact={true}
                 onAction={handleSubAction}
                 onReorder={handleSubReorder}
-                onOpenSub={(subId)=>setSubPath(p=>[...p, subId])}/>
+                onOpenSub={drillIn}/>
             )}
           </div>
           <input value={newSub} onChange={e=>setNewSub(e.target.value)} placeholder="Add subtask, press Enter..."
@@ -1624,11 +1653,12 @@ const collectDatedSubtasks = (tasks) => {
   return results;
 };
 
-const KanbanBoard = ({tasks, columns, onColumnsChange, onResetColumns, onSelect, onUpdate, onToggle, onUpdateSubtask, flash, setIsDragging, animatingTasks}) => {
+const KanbanBoard = ({tasks, columns, onColumnsChange, onResetColumns, onSelect, onUpdate, onToggle, onUpdateSubtask, flash, setIsDragging, animatingTasks, onReorder}) => {
   const [hoverCol, setHoverCol] = useState(null);
   const [editingCol, setEditingCol] = useState(null);
   const [editName, setEditName] = useState("");
   const [editDate, setEditDate] = useState("");
+  const [cardDrop, setCardDrop] = useState(null); /* {id, zone:"before"|"after"} */
 
   const overdueTasks = useMemo(() => tasks.filter(t => !t.completed && t.dueDate && t.dueDate < todayStr()), [tasks]);
 
@@ -1640,7 +1670,6 @@ const KanbanBoard = ({tasks, columns, onColumnsChange, onResetColumns, onSelect,
     const colDates = new Set(columns.map(c => c.dateStr));
     columns.forEach(c => {
       const directTasks = tasks.filter(t => !t.completed && t.dueDate === c.dateStr);
-      /* Add surfaced subtasks whose dueDate matches this column AND parent task isn't already in this column */
       const surfaced = datedSubs.filter(ds => ds.sub.dueDate === c.dateStr && ds.parentTask.dueDate !== c.dateStr);
       map[c.dateStr] = { tasks: directTasks, subtasks: surfaced };
     });
@@ -1649,11 +1678,65 @@ const KanbanBoard = ({tasks, columns, onColumnsChange, onResetColumns, onSelect,
 
   const onColDragOver = (e, ds) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; setHoverCol(ds); };
   const onColDrop = (e, ds) => {
-    e.preventDefault(); setHoverCol(null);
+    e.preventDefault(); setHoverCol(null); setCardDrop(null);
     const tid = e.dataTransfer.getData("text/plain");
     if (!tid) return;
     const t = tasks.find(x => x.id === tid);
     if (t) onUpdate({ ...t, dueDate: ds });
+  };
+
+  const onCardDragOver = (e, targetTask) => {
+    e.preventDefault(); e.stopPropagation();
+    e.dataTransfer.dropEffect = "move";
+    const rect = e.currentTarget.getBoundingClientRect();
+    const y = (e.clientY - rect.top) / rect.height;
+    const zone = y < 0.5 ? "before" : "after";
+    setCardDrop({id: targetTask.id, zone});
+    setHoverCol(null);
+  };
+  const onCardDrop = (e, targetTask) => {
+    e.preventDefault(); e.stopPropagation();
+    const tid = e.dataTransfer.getData("text/plain");
+    if (!tid || tid === targetTask.id) { setCardDrop(null); return; }
+    const src = e.dataTransfer.getData("application/x-source");
+    const zone = cardDrop?.zone || "after";
+    if (src === "subtask" || src === "detail-subtask") {
+      /* subtask → kanban card: promote to task at that position */
+      let sub = null;
+      for (const t of tasks) { sub = findSubById(t.subtasks, tid); if (sub) break; }
+      if (!sub) { setCardDrop(null); return; }
+      const promoted = {id:sub.id,title:sub.title,completed:sub.completed||false,dueDate:targetTask.dueDate||todayStr(),startDate:sub.startDate||null,endDate:sub.endDate||null,priority:sub.priority||"none",list:targetTask.list||"Inbox",subtasks:sub.subtasks||[],notes:sub.notes||"",tags:sub.tags||[],createdAt:new Date().toISOString(),completedAt:sub.completed?new Date().toISOString():null};
+      if (onReorder) {
+        onReorder(prev => {
+          const cleaned = prev.map(t => ({...t, subtasks: removeSubById(t.subtasks||[], tid)}));
+          const idx = cleaned.findIndex(t => t.id === targetTask.id);
+          const ins = zone === "after" ? idx + 1 : idx;
+          cleaned.splice(ins, 0, promoted);
+          return cleaned;
+        });
+      }
+      if (flash) flash(`Promoted "${sub.title}" to task`);
+    } else {
+      /* task → task: reorder + change date if needed */
+      if (onReorder) {
+        onReorder(prev => {
+          const dragTask = prev.find(t => t.id === tid);
+          if (!dragTask) return prev;
+          const updated = {...dragTask, dueDate: targetTask.dueDate};
+          const without = prev.filter(t => t.id !== tid);
+          const idx = without.findIndex(t => t.id === targetTask.id);
+          const ins = zone === "after" ? idx + 1 : idx;
+          without.splice(ins, 0, updated);
+          return without;
+        });
+      }
+    }
+    setCardDrop(null);
+  };
+  const onCardDragLeave = (e) => {
+    const related = e.relatedTarget;
+    if (related && e.currentTarget.contains(related)) return;
+    setCardDrop(null);
   };
 
   const startEdit = (col) => { setEditingCol(col.id); setEditName(col.name); setEditDate(col.dateStr); };
@@ -1688,7 +1771,8 @@ const KanbanBoard = ({tasks, columns, onColumnsChange, onResetColumns, onSelect,
           </div>
           <div style={{flex:1,overflowY:"auto",padding:8}}>
             {overdueTasks.map(t => (
-              <KanbanCard key={t.id} task={t} onSelect={onSelect} onToggle={onToggle} onDragBegin={setIsDragging} animateState={animatingTasks?.[t.id]} />
+              <KanbanCard key={t.id} task={t} onSelect={onSelect} onToggle={onToggle} onDragBegin={setIsDragging} animateState={animatingTasks?.[t.id]}
+                cardDrop={cardDrop} onCardDragOver={onCardDragOver} onCardDrop={onCardDrop} onCardDragLeave={onCardDragLeave}/>
             ))}
           </div>
         </div>
@@ -1736,7 +1820,8 @@ const KanbanBoard = ({tasks, columns, onColumnsChange, onResetColumns, onSelect,
                 <div style={{textAlign:"center",padding:"24px 8px",color:"var(--muted)",fontSize:12,fontStyle:"italic"}}>Drop tasks here</div>
               )}
               {colTasks.map(t => (
-                <KanbanCard key={t.id} task={t} onSelect={onSelect} onToggle={onToggle} onDragBegin={setIsDragging} animateState={animatingTasks?.[t.id]} />
+                <KanbanCard key={t.id} task={t} onSelect={onSelect} onToggle={onToggle} onDragBegin={setIsDragging} animateState={animatingTasks?.[t.id]}
+                  cardDrop={cardDrop} onCardDragOver={onCardDragOver} onCardDrop={onCardDrop} onCardDragLeave={onCardDragLeave}/>
               ))}
               {colSubs.length > 0 && colTasks.length > 0 && <div style={{borderTop:"1px dashed var(--border)",margin:"6px 0"}} />}
               {colSubs.map(ds => (
@@ -1764,33 +1849,42 @@ const KanbanBoard = ({tasks, columns, onColumnsChange, onResetColumns, onSelect,
   );
 };
 
-const KanbanCard = ({task, onSelect, onToggle, onDragBegin, animateState}) => {
+const KanbanCard = ({task, onSelect, onToggle, onDragBegin, animateState, cardDrop, onCardDragOver, onCardDrop, onCardDragLeave}) => {
   const pc = PRIORITY[task.priority || "none"].color;
+  const dz = cardDrop?.id === task.id ? cardDrop : null;
   return (
-    <div draggable
-      data-drag-id={task.id} data-drag-source="task" data-drag-label={task.title}
-      onDragStart={e => { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", task.id); if(onDragBegin)onDragBegin(true); }}
-      onDragEnd={()=>{ if(onDragBegin) onDragBegin(false); }}
-      onClick={() => onSelect(task)}
-      style={{padding:"10px 12px",background:"white",borderRadius:10,marginBottom:6,cursor:"grab",touchAction:"none",
-        borderLeft:`3px solid ${pc}`,boxShadow:"0 1px 3px rgba(0,0,0,0.06)",
-        animation:animateState==="complete"?"cardComplete 0.6s ease forwards":animateState==="uncomplete"?"cardUncomplete 0.5s ease forwards":"none",
-        transition:"box-shadow 0.15s,transform 0.15s"}}>
-      <div style={{display:"flex",alignItems:"flex-start",gap:8}}>
-        <div style={{paddingTop:1,animation:animateState?"checkPop 0.45s ease":"none"}}>
-          <Checkbox checked={task.completed} priority={task.priority} size={16} onChange={()=>onToggle(task.id)} animating={!!animateState}/>
-        </div>
-        <div style={{flex:1,minWidth:0}}>
-          <div style={{fontSize:13,fontWeight:500,color:"var(--ink)",lineHeight:1.4,wordWrap:"break-word"}}>{task.title}</div>
-          <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",marginTop:4}}>
-            {task.priority !== "none" && <span style={{fontSize:10,fontWeight:700,color:pc}}>{PRIORITY[task.priority].label}</span>}
-            {(task.tags||[]).map(t => <span key={t} style={{fontSize:10,color:"var(--accent)"}}>#{t}</span>)}
-            {task.notes && <span style={{color:"#cbd5e1",display:"flex",transform:"scale(0.8)"}}>{Icons.note}</span>}
-            {(task.subtasks||[]).length > 0 && (() => { const {total,done} = countSubs(task.subtasks); return <span style={{fontSize:10,color:done===total?"#16a34a":"var(--muted)"}}>{Icons.subtask} {done}/{total}</span>; })()}
-            <span style={{fontSize:10,color:"var(--muted)",background:"var(--surface)",padding:"1px 5px",borderRadius:3}}>{task.list}</span>
+    <div
+      onDragOver={onCardDragOver ? e => onCardDragOver(e, task) : undefined}
+      onDrop={onCardDrop ? e => onCardDrop(e, task) : undefined}
+      onDragLeave={onCardDragLeave}
+      style={{position:"relative",marginBottom:6}}>
+      {dz?.zone === "before" && <div style={{position:"absolute",top:-3,left:4,right:4,height:2,background:"var(--accent)",borderRadius:1,zIndex:5}}/>}
+      <div draggable
+        data-drag-id={task.id} data-drag-source="task" data-drag-label={task.title}
+        onDragStart={e => { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", task.id); e.dataTransfer.setData("application/x-source", "task"); if(onDragBegin)onDragBegin(true); }}
+        onDragEnd={()=>{ if(onDragBegin) onDragBegin(false); }}
+        onClick={() => onSelect(task)}
+        style={{padding:"10px 12px",background:"white",borderRadius:10,cursor:"grab",touchAction:"none",
+          borderLeft:`3px solid ${pc}`,boxShadow:"0 1px 3px rgba(0,0,0,0.06)",
+          animation:animateState==="complete"?"cardComplete 0.6s ease forwards":animateState==="uncomplete"?"cardUncomplete 0.5s ease forwards":"none",
+          transition:"box-shadow 0.15s,transform 0.15s"}}>
+        <div style={{display:"flex",alignItems:"flex-start",gap:8}}>
+          <div style={{paddingTop:1,animation:animateState?"checkPop 0.45s ease":"none"}}>
+            <Checkbox checked={task.completed} priority={task.priority} size={16} onChange={()=>onToggle(task.id)} animating={!!animateState}/>
+          </div>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:13,fontWeight:500,color:"var(--ink)",lineHeight:1.4,wordWrap:"break-word"}}>{task.title}</div>
+            <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",marginTop:4}}>
+              {task.priority !== "none" && <span style={{fontSize:10,fontWeight:700,color:pc}}>{PRIORITY[task.priority].label}</span>}
+              {(task.tags||[]).map(t => <span key={t} style={{fontSize:10,color:"var(--accent)"}}>#{t}</span>)}
+              {task.notes && <span style={{color:"#cbd5e1",display:"flex",transform:"scale(0.8)"}}>{Icons.note}</span>}
+              {(task.subtasks||[]).length > 0 && (() => { const {total,done} = countSubs(task.subtasks); return <span style={{fontSize:10,color:done===total?"#16a34a":"var(--muted)"}}>{Icons.subtask} {done}/{total}</span>; })()}
+              <span style={{fontSize:10,color:"var(--muted)",background:"var(--surface)",padding:"1px 5px",borderRadius:3}}>{task.list}</span>
+            </div>
           </div>
         </div>
       </div>
+      {dz?.zone === "after" && <div style={{position:"absolute",bottom:-3,left:4,right:4,height:2,background:"var(--accent)",borderRadius:1,zIndex:5}}/>}
     </div>
   );
 };
@@ -2655,6 +2749,18 @@ export default function InkwellApp() {
     const { dragId, dragSource, dropType, dropValue } = info;
     if (!dragId) return;
 
+    if (dropType === "trash") {
+      if (dragSource === "subtask") {
+        setTasks(prev => prev.map(t => ({...t, subtasks: deleteSubById(t.subtasks||[], dragId)})));
+        flash("Subtask deleted");
+      } else {
+        setTasks(prev => prev.filter(t => t.id !== dragId));
+        if (selectedTask?.id === dragId) setSelectedTask(null);
+        flash("Task deleted");
+      }
+      return;
+    }
+
     if (dropType === "date" && dropValue) {
       if (dragSource === "subtask") {
         setTasks(prev => prev.map(t => {
@@ -3037,7 +3143,7 @@ export default function InkwellApp() {
                 <button onClick={()=>setTodayMode("kanban")} style={{padding:"5px 12px",borderRadius:6,border:"none",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:todayMode==="kanban"?"white":"transparent",color:todayMode==="kanban"?"var(--ink)":"var(--muted)",boxShadow:todayMode==="kanban"?"0 1px 3px rgba(0,0,0,0.08)":"none",transition:"all 0.15s"}}>Board</button>
                 <button onClick={()=>setTodayMode("list")} style={{padding:"5px 12px",borderRadius:6,border:"none",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:todayMode==="list"?"white":"transparent",color:todayMode==="list"?"var(--ink)":"var(--muted)",boxShadow:todayMode==="list"?"0 1px 3px rgba(0,0,0,0.08)":"none",transition:"all 0.15s"}}>List</button>
               </div>
-              <div style={{flex:1,minHeight:0}}><KanbanBoard tasks={tasks} columns={activeKanbanCols} onColumnsChange={setKanbanColumns} onResetColumns={kanbanColumns?resetKanbanCols:null} onSelect={t=>setSelectedTask(t)} onUpdate={updateTask} onToggle={toggleTask} onUpdateSubtask={(taskId,subId)=>{setTasks(prev=>prev.map(t=>t.id!==taskId?t:{...t,subtasks:updateSubById(t.subtasks,subId,{completed:!findSubById(t.subtasks,subId)?.completed,completedAt:!findSubById(t.subtasks,subId)?.completed?new Date().toISOString():null})}));}} flash={flash} setIsDragging={setIsDragging} animatingTasks={animatingTasks}/></div>
+              <div style={{flex:1,minHeight:0}}><KanbanBoard tasks={tasks} columns={activeKanbanCols} onColumnsChange={setKanbanColumns} onResetColumns={kanbanColumns?resetKanbanCols:null} onSelect={t=>setSelectedTask(t)} onUpdate={updateTask} onToggle={toggleTask} onReorder={setTasks} onUpdateSubtask={(taskId,subId)=>{setTasks(prev=>prev.map(t=>t.id!==taskId?t:{...t,subtasks:updateSubById(t.subtasks,subId,{completed:!findSubById(t.subtasks,subId)?.completed,completedAt:!findSubById(t.subtasks,subId)?.completed?new Date().toISOString():null})}));}} flash={flash} setIsDragging={setIsDragging} animatingTasks={animatingTasks}/></div>
             </div>):(<>
               {view!=="completed"&&view!=="overdue"&&(<div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",background:"white",borderRadius:14,border:"1px solid var(--border)",marginBottom:view==="today"?10:16,boxShadow:"0 1px 3px rgba(0,0,0,0.04)"}}>
                 <span style={{color:"var(--accent)",flexShrink:0}}>{Icons.plus}</span>
@@ -3145,6 +3251,29 @@ export default function InkwellApp() {
         </div>
       )}
       {toast&&<div role="status" aria-live="polite" style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",background:"var(--ink)",color:"white",padding:"12px 24px",borderRadius:12,fontSize:14,fontWeight:600,boxShadow:"0 8px 24px rgba(0,0,0,0.2)",animation:"toastIn 0.3s ease",zIndex:2000,whiteSpace:"nowrap"}}>{toast}</div>}
+      {/* ── Trash drop zone (appears during any drag) ── */}
+      {isDragging&&(
+        <div data-drop-type="trash"
+          onDragOver={e=>{e.preventDefault();e.dataTransfer.dropEffect="move";e.currentTarget.style.transform="scale(1.15)";e.currentTarget.style.background="#ef4444";e.currentTarget.style.color="white";e.currentTarget.style.borderColor="#dc2626";}}
+          onDragLeave={e=>{e.currentTarget.style.transform="scale(1)";e.currentTarget.style.background="#fef2f2";e.currentTarget.style.color="#ef4444";e.currentTarget.style.borderColor="#fecaca";}}
+          onDrop={e=>{
+            e.preventDefault();e.currentTarget.style.transform="scale(1)";e.currentTarget.style.background="#fef2f2";e.currentTarget.style.color="#ef4444";
+            const tid=e.dataTransfer.getData("text/plain");const src=e.dataTransfer.getData("application/x-source");
+            if(!tid)return;
+            if(src==="subtask"||src==="detail-subtask"){
+              setTasks(prev=>prev.map(t=>({...t,subtasks:deleteSubById(t.subtasks||[],tid)})));
+              flash("Subtask deleted");
+            }else{
+              setTasks(prev=>prev.filter(t=>t.id!==tid));
+              if(selectedTask?.id===tid)setSelectedTask(null);
+              flash("Task deleted");
+            }
+            setIsDragging(false);setSelectedIds(new Set());
+          }}
+          style={{position:"fixed",bottom:28,left:28,width:52,height:52,borderRadius:14,background:"#fef2f2",border:"2px solid #fecaca",display:"flex",alignItems:"center",justifyContent:"center",color:"#ef4444",zIndex:1400,animation:"trashPulse 2s ease infinite",transition:"transform 0.15s, background 0.15s, color 0.15s, border-color 0.15s",cursor:"default",boxShadow:"0 4px 16px rgba(239,68,68,0.15)"}}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+        </div>
+      )}
     </div>
   );
 }

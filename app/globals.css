@@ -30,6 +30,9 @@ input::placeholder, textarea::placeholder { color: #a8a29e; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes toastIn { from { opacity: 0; transform: translate(-50%, 20px); } to { opacity: 1; transform: translate(-50%, 0); } }
 @keyframes pulseGlow { 0%, 100% { box-shadow: 0 0 0 0 rgba(217,119,6,0.3); } 50% { box-shadow: 0 0 0 8px rgba(217,119,6,0); } }
+@keyframes drillIn { from { opacity: 0; transform: translateX(40px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes drillOut { from { opacity: 0; transform: translateX(-40px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes trashPulse { 0%,100%{box-shadow:0 4px 16px rgba(239,68,68,0.2)} 50%{box-shadow:0 4px 24px rgba(239,68,68,0.4)} }
 
 /* Mobile responsive */
 @media (max-width: 768px) {
