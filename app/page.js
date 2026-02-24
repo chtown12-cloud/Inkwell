@@ -460,9 +460,23 @@ const updateSubById = (subs, id, changes) => {
   if(!subs) return [];
   return subs.map(s => s.id===id ? {...s,...changes} : {...s, subtasks: updateSubById(s.subtasks, id, changes)});
 };
+/* Remove sub from tree — keeps its children attached (for drag/move operations) */
 const removeSubById = (subs, id) => {
   if(!subs) return [];
   return subs.filter(s=>s.id!==id).map(s=>({...s, subtasks: removeSubById(s.subtasks, id)}));
+};
+/* Delete sub from tree — promotes its children up into the parent level */
+const deleteSubById = (subs, id) => {
+  if(!subs) return [];
+  const result = [];
+  for(const s of subs){
+    if(s.id === id){
+      if(s.subtasks && s.subtasks.length > 0) result.push(...s.subtasks);
+    } else {
+      result.push({...s, subtasks: deleteSubById(s.subtasks, id)});
+    }
+  }
+  return result;
 };
 const addSubTo = (subs, parentId, newSub) => {
   if(!subs) return [];
@@ -1360,7 +1374,7 @@ const TaskDetail = ({task, onUpdate, onDelete, onClose, lists}) => {
   /* Subtask actions for the tree */
   const handleSubAction = (action, targetId, data) => {
     let newSubs;
-    if(action==="remove") newSubs = removeSubById(current.subtasks||[], targetId);
+    if(action==="remove") newSubs = deleteSubById(current.subtasks||[], targetId);
     else if(action==="add") newSubs = addSubTo(current.subtasks||[], targetId, data);
     else newSubs = updateSubById(current.subtasks||[], targetId, data);
     updateCurrent({subtasks: newSubs});
@@ -1372,9 +1386,17 @@ const TaskDetail = ({task, onUpdate, onDelete, onClose, lists}) => {
     const subs = current.subtasks || [];
     const dragged = findSubById(subs, dragId);
     if(!dragged) return;
-    /* Guard: prevent nesting into own descendants (circular reference) */
-    if(zone === "nest" && isDescendant(dragged.subtasks, targetId)) return;
-    /* Remove dragged from tree */
+    /* Circular reference: promote the target up instead of blocking */
+    if(zone === "nest" && isDescendant(dragged.subtasks, targetId)) {
+      const target = findSubById(subs, targetId);
+      if(!target) return;
+      /* Remove target from tree, insert as sibling after dragged item */
+      let cleaned = removeSubById(subs, targetId);
+      cleaned = insertSubNear(cleaned, dragId, target, "after");
+      updateCurrent({subtasks: cleaned});
+      return;
+    }
+    /* Normal: remove dragged from tree, reinsert at target position */
     let cleaned = removeSubById(subs, dragId);
     if(zone === "nest") {
       cleaned = addSubTo(cleaned, targetId, dragged);
@@ -2048,7 +2070,7 @@ const TaskRow = ({task,isActive,isSelected,onSelect,onToggle,onUpdateTask,onDrag
 
   const handleSubAction = (action, targetId, data) => {
     let newSubs;
-    if(action==="remove") newSubs = removeSubById(task.subtasks||[], targetId);
+    if(action==="remove") newSubs = deleteSubById(task.subtasks||[], targetId);
     else if(action==="add") newSubs = addSubTo(task.subtasks||[], targetId, data);
     else newSubs = updateSubById(task.subtasks||[], targetId, data);
     onUpdateTask({...task, subtasks: newSubs});
@@ -2320,14 +2342,17 @@ export default function InkwellApp() {
 
   /* ── Guard: skip save effects that fire from init loads ── */
   const initDoneRef = useRef(false);
-  const skipNextSaveRef = useRef(true); /* skip the very first save after ready */
+  const skipNextSaveRef = useRef(2); /* counter: skip N upcoming save effects */
+  const initializedUserRef = useRef(null); /* track which user we've initialized for */
 
   useEffect(()=>{
-    /* Reset guards at start of every init (covers auth state changes) */
+    /* Skip re-init if same user (token refresh) — only init on actual user change */
+    const userId = user?.id || null;
+    if(initDoneRef.current && initializedUserRef.current === userId) return;
+
     initDoneRef.current = false;
-    skipNextSaveRef.current = true;
+    skipNextSaveRef.current = 2;
     const init = async () => {
-      /* Load both sources and use whichever is newer */
       const localTasks = load(TASKS_KEY, []);
       const localLists = load(LISTS_KEY, DEFAULT_LISTS);
       const localTs = load("inkwell-updated-at", null);
@@ -2338,7 +2363,6 @@ export default function InkwellApp() {
       }
 
       if (cloudData && cloudData.updated_at && localTs) {
-        /* Both exist — compare timestamps, use newer */
         const cloudTime = new Date(cloudData.updated_at).getTime();
         const localTime = new Date(localTs).getTime();
         if (cloudTime >= localTime) {
@@ -2352,12 +2376,10 @@ export default function InkwellApp() {
           save(LISTS_KEY, cloudData.lists || DEFAULT_LISTS);
           save("inkwell-updated-at", cloudData.updated_at);
         } else {
-          /* localStorage is newer — use local, push to cloud */
           setTasks(localTasks);
           setLists(localLists);
         }
       } else if (cloudData) {
-        /* Only cloud exists (fresh device / no local timestamp) — always trust cloud */
         setTasks(cloudData.tasks || []);
         setLists(cloudData.lists || DEFAULT_LISTS);
         if (cloudData.settings) {
@@ -2368,12 +2390,11 @@ export default function InkwellApp() {
         save(LISTS_KEY, cloudData.lists || DEFAULT_LISTS);
         save("inkwell-updated-at", cloudData.updated_at || new Date().toISOString());
       } else {
-        /* No cloud — use localStorage */
         setTasks(localTasks);
         setLists(localLists);
       }
-      /* Mark init complete — save effects should only fire AFTER this */
       initDoneRef.current = true;
+      initializedUserRef.current = userId;
       setReady(true);
     };
     init();
@@ -2384,20 +2405,54 @@ export default function InkwellApp() {
     return()=>window.removeEventListener("resize",fn);
   },[user, hasSupabase]);
 
+  /* ── Sync from cloud when tab regains focus (picks up other-device changes) ── */
+  useEffect(()=>{
+    if(!hasSupabase || !user) return;
+    const syncOnFocus = async () => {
+      if(document.hidden || !initDoneRef.current) return;
+      const cloudData = await loadFromCloud();
+      if(!cloudData || !cloudData.updated_at) return;
+      const localTs = load("inkwell-updated-at", null);
+      if(!localTs) return;
+      const cloudTime = new Date(cloudData.updated_at).getTime();
+      const localTime = new Date(localTs).getTime();
+      if(cloudTime > localTime) {
+        /* Cloud is newer — update state */
+        skipNextSaveRef.current = 2; /* prevent save loop */
+        setTasks(cloudData.tasks || []);
+        setLists(cloudData.lists || DEFAULT_LISTS);
+        if (cloudData.settings) {
+          if (cloudData.settings.showViewCounts !== undefined) setShowViewCounts(cloudData.settings.showViewCounts);
+          if (cloudData.settings.showListCounts !== undefined) setShowListCounts(cloudData.settings.showListCounts);
+        }
+        save(TASKS_KEY, cloudData.tasks || []);
+        save(LISTS_KEY, cloudData.lists || DEFAULT_LISTS);
+        save("inkwell-updated-at", cloudData.updated_at);
+      }
+    };
+    document.addEventListener("visibilitychange", syncOnFocus);
+    return () => document.removeEventListener("visibilitychange", syncOnFocus);
+  },[user, hasSupabase, loadFromCloud]);
+
   /* Save with timestamp on every USER change (not init loads) */
   useEffect(()=>{
     if(!ready) return;
-    if(!initDoneRef.current) return; /* init hasn't finished */
-    if(skipNextSaveRef.current){ skipNextSaveRef.current=false; return; } /* skip the first render after init */
+    if(!initDoneRef.current) return;
+    if(skipNextSaveRef.current > 0){ skipNextSaveRef.current--; return; }
     const ts=new Date().toISOString();
     save(TASKS_KEY,tasks);
     save("inkwell-updated-at",ts);
     saveToCloud(tasks,lists,{showViewCounts,showListCounts});
   },[tasks,ready]);
-  useEffect(()=>{if(ready&&initDoneRef.current){save(LISTS_KEY,lists);saveToCloud(tasks,lists,{showViewCounts,showListCounts});}},[lists,ready]);
+  useEffect(()=>{
+    if(!ready || !initDoneRef.current) return;
+    if(skipNextSaveRef.current > 0){ skipNextSaveRef.current--; return; }
+    save(LISTS_KEY,lists);
+    saveToCloud(tasks,lists,{showViewCounts,showListCounts});
+  },[lists,ready]);
   useEffect(()=>{if(ready&&initDoneRef.current)saveToCloud(tasks,lists,{showViewCounts,showListCounts});},[showViewCounts,showListCounts]);
 
-  /* Flush to cloud on tab hide AND page unload (covers refresh/close) */
+  /* Flush to cloud on tab hide AND page unload */
   const tasksRef=useRef(tasks);const listsRef=useRef(lists);
   useEffect(()=>{tasksRef.current=tasks;},[tasks]);
   useEffect(()=>{listsRef.current=lists;},[lists]);
@@ -2500,8 +2555,19 @@ export default function InkwellApp() {
 
     if(zone==="nest"){
       /* ── Nest: make dragged task a subtask of target ── */
-      /* Guard: prevent nesting into own descendants (circular reference) */
-      if(isDescendant(dragTask.subtasks, overTask.id)){flash("Can't nest into own subtask");setDragTask(null);setDropTarget(null);return;}
+      /* Circular reference: promote the target subtask to a top-level task instead */
+      if(isDescendant(dragTask.subtasks, overTask.id)){
+        setTasks(prev=>{
+          /* Find and extract the target subtask from the dragged task's tree */
+          let sub = null;
+          for(const t of prev){ sub = findSubById(t.subtasks, overTask.id); if(sub) break; }
+          if(!sub){setDragTask(null);setDropTarget(null);return prev;}
+          const cleaned = prev.map(t=>({...t, subtasks: removeSubById(t.subtasks||[], overTask.id)}));
+          const promoted = {id:sub.id,title:sub.title,completed:sub.completed||false,dueDate:sub.dueDate||todayStr(),startDate:sub.startDate||null,endDate:sub.endDate||null,priority:sub.priority||"none",list:dragTask.list||"Inbox",subtasks:sub.subtasks||[],notes:sub.notes||"",tags:sub.tags||[],createdAt:new Date().toISOString(),completedAt:sub.completed?new Date().toISOString():null};
+          return [promoted,...cleaned];
+        });
+        flash(`Promoted "${overTask.title}" to task`);setDragTask(null);setDropTarget(null);return;
+      }
       if(src==="subtask"){
         /* subtask→subtask nest: remove from old parent, add to new parent */
         setTasks(prev=>{
@@ -2544,7 +2610,7 @@ export default function InkwellApp() {
   };
   const onDragEnd=()=>{setDragTask(null);setDropTarget(null);setIsDragging(false);};
   const onListDrop=(e,listName)=>{e.preventDefault();setDropTarget(null);const tid=e.dataTransfer.getData("text/plain");const src=e.dataTransfer.getData("application/x-source");
-    if(tid&&src==="subtask"){
+    if(tid&&(src==="subtask"||src==="detail-subtask")){
       /* Promote subtask to task in the target list */
       setTasks(prev=>{
         let sub=null;
@@ -2626,12 +2692,33 @@ export default function InkwellApp() {
       const overTask = tasks.find(t => t.id === dropValue);
       if (!overTask) return;
       if (zone === "nest") {
-        /* Guard: prevent nesting into own descendants */
+        /* Circular reference: promote the target subtask instead of blocking */
         const dragTask = tasks.find(t => t.id === dragId);
-        if(dragTask && isDescendant(dragTask.subtasks, dropValue)){flash("Can't nest into own subtask");return;}
+        if(dragTask && isDescendant(dragTask.subtasks, dropValue)){
+          setTasks(prev=>{
+            let sub = null;
+            for(const t of prev){ sub = findSubById(t.subtasks, dropValue); if(sub) break; }
+            if(!sub) return prev;
+            const cleaned = prev.map(t=>({...t, subtasks: removeSubById(t.subtasks||[], dropValue)}));
+            const promoted = {id:sub.id,title:sub.title,completed:sub.completed||false,dueDate:sub.dueDate||todayStr(),startDate:sub.startDate||null,endDate:sub.endDate||null,priority:sub.priority||"none",list:dragTask.list||"Inbox",subtasks:sub.subtasks||[],notes:sub.notes||"",tags:sub.tags||[],createdAt:new Date().toISOString(),completedAt:sub.completed?new Date().toISOString():null};
+            return [promoted,...cleaned];
+          });
+          flash(`Promoted "${overTask.title}" to task`);return;
+        }
         if (dragSource === "subtask") {
           const sub = (() => { let s = null; for (const t of tasks) { s = findSubById(t.subtasks, dragId); if (s) return s; } return null; })();
-          if(sub && isDescendant(sub.subtasks, dropValue)){flash("Can't nest into own subtask");return;}
+          if(sub && isDescendant(sub.subtasks, dropValue)){
+            /* Subtask being dropped onto its own descendant — promote the descendant */
+            setTasks(prev=>{
+              let target = null;
+              for(const t of prev){ target = findSubById(t.subtasks, dropValue); if(target) break; }
+              if(!target) return prev;
+              const cleaned = prev.map(t=>({...t, subtasks: removeSubById(t.subtasks||[], dropValue)}));
+              const promoted = {id:target.id,title:target.title,completed:target.completed||false,dueDate:target.dueDate||todayStr(),startDate:target.startDate||null,endDate:target.endDate||null,priority:target.priority||"none",list:"Inbox",subtasks:target.subtasks||[],notes:target.notes||"",tags:target.tags||[],createdAt:new Date().toISOString(),completedAt:target.completed?new Date().toISOString():null};
+              return [promoted,...cleaned];
+            });
+            flash(`Promoted to task`);return;
+          }
           setTasks(prev => {
             let arr = prev.map(t => ({...t, subtasks: removeSubById(t.subtasks||[], dragId)}));
             if (!sub) return prev;
@@ -2800,7 +2887,7 @@ export default function InkwellApp() {
                 onDragOver:e=>{e.preventDefault();e.currentTarget.style.background="var(--accent-bg)";e.currentTarget.style.outline="2px solid var(--accent)";e.currentTarget.style.borderRadius="10px";},
                 onDragLeave:e=>{e.currentTarget.style.background="";e.currentTarget.style.outline="";},
                 onDrop:e=>{e.preventDefault();e.currentTarget.style.background="";e.currentTarget.style.outline="";const tid=e.dataTransfer.getData("text/plain");if(!tid)return;const src=e.dataTransfer.getData("application/x-source");
-                  if(src==="subtask"){setTasks(prev=>prev.map(t=>{const found=findSubById(t.subtasks,tid);if(!found)return t;return{...t,subtasks:updateSubById(t.subtasks,tid,{dueDate:dateStr})};}));flash(`Subtask due ${label}`);setIsDragging(false);}
+                  if(src==="subtask"||src==="detail-subtask"){setTasks(prev=>prev.map(t=>{const found=findSubById(t.subtasks,tid);if(!found)return t;return{...t,subtasks:updateSubById(t.subtasks,tid,{dueDate:dateStr})};}));flash(`Subtask due ${label}`);setIsDragging(false);}
                   else{const ids=selectedIds.size>1&&selectedIds.has(tid)?selectedIds:new Set([tid]);setTasks(prev=>prev.map(t=>ids.has(t.id)?{...t,dueDate:dateStr}:t));flash(`Set ${ids.size>1?ids.size+" tasks":"task"} to ${label}`);setSelectedIds(new Set());setIsDragging(false);}
                 }
               });
