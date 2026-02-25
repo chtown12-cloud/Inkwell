@@ -1718,21 +1718,28 @@ const KanbanBoard = ({tasks, columns, onColumnsChange, onResetColumns, onSelect,
     const src = e.dataTransfer.getData("application/x-source");
     const zone = cardDrop?.zone || "after";
     if (isSubSource(src)) {
-      /* subtask → kanban card: promote to task at that position */
-      let sub = null;
-      for (const t of tasks) { sub = findSubById(t.subtasks, tid); if (sub) break; }
+      /* Find the subtask and its parent task */
+      let sub = null, parentTask = null;
+      for (const t of tasks) { sub = findSubById(t.subtasks, tid); if (sub) { parentTask = t; break; } }
       if (!sub) { setCardDrop(null); return; }
-      const promoted = {id:sub.id,title:sub.title,completed:sub.completed||false,dueDate:targetTask.dueDate||todayStr(),startDate:sub.startDate||null,endDate:sub.endDate||null,priority:sub.priority||"none",list:targetTask.list||"Inbox",subtasks:sub.subtasks||[],notes:sub.notes||"",tags:sub.tags||[],createdAt:new Date().toISOString(),completedAt:sub.completed?new Date().toISOString():null};
-      if (onReorder) {
-        onReorder(prev => {
-          const cleaned = prev.map(t => ({...t, subtasks: removeSubById(t.subtasks||[], tid)}));
-          const idx = cleaned.findIndex(t => t.id === targetTask.id);
-          const ins = zone === "after" ? idx + 1 : idx;
-          cleaned.splice(ins, 0, promoted);
-          return cleaned;
-        });
+      /* If target card is in the same column as parent → rejoin (clear dueDate) */
+      if (parentTask && targetTask.dueDate === parentTask.dueDate) {
+        if (onSubUpdate) onSubUpdate(tid, {dueDate: null});
+        if (flash) flash("Subtask rejoined parent");
+      } else {
+        /* Cross-column card drop → promote to task at that position */
+        const promoted = {id:sub.id,title:sub.title,completed:sub.completed||false,dueDate:targetTask.dueDate||todayStr(),startDate:sub.startDate||null,endDate:sub.endDate||null,priority:sub.priority||"none",list:targetTask.list||"Inbox",subtasks:sub.subtasks||[],notes:sub.notes||"",tags:sub.tags||[],createdAt:new Date().toISOString(),completedAt:sub.completed?new Date().toISOString():null};
+        if (onReorder) {
+          onReorder(prev => {
+            const cleaned = prev.map(t => ({...t, subtasks: removeSubById(t.subtasks||[], tid)}));
+            const idx = cleaned.findIndex(t => t.id === targetTask.id);
+            const ins = zone === "after" ? idx + 1 : idx;
+            cleaned.splice(ins, 0, promoted);
+            return cleaned;
+          });
+        }
+        if (flash) flash(`Promoted "${sub.title}" to task`);
       }
-      if (flash) flash(`Promoted "${sub.title}" to task`);
     } else {
       /* task → task: reorder + change date if needed */
       if (onReorder) {
