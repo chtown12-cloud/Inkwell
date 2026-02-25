@@ -1685,9 +1685,17 @@ const KanbanBoard = ({tasks, columns, onColumnsChange, onResetColumns, onSelect,
     if (!tid) return;
     const src = e.dataTransfer.getData("application/x-source");
     if (isSubSource(src)) {
-      /* Subtask drop → set dueDate on the subtask */
-      if (onSubUpdate) onSubUpdate(tid, {dueDate: ds});
-      if (flash) flash("Subtask scheduled");
+      /* Find parent task to check if subtask is returning home */
+      let parentTask = null;
+      for (const t of tasks) { if (findSubById(t.subtasks, tid)) { parentTask = t; break; } }
+      if (parentTask && parentTask.dueDate === ds) {
+        /* Dropping back on parent's column → clear dueDate so it re-nests */
+        if (onSubUpdate) onSubUpdate(tid, {dueDate: null});
+        if (flash) flash("Subtask rejoined parent");
+      } else {
+        if (onSubUpdate) onSubUpdate(tid, {dueDate: ds});
+        if (flash) flash("Subtask scheduled");
+      }
       return;
     }
     const t = tasks.find(x => x.id === tid);
@@ -2875,9 +2883,11 @@ export default function InkwellApp() {
         setTasks(prev => prev.map(t => {
           const found = findSubById(t.subtasks, dragId);
           if (!found) return t;
-          return {...t, subtasks: updateSubById(t.subtasks, dragId, {dueDate: dropValue})};
+          /* If dropping back on parent's date, clear dueDate to re-nest */
+          const newDate = t.dueDate === dropValue ? null : dropValue;
+          return {...t, subtasks: updateSubById(t.subtasks, dragId, {dueDate: newDate})};
         }));
-        flash("Subtask due date updated");
+        flash((() => { for (const t of tasks) { if (findSubById(t.subtasks, dragId) && t.dueDate === dropValue) return "Subtask rejoined parent"; } return "Subtask due date updated"; })());
       } else {
         setTasks(prev => prev.map(t => t.id === dragId ? {...t, dueDate: dropValue} : t));
         flash(`Due date set to ${formatDate(dropValue)}`);
@@ -3102,7 +3112,7 @@ export default function InkwellApp() {
                 onDragOver:e=>{e.preventDefault();e.currentTarget.style.background="var(--accent-bg)";e.currentTarget.style.outline="2px solid var(--accent)";e.currentTarget.style.borderRadius="10px";},
                 onDragLeave:e=>{e.currentTarget.style.background="";e.currentTarget.style.outline="";},
                 onDrop:e=>{e.preventDefault();e.currentTarget.style.background="";e.currentTarget.style.outline="";const tid=e.dataTransfer.getData("text/plain");if(!tid)return;const src=e.dataTransfer.getData("application/x-source");
-                  if(isSubSource(src)){setTasks(prev=>prev.map(t=>{const found=findSubById(t.subtasks,tid);if(!found)return t;return{...t,subtasks:updateSubById(t.subtasks,tid,{dueDate:dateStr})};}));flash(`Subtask due ${label}`);setIsDragging(false);}
+                  if(isSubSource(src)){setTasks(prev=>prev.map(t=>{const found=findSubById(t.subtasks,tid);if(!found)return t;const newDate=t.dueDate===dateStr?null:dateStr;return{...t,subtasks:updateSubById(t.subtasks,tid,{dueDate:newDate})};}));flash(tasks.find(t=>findSubById(t.subtasks,tid))?.dueDate===dateStr?"Subtask rejoined parent":`Subtask due ${label}`);setIsDragging(false);}
                   else{const ids=selectedIds.size>1&&selectedIds.has(tid)?selectedIds:new Set([tid]);setTasks(prev=>prev.map(t=>ids.has(t.id)?{...t,dueDate:dateStr}:t));flash(`Set ${ids.size>1?ids.size+" tasks":"task"} to ${label}`);setSelectedIds(new Set());setIsDragging(false);}
                 }
               });
