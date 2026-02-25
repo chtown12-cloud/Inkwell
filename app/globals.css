@@ -6,6 +6,7 @@
 
 html, body {
   height: 100%;
+  height: 100dvh;
   overflow: hidden;
   font-family: 'Source Sans 3', 'Source Sans Pro', -apple-system, sans-serif;
   background: #faf9f7;
@@ -36,9 +37,9 @@ input::placeholder, textarea::placeholder { color: #a8a29e; }
 
 /* Mobile responsive */
 @media (max-width: 768px) {
-  .sidebar { position: fixed !important; z-index: 100 !important; height: 100vh !important; }
+  .sidebar { position: fixed !important; z-index: 100 !important; height: 100vh !important; height: 100dvh !important; }
   .sidebar-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.3); z-index: 99; }
-  .detail-panel { position: fixed !important; right: 0; top: 0; height: 100vh !important; z-index: 100; width: 100% !important; max-width: 400px; }
+  .detail-panel { position: fixed !important; right: 0; top: 0; height: 100vh !important; height: 100dvh !important; z-index: 100; width: 100% !important; max-width: 400px; }
 }
 
 /* Touch drag: prevent browser from hijacking touches on draggable elements */
@@ -49,5 +50,15 @@ input::placeholder, textarea::placeholder { color: #a8a29e; }
     -webkit-user-select: none;
     -webkit-user-drag: none;
     user-select: none;
+  }
+}
+
+/* Safe area inset for mobile devices with home indicators / notches */
+.main-scroll {
+  -webkit-overflow-scrolling: touch;
+}
+@media (max-width: 768px) {
+  .main-scroll {
+    padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px)) !important;
   }
 }

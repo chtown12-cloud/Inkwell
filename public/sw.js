@@ -1,6 +1,5 @@
-const CACHE_NAME = 'inkwell-v1';
+const CACHE_NAME = 'inkwell-v3';
 const STATIC_ASSETS = [
-  '/',
   '/manifest.json',
   '/icon-192.png',
   '/icon-512.png',
@@ -23,20 +22,30 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  // Skip API requests — always go to network
-  if (event.request.url.includes('/api/')) return;
+  const url = new URL(event.request.url);
 
+  // Skip API and Supabase requests entirely — always network
+  if (url.pathname.startsWith('/api/') || url.hostname.includes('supabase')) return;
+
+  // Static assets (icons, manifest) — cache-first
+  if (STATIC_ASSETS.some(a => url.pathname === a)) {
+    event.respondWith(
+      caches.match(event.request).then(cached => cached || fetch(event.request))
+    );
+    return;
+  }
+
+  // Everything else (HTML, JS, CSS) — NETWORK-FIRST
+  // Always try network; only fall back to cache if offline
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      const fetchPromise = fetch(event.request).then((response) => {
+    fetch(event.request)
+      .then((response) => {
         if (response && response.status === 200) {
           const clone = response.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
         }
         return response;
-      }).catch(() => cached);
-
-      return cached || fetchPromise;
-    })
+      })
+      .catch(() => caches.match(event.request))
   );
 });

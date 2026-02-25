@@ -54,7 +54,7 @@ function useSupabaseSync() {
     setUser(null);
   };
 
-  const loadFromCloud = async () => {
+  const loadFromCloud = useCallback(async () => {
     if (!supabase || !user) return null;
     const { data, error } = await supabase
       .from("user_data")
@@ -63,7 +63,7 @@ function useSupabaseSync() {
       .single();
     if (error) { console.warn("Cloud load failed:", error.message); return null; }
     return data;
-  };
+  }, [user]);
 
   const saveToCloud = useCallback((tasks, lists, settings) => {
     if (!supabase || !user) return;
@@ -493,6 +493,8 @@ const isDescendant = (subs, targetId) => {
   for(const s of subs){ if(s.id===targetId) return true; if(isDescendant(s.subtasks, targetId)) return true; }
   return false;
 };
+/* Check if a drag source is any kind of subtask */
+const isSubSource = (src) => src === "subtask" || src === "detail-subtask" || src === "kanban-subtask";
 /* Insert a subtask before or after a target sibling in the tree */
 const insertSubNear = (subs, targetId, newSub, position) => {
   if(!subs) return [];
@@ -1653,7 +1655,7 @@ const collectDatedSubtasks = (tasks) => {
   return results;
 };
 
-const KanbanBoard = ({tasks, columns, onColumnsChange, onResetColumns, onSelect, onUpdate, onToggle, onUpdateSubtask, flash, setIsDragging, animatingTasks, onReorder}) => {
+const KanbanBoard = ({tasks, columns, onColumnsChange, onResetColumns, onSelect, onUpdate, onToggle, onUpdateSubtask, onSubUpdate, flash, setIsDragging, animatingTasks, onReorder}) => {
   const [hoverCol, setHoverCol] = useState(null);
   const [editingCol, setEditingCol] = useState(null);
   const [editName, setEditName] = useState("");
@@ -1681,6 +1683,13 @@ const KanbanBoard = ({tasks, columns, onColumnsChange, onResetColumns, onSelect,
     e.preventDefault(); setHoverCol(null); setCardDrop(null);
     const tid = e.dataTransfer.getData("text/plain");
     if (!tid) return;
+    const src = e.dataTransfer.getData("application/x-source");
+    if (isSubSource(src)) {
+      /* Subtask drop → set dueDate on the subtask */
+      if (onSubUpdate) onSubUpdate(tid, {dueDate: ds});
+      if (flash) flash("Subtask scheduled");
+      return;
+    }
     const t = tasks.find(x => x.id === tid);
     if (t) onUpdate({ ...t, dueDate: ds });
   };
@@ -1700,7 +1709,7 @@ const KanbanBoard = ({tasks, columns, onColumnsChange, onResetColumns, onSelect,
     if (!tid || tid === targetTask.id) { setCardDrop(null); return; }
     const src = e.dataTransfer.getData("application/x-source");
     const zone = cardDrop?.zone || "after";
-    if (src === "subtask" || src === "detail-subtask") {
+    if (isSubSource(src)) {
       /* subtask → kanban card: promote to task at that position */
       let sub = null;
       for (const t of tasks) { sub = findSubById(t.subtasks, tid); if (sub) break; }
@@ -1772,7 +1781,8 @@ const KanbanBoard = ({tasks, columns, onColumnsChange, onResetColumns, onSelect,
           <div style={{flex:1,overflowY:"auto",padding:8}}>
             {overdueTasks.map(t => (
               <KanbanCard key={t.id} task={t} onSelect={onSelect} onToggle={onToggle} onDragBegin={setIsDragging} animateState={animatingTasks?.[t.id]}
-                cardDrop={cardDrop} onCardDragOver={onCardDragOver} onCardDrop={onCardDrop} onCardDragLeave={onCardDragLeave}/>
+                cardDrop={cardDrop} onCardDragOver={onCardDragOver} onCardDrop={onCardDrop} onCardDragLeave={onCardDragLeave}
+                onUpdateSubtask={onUpdateSubtask} onSubUpdate={onSubUpdate} setIsDragging={setIsDragging}/>
             ))}
           </div>
         </div>
@@ -1821,7 +1831,8 @@ const KanbanBoard = ({tasks, columns, onColumnsChange, onResetColumns, onSelect,
               )}
               {colTasks.map(t => (
                 <KanbanCard key={t.id} task={t} onSelect={onSelect} onToggle={onToggle} onDragBegin={setIsDragging} animateState={animatingTasks?.[t.id]}
-                  cardDrop={cardDrop} onCardDragOver={onCardDragOver} onCardDrop={onCardDrop} onCardDragLeave={onCardDragLeave}/>
+                  cardDrop={cardDrop} onCardDragOver={onCardDragOver} onCardDrop={onCardDrop} onCardDragLeave={onCardDragLeave}
+                  onUpdateSubtask={onUpdateSubtask} onSubUpdate={onSubUpdate} setIsDragging={setIsDragging}/>
               ))}
               {colSubs.length > 0 && colTasks.length > 0 && <div style={{borderTop:"1px dashed var(--border)",margin:"6px 0"}} />}
               {colSubs.map(ds => (
@@ -1849,9 +1860,14 @@ const KanbanBoard = ({tasks, columns, onColumnsChange, onResetColumns, onSelect,
   );
 };
 
-const KanbanCard = ({task, onSelect, onToggle, onDragBegin, animateState, cardDrop, onCardDragOver, onCardDrop, onCardDragLeave}) => {
+const KanbanCard = ({task, onSelect, onToggle, onDragBegin, animateState, cardDrop, onCardDragOver, onCardDrop, onCardDragLeave, onUpdateSubtask, onSubUpdate, setIsDragging: setDragging}) => {
   const pc = PRIORITY[task.priority || "none"].color;
   const dz = cardDrop?.id === task.id ? cardDrop : null;
+  const subs = task.subtasks || [];
+  const hasSubs = subs.length > 0;
+  const {total, done} = hasSubs ? countSubs(subs) : {total: 0, done: 0};
+  const [expanded, setExpanded] = useState(false);
+
   return (
     <div
       onDragOver={onCardDragOver ? e => onCardDragOver(e, task) : undefined}
@@ -1859,32 +1875,111 @@ const KanbanCard = ({task, onSelect, onToggle, onDragBegin, animateState, cardDr
       onDragLeave={onCardDragLeave}
       style={{position:"relative",marginBottom:6}}>
       {dz?.zone === "before" && <div style={{position:"absolute",top:-3,left:4,right:4,height:2,background:"var(--accent)",borderRadius:1,zIndex:5}}/>}
-      <div draggable
-        data-drag-id={task.id} data-drag-source="task" data-drag-label={task.title}
-        onDragStart={e => { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", task.id); e.dataTransfer.setData("application/x-source", "task"); if(onDragBegin)onDragBegin(true); }}
-        onDragEnd={()=>{ if(onDragBegin) onDragBegin(false); }}
-        onClick={() => onSelect(task)}
-        style={{padding:"10px 12px",background:"white",borderRadius:10,cursor:"grab",touchAction:"none",
-          borderLeft:`3px solid ${pc}`,boxShadow:"0 1px 3px rgba(0,0,0,0.06)",
-          animation:animateState==="complete"?"cardComplete 0.6s ease forwards":animateState==="uncomplete"?"cardUncomplete 0.5s ease forwards":"none",
-          transition:"box-shadow 0.15s,transform 0.15s"}}>
-        <div style={{display:"flex",alignItems:"flex-start",gap:8}}>
-          <div style={{paddingTop:1,animation:animateState?"checkPop 0.45s ease":"none"}}>
-            <Checkbox checked={task.completed} priority={task.priority} size={16} onChange={()=>onToggle(task.id)} animating={!!animateState}/>
-          </div>
-          <div style={{flex:1,minWidth:0}}>
-            <div style={{fontSize:13,fontWeight:500,color:"var(--ink)",lineHeight:1.4,wordWrap:"break-word"}}>{task.title}</div>
-            <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",marginTop:4}}>
-              {task.priority !== "none" && <span style={{fontSize:10,fontWeight:700,color:pc}}>{PRIORITY[task.priority].label}</span>}
-              {(task.tags||[]).map(t => <span key={t} style={{fontSize:10,color:"var(--accent)"}}>#{t}</span>)}
-              {task.notes && <span style={{color:"#cbd5e1",display:"flex",transform:"scale(0.8)"}}>{Icons.note}</span>}
-              {(task.subtasks||[]).length > 0 && (() => { const {total,done} = countSubs(task.subtasks); return <span style={{fontSize:10,color:done===total?"#16a34a":"var(--muted)"}}>{Icons.subtask} {done}/{total}</span>; })()}
-              <span style={{fontSize:10,color:"var(--muted)",background:"var(--surface)",padding:"1px 5px",borderRadius:3}}>{task.list}</span>
+      <div style={{background:"white",borderRadius:10,borderLeft:`3px solid ${pc}`,boxShadow:"0 1px 3px rgba(0,0,0,0.06)",
+        animation:animateState==="complete"?"cardComplete 0.6s ease forwards":animateState==="uncomplete"?"cardUncomplete 0.5s ease forwards":"none",
+        transition:"box-shadow 0.15s,transform 0.15s",overflow:"hidden"}}>
+        {/* ── Main card row (draggable) ── */}
+        <div draggable
+          data-drag-id={task.id} data-drag-source="task" data-drag-label={task.title}
+          onDragStart={e => { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", task.id); e.dataTransfer.setData("application/x-source", "task"); if(onDragBegin)onDragBegin(true); }}
+          onDragEnd={()=>{ if(onDragBegin) onDragBegin(false); }}
+          onClick={() => onSelect(task)}
+          style={{padding:"10px 12px",cursor:"grab",touchAction:"none"}}>
+          <div style={{display:"flex",alignItems:"flex-start",gap:8}}>
+            <div style={{paddingTop:1,animation:animateState?"checkPop 0.45s ease":"none"}}>
+              <Checkbox checked={task.completed} priority={task.priority} size={16} onChange={()=>onToggle(task.id)} animating={!!animateState}/>
+            </div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:13,fontWeight:500,color:"var(--ink)",lineHeight:1.4,wordWrap:"break-word"}}>{task.title}</div>
+              <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",marginTop:4}}>
+                {task.priority !== "none" && <span style={{fontSize:10,fontWeight:700,color:pc}}>{PRIORITY[task.priority].label}</span>}
+                {(task.tags||[]).map(t => <span key={t} style={{fontSize:10,color:"var(--accent)"}}>#{t}</span>)}
+                {task.notes && <span style={{color:"#cbd5e1",display:"flex",transform:"scale(0.8)"}}>{Icons.note}</span>}
+                {hasSubs && (
+                  <button onClick={e=>{e.stopPropagation();setExpanded(!expanded);}}
+                    style={{fontSize:10,color:done===total?"#16a34a":"var(--muted)",background:"none",border:"none",cursor:"pointer",padding:0,fontFamily:"inherit",display:"flex",alignItems:"center",gap:2}}>
+                    {Icons.subtask} {done}/{total}
+                    <span style={{transform:expanded?"rotate(0)":"rotate(-90deg)",transition:"transform 0.15s",display:"inline-flex",marginLeft:1}}>{Icons.chevD}</span>
+                  </button>
+                )}
+                <span style={{fontSize:10,color:"var(--muted)",background:"var(--surface)",padding:"1px 5px",borderRadius:3}}>{task.list}</span>
+              </div>
             </div>
           </div>
         </div>
+        {/* ── Expanded subtask list ── */}
+        {hasSubs && expanded && (
+          <div style={{borderTop:"1px solid var(--border-light)",padding:"4px 8px 6px",background:"var(--surface)"}}>
+            <KanbanSubtaskList subs={subs} taskId={task.id} depth={0}
+              onToggleSub={onUpdateSubtask} onSubUpdate={onSubUpdate}
+              onDragBegin={setDragging} onSelect={() => onSelect(task)}/>
+          </div>
+        )}
       </div>
       {dz?.zone === "after" && <div style={{position:"absolute",bottom:-3,left:4,right:4,height:2,background:"var(--accent)",borderRadius:1,zIndex:5}}/>}
+    </div>
+  );
+};
+
+/* Recursive subtask list inside kanban cards — collapsible, draggable, max depth 1 (sub-subtasks) */
+const KanbanSubtaskList = ({subs, taskId, depth, onToggleSub, onSubUpdate, onDragBegin, onSelect}) => {
+  const [openIds, setOpenIds] = useState({});
+  const toggle = id => setOpenIds(p => ({...p, [id]: !p[id]}));
+  if (!subs?.length) return null;
+  const canExpand = depth < 1; /* only show children at depth 0 (subtasks can expand to sub-subtasks) */
+
+  return (
+    <div style={{marginLeft: depth > 0 ? 10 : 0}}>
+      {subs.map(sub => {
+        const hasCh = (sub.subtasks || []).length > 0;
+        const isOpen = openIds[sub.id] !== false;
+        const chCount = hasCh ? countSubs(sub.subtasks) : null;
+        return (
+          <div key={sub.id}>
+            <div
+              draggable
+              data-drag-id={sub.id} data-drag-source="kanban-subtask" data-drag-label={sub.title}
+              onDragStart={e => {
+                e.stopPropagation();
+                e.dataTransfer.effectAllowed = "move";
+                e.dataTransfer.setData("text/plain", sub.id);
+                e.dataTransfer.setData("application/x-source", "kanban-subtask");
+                if(onDragBegin) onDragBegin(true);
+              }}
+              onDragEnd={() => { if(onDragBegin) onDragBegin(false); }}
+              style={{display:"flex",alignItems:"center",gap:5,padding:"3px 4px",borderRadius:6,cursor:"grab",
+                transition:"background 0.1s",fontSize:12}}
+              onMouseEnter={e=>e.currentTarget.style.background="rgba(0,0,0,0.03)"}
+              onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+              {depth > 0 && <span style={{fontSize:9,color:"#b45309",flexShrink:0,fontWeight:700}}>↳</span>}
+              <div onClick={e=>{e.stopPropagation();onToggleSub(taskId, sub.id);}} style={{flexShrink:0,cursor:"pointer"}}>
+                <Checkbox checked={sub.completed} priority={sub.priority} size={13}/>
+              </div>
+              <span onClick={e=>{e.stopPropagation();onSelect();}}
+                style={{flex:1,minWidth:0,color:sub.completed?"var(--muted)":"var(--ink)",textDecoration:sub.completed?"line-through":"none",
+                  overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",cursor:"pointer",lineHeight:1.3}}>
+                {sub.title}
+              </span>
+              {sub.dueDate && <span style={{fontSize:9,color:sub.dueDate<todayStr()?"#ef4444":"var(--muted)",flexShrink:0,whiteSpace:"nowrap"}}>{formatDate(sub.dueDate)}</span>}
+              {hasCh && canExpand && (
+                <button onClick={e=>{e.stopPropagation();toggle(sub.id);}}
+                  style={{background:"none",border:"none",cursor:"pointer",padding:0,color:"var(--muted)",display:"flex",alignItems:"center",gap:1,fontSize:10,fontFamily:"inherit",flexShrink:0}}>
+                  {chCount.done}/{chCount.total}
+                  <span style={{transform:isOpen?"rotate(0)":"rotate(-90deg)",transition:"transform 0.15s",display:"flex"}}>{Icons.chevD}</span>
+                </button>
+              )}
+              {hasCh && !canExpand && (
+                <span style={{fontSize:10,color:"var(--muted)",flexShrink:0}}>{chCount.done}/{chCount.total}</span>
+              )}
+            </div>
+            {hasCh && canExpand && isOpen && (
+              <KanbanSubtaskList subs={sub.subtasks} taskId={taskId} depth={depth+1}
+                onToggleSub={onToggleSub} onSubUpdate={onSubUpdate}
+                onDragBegin={onDragBegin} onSelect={onSelect}/>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 };
@@ -2279,7 +2374,7 @@ const LoginScreen = ({ onSignIn, onSignInPassword, error }) => {
   };
 
   return (
-    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"var(--bg)",fontFamily:"var(--font-body)",padding:20}}>
+    <div style={{minHeight:"100dvh",display:"flex",alignItems:"center",justifyContent:"center",background:"var(--bg)",fontFamily:"var(--font-body)",padding:20}}>
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700;800&family=Source+Sans+3:wght@300;400;500;600;700&display=swap');
         :root{--font-display:'Playfair Display',Georgia,serif;--font-body:'Source Sans 3',-apple-system,sans-serif;--ink:#1c1917;--text:#44403c;--muted:#a8a29e;--bg:#fafaf9;--surface:#f5f5f4;--border:#e7e5e4;--accent:#d97706;--accent-dark:#b45309;--accent-bg:#fffbeb;}
         *{box-sizing:border-box;margin:0;padding:0;font-family:var(--font-body);}
@@ -2434,119 +2529,113 @@ export default function InkwellApp() {
   useEffect(()=>{save("inkwell-showListCounts",showListCounts);},[showListCounts]);
   useEffect(()=>{save("inkwell-todayMode",todayMode);},[todayMode]);
 
-  /* ── Guard: skip save effects that fire from init loads ── */
-  const initDoneRef = useRef(false);
-  const skipNextSaveRef = useRef(2); /* counter: skip N upcoming save effects */
-  const initializedUserRef = useRef(null); /* track which user we've initialized for */
+  /* ── CLOUD-FIRST SYNC ──
+     When logged in: cloud is always the source of truth.
+     localStorage is a write-through cache for offline use.
+     Save effects are suppressed for 2s after any cloud load
+     to prevent writing cloud data back to cloud. */
+  const cloudLoadTimeRef = useRef(0); /* timestamp of last cloud load — save effects skip within 2s */
+  const initializedUserRef = useRef(null); /* prevents token-refresh re-init */
+
+  /* Helper: apply cloud data to state + localStorage cache */
+  const applyCloudData = useCallback((cloudData) => {
+    cloudLoadTimeRef.current = Date.now(); /* mark cloud load time BEFORE setters */
+    setTasks(cloudData.tasks || []);
+    setLists(cloudData.lists || DEFAULT_LISTS);
+    if (cloudData.settings) {
+      if (cloudData.settings.showViewCounts !== undefined) setShowViewCounts(cloudData.settings.showViewCounts);
+      if (cloudData.settings.showListCounts !== undefined) setShowListCounts(cloudData.settings.showListCounts);
+    }
+    /* Cache to localStorage for offline use */
+    save(TASKS_KEY, cloudData.tasks || []);
+    save(LISTS_KEY, cloudData.lists || DEFAULT_LISTS);
+  }, []);
 
   useEffect(()=>{
-    /* Skip re-init if same user (token refresh) — only init on actual user change */
+    if(authLoading) return; /* wait for auth to resolve */
     const userId = user?.id || null;
-    if(initDoneRef.current && initializedUserRef.current === userId) return;
+    /* Skip re-init for same user (token refresh) — only re-init on actual user change */
+    if(initializedUserRef.current === userId && ready) return;
+    initializedUserRef.current = userId;
 
-    initDoneRef.current = false;
-    skipNextSaveRef.current = 2;
     const init = async () => {
-      const localTasks = load(TASKS_KEY, []);
-      const localLists = load(LISTS_KEY, DEFAULT_LISTS);
-      const localTs = load("inkwell-updated-at", null);
-
-      let cloudData = null;
       if (hasSupabase && user) {
-        cloudData = await loadFromCloud();
-      }
-
-      if (cloudData && cloudData.updated_at && localTs) {
-        const cloudTime = new Date(cloudData.updated_at).getTime();
-        const localTime = new Date(localTs).getTime();
-        if (cloudTime >= localTime) {
-          setTasks(cloudData.tasks || []);
-          setLists(cloudData.lists || DEFAULT_LISTS);
-          if (cloudData.settings) {
-            if (cloudData.settings.showViewCounts !== undefined) setShowViewCounts(cloudData.settings.showViewCounts);
-            if (cloudData.settings.showListCounts !== undefined) setShowListCounts(cloudData.settings.showListCounts);
-          }
-          save(TASKS_KEY, cloudData.tasks || []);
-          save(LISTS_KEY, cloudData.lists || DEFAULT_LISTS);
-          save("inkwell-updated-at", cloudData.updated_at);
+        /* ── Logged in: always load from cloud ── */
+        const cloudData = await loadFromCloud();
+        if (cloudData) {
+          applyCloudData(cloudData);
         } else {
-          setTasks(localTasks);
-          setLists(localLists);
+          /* Cloud load failed (network error / empty) — fall back to localStorage */
+          setTasks(load(TASKS_KEY, []));
+          setLists(load(LISTS_KEY, DEFAULT_LISTS));
         }
-      } else if (cloudData) {
-        setTasks(cloudData.tasks || []);
-        setLists(cloudData.lists || DEFAULT_LISTS);
-        if (cloudData.settings) {
-          if (cloudData.settings.showViewCounts !== undefined) setShowViewCounts(cloudData.settings.showViewCounts);
-          if (cloudData.settings.showListCounts !== undefined) setShowListCounts(cloudData.settings.showListCounts);
-        }
-        save(TASKS_KEY, cloudData.tasks || []);
-        save(LISTS_KEY, cloudData.lists || DEFAULT_LISTS);
-        save("inkwell-updated-at", cloudData.updated_at || new Date().toISOString());
       } else {
-        setTasks(localTasks);
-        setLists(localLists);
+        /* ── Not logged in: use localStorage only ── */
+        setTasks(load(TASKS_KEY, []));
+        setLists(load(LISTS_KEY, DEFAULT_LISTS));
       }
-      initDoneRef.current = true;
-      initializedUserRef.current = userId;
       setReady(true);
     };
     init();
     const mob=window.innerWidth<768;setIsMobile(mob);if(mob)setSidebar(false);
     const fn=()=>{const m=window.innerWidth<768;setIsMobile(m);if(m)setSidebar(false);};
     window.addEventListener("resize",fn);
-    if("serviceWorker" in navigator)navigator.serviceWorker.register("/sw.js").catch(()=>{});
+    /* Service worker: register + detect updates → force reload for fresh code */
+    if("serviceWorker" in navigator){
+      navigator.serviceWorker.register("/sw.js").then(reg=>{
+        reg.addEventListener("updatefound",()=>{
+          const nw=reg.installing;
+          if(!nw)return;
+          nw.addEventListener("statechange",()=>{
+            if(nw.state==="activated"&&navigator.serviceWorker.controller){
+              /* New SW activated while we're running old code — reload to get fresh JS */
+              window.location.reload();
+            }
+          });
+        });
+        /* Also proactively check for updates on every load */
+        reg.update().catch(()=>{});
+      }).catch(()=>{});
+    }
     return()=>window.removeEventListener("resize",fn);
-  },[user, hasSupabase]);
+  },[user, hasSupabase, authLoading]);
 
-  /* ── Sync from cloud when tab regains focus (picks up other-device changes) ── */
+  /* ── Sync from cloud when tab regains focus ── */
   useEffect(()=>{
     if(!hasSupabase || !user) return;
     const syncOnFocus = async () => {
-      if(document.hidden || !initDoneRef.current) return;
-      const cloudData = await loadFromCloud();
-      if(!cloudData || !cloudData.updated_at) return;
-      const localTs = load("inkwell-updated-at", null);
-      if(!localTs) return;
-      const cloudTime = new Date(cloudData.updated_at).getTime();
-      const localTime = new Date(localTs).getTime();
-      if(cloudTime > localTime) {
-        /* Cloud is newer — update state */
-        skipNextSaveRef.current = 2; /* prevent save loop */
-        setTasks(cloudData.tasks || []);
-        setLists(cloudData.lists || DEFAULT_LISTS);
-        if (cloudData.settings) {
-          if (cloudData.settings.showViewCounts !== undefined) setShowViewCounts(cloudData.settings.showViewCounts);
-          if (cloudData.settings.showListCounts !== undefined) setShowListCounts(cloudData.settings.showListCounts);
+      if(document.hidden || !ready) return;
+      try {
+        const cloudData = await loadFromCloud();
+        if(cloudData) {
+          applyCloudData(cloudData);
         }
-        save(TASKS_KEY, cloudData.tasks || []);
-        save(LISTS_KEY, cloudData.lists || DEFAULT_LISTS);
-        save("inkwell-updated-at", cloudData.updated_at);
-      }
+      } catch(e) { /* network error — keep local state */ }
     };
     document.addEventListener("visibilitychange", syncOnFocus);
     return () => document.removeEventListener("visibilitychange", syncOnFocus);
-  },[user, hasSupabase, loadFromCloud]);
+  },[user, hasSupabase, ready, loadFromCloud, applyCloudData]);
 
-  /* Save with timestamp on every USER change (not init loads) */
+  /* ── Save on every USER edit (skip saves within 2s of cloud load) ── */
   useEffect(()=>{
     if(!ready) return;
-    if(!initDoneRef.current) return;
-    if(skipNextSaveRef.current > 0){ skipNextSaveRef.current--; return; }
-    const ts=new Date().toISOString();
+    if(Date.now() - cloudLoadTimeRef.current < 2000) return;
     save(TASKS_KEY,tasks);
-    save("inkwell-updated-at",ts);
     saveToCloud(tasks,lists,{showViewCounts,showListCounts});
   },[tasks,ready]);
   useEffect(()=>{
-    if(!ready || !initDoneRef.current) return;
-    if(skipNextSaveRef.current > 0){ skipNextSaveRef.current--; return; }
+    if(!ready) return;
+    if(Date.now() - cloudLoadTimeRef.current < 2000) return;
     save(LISTS_KEY,lists);
     saveToCloud(tasks,lists,{showViewCounts,showListCounts});
   },[lists,ready]);
-  useEffect(()=>{if(ready&&initDoneRef.current)saveToCloud(tasks,lists,{showViewCounts,showListCounts});},[showViewCounts,showListCounts]);
+  useEffect(()=>{
+    if(!ready) return;
+    if(Date.now() - cloudLoadTimeRef.current < 2000) return;
+    saveToCloud(tasks,lists,{showViewCounts,showListCounts});
+  },[showViewCounts,showListCounts]);
 
-  /* Flush to cloud on tab hide AND page unload */
+  /* ── Flush to cloud on tab hide AND page unload ── */
   const tasksRef=useRef(tasks);const listsRef=useRef(lists);
   useEffect(()=>{tasksRef.current=tasks;},[tasks]);
   useEffect(()=>{listsRef.current=lists;},[lists]);
@@ -2662,7 +2751,7 @@ export default function InkwellApp() {
         });
         flash(`Promoted "${overTask.title}" to task`);setDragTask(null);setDropTarget(null);return;
       }
-      if(src==="subtask"){
+      if(isSubSource(src)){
         /* subtask→subtask nest: remove from old parent, add to new parent */
         setTasks(prev=>{
           let arr=prev.map(t=>({...t,subtasks:removeSubById(t.subtasks||[],dragTask.id)}));
@@ -2679,7 +2768,7 @@ export default function InkwellApp() {
       flash(`Nested under "${overTask.title}"`);
     } else {
       /* ── Reorder: insert before/after target ── */
-      if(src==="subtask"){
+      if(isSubSource(src)){
         /* Promote subtask to task and insert at position */
         const promoted={id:dragTask.id,title:dragTask.title,completed:dragTask.completed||false,dueDate:dragTask.dueDate||todayStr(),startDate:dragTask.startDate||null,endDate:dragTask.endDate||null,priority:dragTask.priority||"none",list:overTask.list||"Inbox",subtasks:dragTask.subtasks||[],notes:dragTask.notes||"",tags:dragTask.tags||[],createdAt:new Date().toISOString(),completedAt:dragTask.completed?new Date().toISOString():null};
         setTasks(prev=>{
@@ -2704,7 +2793,7 @@ export default function InkwellApp() {
   };
   const onDragEnd=()=>{setDragTask(null);setDropTarget(null);setIsDragging(false);};
   const onListDrop=(e,listName)=>{e.preventDefault();setDropTarget(null);const tid=e.dataTransfer.getData("text/plain");const src=e.dataTransfer.getData("application/x-source");
-    if(tid&&(src==="subtask"||src==="detail-subtask")){
+    if(tid&&(isSubSource(src))){
       /* Promote subtask to task in the target list */
       setTasks(prev=>{
         let sub=null;
@@ -2750,7 +2839,7 @@ export default function InkwellApp() {
     if (!dragId) return;
 
     if (dropType === "trash") {
-      if (dragSource === "subtask") {
+      if (isSubSource(dragSource)) {
         setTasks(prev => prev.map(t => ({...t, subtasks: deleteSubById(t.subtasks||[], dragId)})));
         flash("Subtask deleted");
       } else {
@@ -2762,7 +2851,7 @@ export default function InkwellApp() {
     }
 
     if (dropType === "date" && dropValue) {
-      if (dragSource === "subtask") {
+      if (isSubSource(dragSource)) {
         setTasks(prev => prev.map(t => {
           const found = findSubById(t.subtasks, dragId);
           if (!found) return t;
@@ -2774,7 +2863,7 @@ export default function InkwellApp() {
         flash(`Due date set to ${formatDate(dropValue)}`);
       }
     } else if (dropType === "list" && dropValue) {
-      if (dragSource === "subtask") {
+      if (isSubSource(dragSource)) {
         setTasks(prev => {
           let sub = null;
           for (const t of prev) { sub = findSubById(t.subtasks, dragId); if (sub) break; }
@@ -2811,7 +2900,7 @@ export default function InkwellApp() {
           });
           flash(`Promoted "${overTask.title}" to task`);return;
         }
-        if (dragSource === "subtask") {
+        if (isSubSource(dragSource)) {
           const sub = (() => { let s = null; for (const t of tasks) { s = findSubById(t.subtasks, dragId); if (s) return s; } return null; })();
           if(sub && isDescendant(sub.subtasks, dropValue)){
             /* Subtask being dropped onto its own descendant — promote the descendant */
@@ -2905,18 +2994,18 @@ export default function InkwellApp() {
   const selectView=v=>{setView(v);setSelectedTask(null);setSearch("");if(isMobile)setSidebar(false);};
 
   /* Auth gate: show login if Supabase is configured but user isn't signed in */
-  if (hasSupabase && authLoading) return <div style={{height:"100vh",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"var(--font-display)",fontSize:22,color:"var(--muted)"}}>Loading...</div>;
+  if (hasSupabase && authLoading) return <div style={{height:"100dvh",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"var(--font-display)",fontSize:22,color:"var(--muted)"}}>Loading...</div>;
   if (hasSupabase && !user) return <LoginScreen onSignIn={signInWithEmail} onSignInPassword={signInWithPassword} error={authError}/>;
 
-  if(!ready)return<div style={{height:"100vh",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"var(--font-display)",fontSize:22,color:"var(--muted)"}}>Loading...</div>;
+  if(!ready)return<div style={{height:"100dvh",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"var(--font-display)",fontSize:22,color:"var(--muted)"}}>Loading...</div>;
 
   return (
-    <div style={{height:"100vh",display:"flex",overflow:"hidden"}}>
+    <div style={{height:"100dvh",display:"flex",overflow:"hidden"}}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700;800&family=Source+Sans+3:wght@300;400;500;600;700&display=swap');
         :root{--font-display:'Playfair Display',Georgia,serif;--font-body:'Source Sans 3',-apple-system,sans-serif;--ink:#1c1917;--text:#44403c;--muted:#a8a29e;--bg:#fafaf9;--surface:#f5f5f4;--border:#e7e5e4;--border-light:#f5f5f4;--active-bg:#fffbeb;--accent:#d97706;--accent-dark:#b45309;--accent-bg:#fffbeb;--accent2:#ea580c;}
         *{box-sizing:border-box;margin:0;padding:0;font-family:var(--font-body);}
-        html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;}
+        html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;}
         ::selection{background:rgba(217,119,6,0.15);}
         .list-row:hover .list-menu-btn{opacity:1!important;}
         @keyframes fadeIn{from{opacity:0;transform:scale(0.95)}to{opacity:1;transform:scale(1)}}
@@ -2972,7 +3061,7 @@ export default function InkwellApp() {
         @keyframes toastIn{from{opacity:0;transform:translate(-50%,20px)}to{opacity:1;transform:translate(-50%,0)}}
         button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
         [draggable]{user-select:none;}
-        @media(max-width:768px){.sidebar{position:fixed!important;z-index:100!important;height:100vh!important;}.detail-panel{position:fixed!important;right:0;top:0;height:100vh!important;z-index:100;width:100%!important;max-width:100%!important;min-width:0!important;}}
+        @media(max-width:768px){.sidebar{position:fixed!important;z-index:100!important;height:100dvh!important;}.detail-panel{position:fixed!important;right:0;top:0;height:100dvh!important;z-index:100;width:100%!important;max-width:100%!important;min-width:0!important;}.main-scroll{padding-bottom:calc(24px + env(safe-area-inset-bottom, 0px))!important;}}
       `}</style>
 
       {isMobile&&sidebar&&<div onClick={()=>setSidebar(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.3)",zIndex:99}}/>}
@@ -2993,7 +3082,7 @@ export default function InkwellApp() {
                 onDragOver:e=>{e.preventDefault();e.currentTarget.style.background="var(--accent-bg)";e.currentTarget.style.outline="2px solid var(--accent)";e.currentTarget.style.borderRadius="10px";},
                 onDragLeave:e=>{e.currentTarget.style.background="";e.currentTarget.style.outline="";},
                 onDrop:e=>{e.preventDefault();e.currentTarget.style.background="";e.currentTarget.style.outline="";const tid=e.dataTransfer.getData("text/plain");if(!tid)return;const src=e.dataTransfer.getData("application/x-source");
-                  if(src==="subtask"||src==="detail-subtask"){setTasks(prev=>prev.map(t=>{const found=findSubById(t.subtasks,tid);if(!found)return t;return{...t,subtasks:updateSubById(t.subtasks,tid,{dueDate:dateStr})};}));flash(`Subtask due ${label}`);setIsDragging(false);}
+                  if(isSubSource(src)){setTasks(prev=>prev.map(t=>{const found=findSubById(t.subtasks,tid);if(!found)return t;return{...t,subtasks:updateSubById(t.subtasks,tid,{dueDate:dateStr})};}));flash(`Subtask due ${label}`);setIsDragging(false);}
                   else{const ids=selectedIds.size>1&&selectedIds.has(tid)?selectedIds:new Set([tid]);setTasks(prev=>prev.map(t=>ids.has(t.id)?{...t,dueDate:dateStr}:t));flash(`Set ${ids.size>1?ids.size+" tasks":"task"} to ${label}`);setSelectedIds(new Set());setIsDragging(false);}
                 }
               });
@@ -3133,7 +3222,7 @@ export default function InkwellApp() {
         </header>
 
         <div style={{flex:1,display:"flex",overflow:"hidden"}}>
-          <div style={{flex:1,overflowY:"auto",padding:isMobile?"16px":"20px 24px"}}>
+          <div className="main-scroll" style={{flex:1,overflowY:"auto",padding:isMobile?"16px":"20px 24px"}}>
             {view==="calendar"?(<CalendarView tasks={tasks} onSelect={t=>setSelectedTask(t)} onUpdate={updateTask}/>):(view==="today"&&todayMode==="kanban")?(<div style={{display:"flex",flexDirection:"column",height:"100%"}}>
               <div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",background:"white",borderRadius:14,border:"1px solid var(--border)",marginBottom:10,boxShadow:"0 1px 3px rgba(0,0,0,0.04)",flexShrink:0}}>
                 <span style={{color:"var(--accent)",flexShrink:0}}>{Icons.plus}</span>
@@ -3143,7 +3232,7 @@ export default function InkwellApp() {
                 <button onClick={()=>setTodayMode("kanban")} style={{padding:"5px 12px",borderRadius:6,border:"none",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:todayMode==="kanban"?"white":"transparent",color:todayMode==="kanban"?"var(--ink)":"var(--muted)",boxShadow:todayMode==="kanban"?"0 1px 3px rgba(0,0,0,0.08)":"none",transition:"all 0.15s"}}>Board</button>
                 <button onClick={()=>setTodayMode("list")} style={{padding:"5px 12px",borderRadius:6,border:"none",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:todayMode==="list"?"white":"transparent",color:todayMode==="list"?"var(--ink)":"var(--muted)",boxShadow:todayMode==="list"?"0 1px 3px rgba(0,0,0,0.08)":"none",transition:"all 0.15s"}}>List</button>
               </div>
-              <div style={{flex:1,minHeight:0}}><KanbanBoard tasks={tasks} columns={activeKanbanCols} onColumnsChange={setKanbanColumns} onResetColumns={kanbanColumns?resetKanbanCols:null} onSelect={t=>setSelectedTask(t)} onUpdate={updateTask} onToggle={toggleTask} onReorder={setTasks} onUpdateSubtask={(taskId,subId)=>{setTasks(prev=>prev.map(t=>t.id!==taskId?t:{...t,subtasks:updateSubById(t.subtasks,subId,{completed:!findSubById(t.subtasks,subId)?.completed,completedAt:!findSubById(t.subtasks,subId)?.completed?new Date().toISOString():null})}));}} flash={flash} setIsDragging={setIsDragging} animatingTasks={animatingTasks}/></div>
+              <div style={{flex:1,minHeight:0}}><KanbanBoard tasks={tasks} columns={activeKanbanCols} onColumnsChange={setKanbanColumns} onResetColumns={kanbanColumns?resetKanbanCols:null} onSelect={t=>setSelectedTask(t)} onUpdate={updateTask} onToggle={toggleTask} onReorder={setTasks} onUpdateSubtask={(taskId,subId)=>{setTasks(prev=>prev.map(t=>t.id!==taskId?t:{...t,subtasks:updateSubById(t.subtasks,subId,{completed:!findSubById(t.subtasks,subId)?.completed,completedAt:!findSubById(t.subtasks,subId)?.completed?new Date().toISOString():null})}));}} onSubUpdate={(subId,changes)=>{setTasks(prev=>prev.map(t=>{const found=findSubById(t.subtasks,subId);if(!found)return t;return{...t,subtasks:updateSubById(t.subtasks,subId,changes)};}));}} flash={flash} setIsDragging={setIsDragging} animatingTasks={animatingTasks}/></div>
             </div>):(<>
               {view!=="completed"&&view!=="overdue"&&(<div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",background:"white",borderRadius:14,border:"1px solid var(--border)",marginBottom:view==="today"?10:16,boxShadow:"0 1px 3px rgba(0,0,0,0.04)"}}>
                 <span style={{color:"var(--accent)",flexShrink:0}}>{Icons.plus}</span>
@@ -3260,7 +3349,7 @@ export default function InkwellApp() {
             e.preventDefault();e.currentTarget.style.transform="scale(1)";e.currentTarget.style.background="#fef2f2";e.currentTarget.style.color="#ef4444";
             const tid=e.dataTransfer.getData("text/plain");const src=e.dataTransfer.getData("application/x-source");
             if(!tid)return;
-            if(src==="subtask"||src==="detail-subtask"){
+            if(isSubSource(src)){
               setTasks(prev=>prev.map(t=>({...t,subtasks:deleteSubById(t.subtasks||[],tid)})));
               flash("Subtask deleted");
             }else{
