@@ -23,7 +23,7 @@ export async function POST(request) {
     const listNames = existingLists || ["Inbox"];
 
     const message = await client.messages.create({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-4-6-20250217",
       max_tokens: 3000,
       messages: [
         {
@@ -97,15 +97,37 @@ If a task has no subtasks, use an empty array: "subtasks": []`,
       .filter(Boolean)
       .join("\n");
 
-    const clean = text.replace(/```json|```/g, "").trim();
-    const parsed = JSON.parse(clean);
+    /* Robust JSON extraction — handle markdown fences, preamble text, etc. */
+    let parsed;
+    try {
+      /* Try direct parse first */
+      parsed = JSON.parse(text.trim());
+    } catch (_) {
+      /* Strip markdown fences */
+      let clean = text.replace(/```(?:json)?\s*/g, "").replace(/```\s*/g, "").trim();
+      try {
+        parsed = JSON.parse(clean);
+      } catch (__) {
+        /* Find first { and last } — extract JSON object from surrounding text */
+        const first = clean.indexOf("{");
+        const last = clean.lastIndexOf("}");
+        if (first !== -1 && last > first) {
+          parsed = JSON.parse(clean.slice(first, last + 1));
+        } else {
+          throw new Error("Could not extract JSON from model response");
+        }
+      }
+    }
 
     return NextResponse.json(parsed);
   } catch (error) {
     console.error("Scan API error:", error);
+    const msg = error?.message || "Failed to process image";
+    /* Surface specific Anthropic API errors */
+    const status = error?.status || 500;
     return NextResponse.json(
-      { error: error.message || "Failed to process image" },
-      { status: 500 }
+      { error: msg },
+      { status: status >= 400 && status < 600 ? status : 500 }
     );
   }
 }

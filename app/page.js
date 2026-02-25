@@ -962,7 +962,7 @@ const SubtaskTree = ({subtasks, onAction, onOpenSub, onReorder, depth=0, compact
 /* ═══════════════════════════════════════════════════════════════════════
    PHOTO UPLOAD MODAL
    ═══════════════════════════════════════════════════════════════════════ */
-const PhotoModal = ({onClose,onProcess,processing}) => {
+const PhotoModal = ({onClose,onProcess,processing,error}) => {
   const [dragOver,setDragOver]=useState(false);
   const [preview,setPreview]=useState(null);
   const [fileData,setFileData]=useState(null);
@@ -986,6 +986,11 @@ const PhotoModal = ({onClose,onProcess,processing}) => {
       ):(
         <div>
           <div style={{borderRadius:12,overflow:"hidden",marginBottom:16,border:"1px solid var(--border)",maxHeight:260}}><img src={preview} alt="Preview" style={{width:"100%",display:"block",objectFit:"contain",maxHeight:260}}/></div>
+          {error && (
+            <div style={{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:10,padding:"10px 14px",marginBottom:12,fontSize:13,color:"#dc2626",lineHeight:1.4}}>
+              <strong>Scan failed:</strong> {error}
+            </div>
+          )}
           <div style={{display:"flex",gap:10}}>
             <Btn variant="secondary" onClick={()=>{setPreview(null);setFileData(null);}}>Change</Btn>
             <Btn onClick={()=>onProcess(fileData,mediaType)} disabled={processing}>{processing?<><Spinner/> Scanning...</>:<>{Icons.sparkle} Extract To-dos</>}</Btn>
@@ -2484,6 +2489,7 @@ export default function InkwellApp() {
   const [showPhoto,setShowPhoto]=useState(false);
   const [scanResults,setScanResults]=useState(null);
   const [processing,setProcessing]=useState(false);
+  const [scanError,setScanError]=useState(null);
   const [search,setSearch]=useState("");
   const [showSearch,setShowSearch]=useState(false);
   const [newTitle,setNewTitle]=useState("");
@@ -2978,7 +2984,7 @@ export default function InkwellApp() {
   /* Bulk operations */
 
 
-  const handleScan=async(b64,mt)=>{setProcessing(true);try{const res=await fetch("/api/scan",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({imageData:b64,mediaType:mt,existingTasks:tasks.map(t=>t.title),existingLists:lists})});if(!res.ok){const err=await res.json();throw new Error(err.error||"Scan failed");}const results=await res.json();setShowPhoto(false);setScanResults(results);}catch(e){flash("⚠ "+(e.message||"Failed"));}setProcessing(false);};
+  const handleScan=async(b64,mt)=>{setProcessing(true);setScanError(null);try{const res=await fetch("/api/scan",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({imageData:b64,mediaType:mt,existingTasks:tasks.map(t=>t.title),existingLists:lists})});if(!res.ok){let errMsg="Scan failed ("+res.status+")";try{const err=await res.json();errMsg=err.error||errMsg;}catch(_){}throw new Error(errMsg);}const results=await res.json();setShowPhoto(false);setScanResults(results);}catch(e){const msg=e.message||"Unknown error";setScanError(msg);flash("⚠ "+msg);}setProcessing(false);};
 
   const confirmScan=items=>{let added=0,checked=0;const pageDate=scanResults?.page_date;const newCats=new Set();items.forEach(it=>{if(it.category?.trim()&&!lists.includes(it.category.trim()))newCats.add(it.category.trim());});if(newCats.size>0)setLists(prev=>[...prev,...Array.from(newCats)]);const all=[...lists,...Array.from(newCats)];
     /* Convert scanned subtask tree to app format */
@@ -3321,7 +3327,7 @@ export default function InkwellApp() {
         {selectedTask&&isMobile&&(<div style={{position:"fixed",inset:0,background:"rgba(15,23,42,0.4)",zIndex:100,display:"flex",justifyContent:"flex-end"}} onClick={()=>setSelectedTask(null)}><div onClick={e=>e.stopPropagation()} style={{width:"100%"}}><TaskDetail task={selectedTask} onUpdate={updateTask} onDelete={deleteTask} onClose={()=>setSelectedTask(null)} lists={lists}/></div></div>)}
       </main>
 
-      {showPhoto&&<PhotoModal onClose={()=>setShowPhoto(false)} onProcess={handleScan} processing={processing}/>}
+      {showPhoto&&<PhotoModal onClose={()=>{setShowPhoto(false);setScanError(null);}} onProcess={handleScan} processing={processing} error={scanError}/>}
       {scanResults&&<ScanResultsModal results={scanResults} onConfirm={confirmScan} onClose={()=>setScanResults(null)} lists={lists}/>}
       {showTips&&<ScanTipsModal onClose={()=>setShowTips(false)}/>}
       {showShortcuts&&(<Overlay onClose={()=>setShowShortcuts(false)}><h2 style={{fontSize:19,fontFamily:"var(--font-display)",marginBottom:16}}>Keyboard Shortcuts</h2>{[["N","New task"],["B","Toggle sidebar"],["/ or ⌘F","Search"],["⌘Z","Undo"],["⌘⇧Z","Redo"],["⌘A","Select all tasks"],["Shift+Click","Select range"],["⌘/Ctrl+Click","Toggle select"],["Delete","Delete selected"],["Esc","Clear selection / close"],["?","This help"],["Double-click","Edit any name"]].map(([k,d])=>(<div key={k} style={{display:"flex",alignItems:"center",gap:12,padding:"8px 0",borderBottom:"1px solid var(--border-light)"}}><kbd style={{fontSize:12,fontWeight:600,background:"var(--surface)",padding:"3px 8px",borderRadius:6,border:"1px solid var(--border)",fontFamily:"inherit",minWidth:50,textAlign:"center"}}>{k}</kbd><span style={{fontSize:14,color:"var(--text)"}}>{d}</span></div>))}</Overlay>)}
