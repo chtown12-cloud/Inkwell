@@ -1669,10 +1669,10 @@ const KanbanBoard = ({tasks, columns, onColumnsChange, onResetColumns, onSelect,
 
   const byDate = useMemo(() => {
     const map = {};
-    const colDates = new Set(columns.map(c => c.dateStr));
     columns.forEach(c => {
       const directTasks = tasks.filter(t => !t.completed && t.dueDate === c.dateStr);
-      const surfaced = datedSubs.filter(ds => ds.sub.dueDate === c.dateStr && ds.parentTask.dueDate !== c.dateStr);
+      /* Surface every subtask whose dueDate matches this column as a standalone card */
+      const surfaced = datedSubs.filter(ds => ds.sub.dueDate === c.dateStr);
       map[c.dateStr] = { tasks: directTasks, subtasks: surfaced };
     });
     return map;
@@ -1836,7 +1836,7 @@ const KanbanBoard = ({tasks, columns, onColumnsChange, onResetColumns, onSelect,
               ))}
               {colSubs.length > 0 && colTasks.length > 0 && <div style={{borderTop:"1px dashed var(--border)",margin:"6px 0"}} />}
               {colSubs.map(ds => (
-                <SubtaskKanbanCard key={ds.sub.id} subInfo={ds} onSelect={onSelect} onToggleSub={onUpdateSubtask} />
+                <SubtaskKanbanCard key={ds.sub.id} subInfo={ds} onSelect={onSelect} onToggleSub={onUpdateSubtask} onDragBegin={setIsDragging} />
               ))}
             </div>
           </div>
@@ -1911,6 +1911,7 @@ const KanbanCard = ({task, onSelect, onToggle, onDragBegin, animateState, cardDr
         {hasSubs && expanded && (
           <div style={{borderTop:"1px solid var(--border-light)",padding:"4px 8px 6px",background:"var(--surface)"}}>
             <KanbanSubtaskList subs={subs} taskId={task.id} depth={0}
+              parentDueDate={task.dueDate}
               onToggleSub={onUpdateSubtask} onSubUpdate={onSubUpdate}
               onDragBegin={setDragging} onSelect={() => onSelect(task)}/>
           </div>
@@ -1921,16 +1922,20 @@ const KanbanCard = ({task, onSelect, onToggle, onDragBegin, animateState, cardDr
   );
 };
 
-/* Recursive subtask list inside kanban cards — collapsible, draggable, max depth 1 (sub-subtasks) */
-const KanbanSubtaskList = ({subs, taskId, depth, onToggleSub, onSubUpdate, onDragBegin, onSelect}) => {
+/* Recursive subtask list inside kanban cards — collapsible, draggable at any depth.
+   Subtasks that have been moved to other dates (surfaced as standalone cards) are hidden here. */
+const KanbanSubtaskList = ({subs, taskId, depth, parentDueDate, onToggleSub, onSubUpdate, onDragBegin, onSelect}) => {
   const [openIds, setOpenIds] = useState({});
   const toggle = id => setOpenIds(p => ({...p, [id]: !p[id]}));
   if (!subs?.length) return null;
-  const canExpand = depth < 1; /* only show children at depth 0 (subtasks can expand to sub-subtasks) */
+
+  /* Any subtask with a dueDate is surfaced as a standalone card — only undated ones stay nested */
+  const visible = subs.filter(s => !s.dueDate);
+  const movedCount = subs.length - visible.length;
 
   return (
     <div style={{marginLeft: depth > 0 ? 10 : 0}}>
-      {subs.map(sub => {
+      {visible.map(sub => {
         const hasCh = (sub.subtasks || []).length > 0;
         const isOpen = openIds[sub.id] !== false;
         const chCount = hasCh ? countSubs(sub.subtasks) : null;
@@ -1961,39 +1966,53 @@ const KanbanSubtaskList = ({subs, taskId, depth, onToggleSub, onSubUpdate, onDra
                 {sub.title}
               </span>
               {sub.dueDate && <span style={{fontSize:9,color:sub.dueDate<todayStr()?"#ef4444":"var(--muted)",flexShrink:0,whiteSpace:"nowrap"}}>{formatDate(sub.dueDate)}</span>}
-              {hasCh && canExpand && (
+              {hasCh && (
                 <button onClick={e=>{e.stopPropagation();toggle(sub.id);}}
                   style={{background:"none",border:"none",cursor:"pointer",padding:0,color:"var(--muted)",display:"flex",alignItems:"center",gap:1,fontSize:10,fontFamily:"inherit",flexShrink:0}}>
                   {chCount.done}/{chCount.total}
                   <span style={{transform:isOpen?"rotate(0)":"rotate(-90deg)",transition:"transform 0.15s",display:"flex"}}>{Icons.chevD}</span>
                 </button>
               )}
-              {hasCh && !canExpand && (
-                <span style={{fontSize:10,color:"var(--muted)",flexShrink:0}}>{chCount.done}/{chCount.total}</span>
-              )}
             </div>
-            {hasCh && canExpand && isOpen && (
+            {hasCh && isOpen && (
               <KanbanSubtaskList subs={sub.subtasks} taskId={taskId} depth={depth+1}
+                parentDueDate={parentDueDate}
                 onToggleSub={onToggleSub} onSubUpdate={onSubUpdate}
                 onDragBegin={onDragBegin} onSelect={onSelect}/>
             )}
           </div>
         );
       })}
+      {movedCount > 0 && (
+        <div style={{fontSize:10,color:"var(--muted)",fontStyle:"italic",padding:"2px 4px",marginTop:2}}>
+          {movedCount} scheduled on board →
+        </div>
+      )}
     </div>
   );
 };
 
-/* Surfaced subtask card — shows a subtask on the kanban with parent breadcrumb */
-const SubtaskKanbanCard = ({subInfo, onSelect, onToggleSub}) => {
+/* Surfaced subtask card — shows a subtask on the kanban with parent breadcrumb, draggable */
+const SubtaskKanbanCard = ({subInfo, onSelect, onToggleSub, onDragBegin}) => {
   const {sub, parentTask, breadcrumb} = subInfo;
   const parentLabel = breadcrumb.length > 1 ? breadcrumb.slice(0, -1).join(" › ") : parentTask.title;
   const pc = PRIORITY[sub.priority || "none"].color;
+  const hasCh = (sub.subtasks || []).length > 0;
+  const chCount = hasCh ? countSubs(sub.subtasks) : null;
   return (
-    <div onClick={() => onSelect(parentTask)}
-      style={{padding:"10px 12px",background:"white",borderRadius:10,marginBottom:6,cursor:"pointer",touchAction:"none",
-        borderLeft:`3px solid ${pc}`,boxShadow:"0 1px 3px rgba(0,0,0,0.04)",
-        border:"1px dashed var(--border)",transition:"box-shadow 0.15s"}}>
+    <div draggable
+      data-drag-id={sub.id} data-drag-source="kanban-subtask" data-drag-label={sub.title}
+      onDragStart={e => {
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", sub.id);
+        e.dataTransfer.setData("application/x-source", "kanban-subtask");
+        if(onDragBegin) onDragBegin(true);
+      }}
+      onDragEnd={() => { if(onDragBegin) onDragBegin(false); }}
+      onClick={() => onSelect(parentTask)}
+      style={{padding:"10px 12px",background:"white",borderRadius:10,marginBottom:6,cursor:"grab",touchAction:"none",
+        boxShadow:"0 1px 3px rgba(0,0,0,0.04)",
+        border:"1px dashed var(--accent)",borderLeft:`3px solid ${pc}`,transition:"box-shadow 0.15s"}}>
       <div style={{display:"flex",alignItems:"flex-start",gap:8}}>
         <div style={{paddingTop:1}}>
           <Checkbox checked={sub.completed} priority={sub.priority} size={16}
@@ -2002,9 +2021,10 @@ const SubtaskKanbanCard = ({subInfo, onSelect, onToggleSub}) => {
         <div style={{flex:1,minWidth:0}}>
           <div style={{fontSize:13,fontWeight:500,color:"var(--ink)",lineHeight:1.4,wordWrap:"break-word"}}>{sub.title}</div>
           <div style={{display:"flex",alignItems:"center",gap:4,marginTop:3,flexWrap:"wrap"}}>
-            <span style={{fontSize:10,color:"var(--accent)",fontWeight:500,display:"flex",alignItems:"center",gap:2}}>
+            <span style={{fontSize:10,color:"var(--accent)",fontWeight:600,display:"flex",alignItems:"center",gap:2}}>
               ↳ {parentLabel}
             </span>
+            {hasCh && <span style={{fontSize:10,color:"var(--muted)"}}>{Icons.subtask} {chCount.done}/{chCount.total}</span>}
             <span style={{fontSize:10,color:"var(--muted)",background:"var(--surface)",padding:"1px 5px",borderRadius:3}}>{parentTask.list}</span>
           </div>
         </div>
