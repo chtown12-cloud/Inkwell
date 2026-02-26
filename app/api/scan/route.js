@@ -23,7 +23,7 @@ export async function POST(request) {
     const listNames = existingLists || ["Inbox"];
 
     const message = await client.messages.create({
-      model: "claude-sonnet-4-6-20250217",
+      model: "claude-sonnet-4-6",
       max_tokens: 3000,
       messages: [
         {
