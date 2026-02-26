@@ -541,6 +541,7 @@ const Icons = {
   settings: <I size={16}><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></I>,
   back:     <I size={16}><polyline points="15 18 9 12 15 6"/></I>,
   overdue:  <I size={16}><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></I>,
+  sort:     <I size={16}><path d="M11 5h10"/><path d="M11 9h7"/><path d="M11 13h4"/><path d="M3 17l3 3 3-3"/><path d="M6 18V4"/></I>,
 };
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -1660,14 +1661,26 @@ const collectDatedSubtasks = (tasks) => {
   return results;
 };
 
-const KanbanBoard = ({tasks, columns, onColumnsChange, onResetColumns, onSelect, onUpdate, onToggle, onUpdateSubtask, onSubUpdate, flash, setIsDragging, animatingTasks, onReorder}) => {
+const KanbanBoard = ({tasks, columns, onColumnsChange, onResetColumns, onSelect, onUpdate, onToggle, onUpdateSubtask, onSubUpdate, flash, setIsDragging, animatingTasks, onReorder, sortBy="default", filterPriority="all"}) => {
   const [hoverCol, setHoverCol] = useState(null);
   const [editingCol, setEditingCol] = useState(null);
   const [editName, setEditName] = useState("");
   const [editDate, setEditDate] = useState("");
   const [cardDrop, setCardDrop] = useState(null); /* {id, zone:"before"|"after"} */
 
-  const overdueTasks = useMemo(() => tasks.filter(t => !t.completed && t.dueDate && t.dueDate < todayStr()), [tasks]);
+  const PRIO_ORD={high:0,medium:1,low:2,none:3};
+  const sortCards=(arr)=>{
+    if(sortBy==="default")return arr;
+    return [...arr].sort((a,b)=>{
+      if(sortBy==="priority") return (PRIO_ORD[a.priority||"none"]||3)-(PRIO_ORD[b.priority||"none"]||3);
+      if(sortBy==="alpha") return (a.title||"").localeCompare(b.title||"");
+      if(sortBy==="created") return (b.createdAt||"").localeCompare(a.createdAt||"");
+      return 0;
+    });
+  };
+  const filterCards=(arr)=>filterPriority==="all"?arr:arr.filter(t=>t.priority===filterPriority);
+
+  const overdueTasks = useMemo(() => sortCards(filterCards(tasks.filter(t => !t.completed && t.dueDate && t.dueDate < todayStr()))), [tasks, sortBy, filterPriority]);
 
   /* Collect subtasks with own due dates */
   const datedSubs = useMemo(() => collectDatedSubtasks(tasks), [tasks]);
@@ -1675,13 +1688,13 @@ const KanbanBoard = ({tasks, columns, onColumnsChange, onResetColumns, onSelect,
   const byDate = useMemo(() => {
     const map = {};
     columns.forEach(c => {
-      const directTasks = tasks.filter(t => !t.completed && t.dueDate === c.dateStr);
+      const directTasks = sortCards(filterCards(tasks.filter(t => !t.completed && t.dueDate === c.dateStr)));
       /* Surface every subtask whose dueDate matches this column as a standalone card */
       const surfaced = datedSubs.filter(ds => ds.sub.dueDate === c.dateStr);
       map[c.dateStr] = { tasks: directTasks, subtasks: surfaced };
     });
     return map;
-  }, [tasks, columns, datedSubs]);
+  }, [tasks, columns, datedSubs, sortBy, filterPriority]);
 
   const onColDragOver = (e, ds) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; setHoverCol(ds); };
   const onColDrop = (e, ds) => {
@@ -2530,6 +2543,9 @@ export default function InkwellApp() {
   const [showViewCounts,setShowViewCounts]=useState(()=>load("inkwell-showViewCounts",true));
   const [showListCounts,setShowListCounts]=useState(()=>load("inkwell-showListCounts",true));
   const [todayMode,setTodayMode]=useState(()=>load("inkwell-todayMode","kanban")); /* "kanban" | "list" */
+  const [sortBy,setSortBy]=useState("default"); /* default|priority|alpha|date|created */
+  const [filterPriority,setFilterPriority]=useState("all"); /* all|high|medium|low */
+  const [showSortMenu,setShowSortMenu]=useState(false);
   const [kanbanColumns, setKanbanColumns] = useState(() => {
     const saved = load("inkwell-kanbanCols", null);
     if (!saved || saved.length === 0) return null;
@@ -2993,26 +3009,44 @@ export default function InkwellApp() {
     setScanResults(null);const lm=newCats.size>0?`, created ${newCats.size} list${newCats.size!==1?"s":""}`:""
     flash(`✓ Added ${added} task${added!==1?"s":""}${checked?`, checked off ${checked}`:""}${lm}`);};
 
+  const PRIO_ORDER={high:0,medium:1,low:2,none:3};
+  const applySortFilter=(arr)=>{
+    /* Priority filter */
+    let f=filterPriority==="all"?arr:arr.filter(t=>t.priority===filterPriority);
+    /* Split incomplete/completed */
+    const inc=f.filter(t=>!t.completed);
+    const comp=f.filter(t=>t.completed);
+    /* Sort incomplete */
+    if(sortBy!=="default"){
+      inc.sort((a,b)=>{
+        if(sortBy==="priority") return (PRIO_ORDER[a.priority||"none"]||3)-(PRIO_ORDER[b.priority||"none"]||3);
+        if(sortBy==="alpha") return (a.title||"").localeCompare(b.title||"");
+        if(sortBy==="date") return (a.dueDate||"9999").localeCompare(b.dueDate||"9999");
+        if(sortBy==="created") return (b.createdAt||"").localeCompare(a.createdAt||"");
+        return 0;
+      });
+    }
+    return [...inc,...comp.sort((a,b)=>(b.completedAt||"").localeCompare(a.completedAt||""))];
+  };
+
   const filtered=useMemo(()=>{let f=tasks;
     if(search){const q=search.toLowerCase();f=f.filter(t=>t.title.toLowerCase().includes(q)||(t.notes||"").toLowerCase().includes(q)||(t.tags||[]).some(tg=>tg.toLowerCase().includes(q)));}
-    else{switch(view){case"today":f=f.filter(t=>t.dueDate===todayStr()||(!t.dueDate&&t.createdAt?.startsWith(todayStr())));break;case"overdue":f=f.filter(t=>!t.completed&&t.dueDate&&t.dueDate<todayStr());f.sort((a,b)=>(a.dueDate||"").localeCompare(b.dueDate||""));break;case"upcoming":f=f.filter(t=>!t.completed&&t.dueDate&&t.dueDate>=todayStr());f.sort((a,b)=>(a.dueDate||"").localeCompare(b.dueDate||""));break;case"all":break;case"completed":return f.filter(t=>t.completed).sort((a,b)=>(b.completedAt||"").localeCompare(a.completedAt||""));case"inbox":f=f.filter(t=>t.list==="Inbox");break;default:if(view.startsWith("list:"))f=f.filter(t=>t.list===view.replace("list:",""));}}
-    const result=[...f.filter(t=>!t.completed),...f.filter(t=>t.completed)];
+    else{switch(view){case"today":f=f.filter(t=>t.dueDate===todayStr()||(!t.dueDate&&t.createdAt?.startsWith(todayStr())));break;case"overdue":f=f.filter(t=>!t.completed&&t.dueDate&&t.dueDate<todayStr());if(sortBy==="default")f.sort((a,b)=>(a.dueDate||"").localeCompare(b.dueDate||""));break;case"upcoming":f=f.filter(t=>!t.completed&&t.dueDate&&t.dueDate>=todayStr());if(sortBy==="default")f.sort((a,b)=>(a.dueDate||"").localeCompare(b.dueDate||""));break;case"all":break;case"completed":return applySortFilter(f.filter(t=>t.completed));case"inbox":f=f.filter(t=>t.list==="Inbox");break;default:if(view.startsWith("list:"))f=f.filter(t=>t.list===view.replace("list:",""));}}
+    const result=applySortFilter(f);
     /* Surface subtasks with their own due dates in Today/Upcoming views */
     if(view==="today"||view==="upcoming"){
       const dated=collectDatedSubtasks(tasks);
       const surfaced=dated.filter(ds=>{
-        /* Only surface if parent's dueDate differs from subtask's — otherwise subtask is visible in parent's row */
         if(ds.parentTask.dueDate===ds.sub.dueDate) return false;
         if(view==="today") return ds.sub.dueDate===todayStr();
         return ds.sub.dueDate&&ds.sub.dueDate>=todayStr();
       }).map(ds=>({...ds.sub, _surfacedSub:true, _parentTask:ds.parentTask, _breadcrumb:ds.breadcrumb, list:ds.parentTask.list}));
-      /* Insert surfaced subs among incomplete tasks (before completed separator) */
       const firstCompleted=result.findIndex(t=>t.completed);
       const insertAt=firstCompleted===-1?result.length:firstCompleted;
       result.splice(insertAt,0,...surfaced);
     }
     return result;
-  },[tasks,view,search]);
+  },[tasks,view,search,sortBy,filterPriority]);
 
   const overdueCount=useMemo(()=>tasks.filter(t=>!t.completed&&isOverdue(t.dueDate)).length,[tasks]);
   /* Auto-redirect from overdue view when all tasks resolved */
@@ -3034,7 +3068,7 @@ export default function InkwellApp() {
   const iconsMap={today:Icons.today,overdue:Icons.overdue,upcoming:Icons.upcoming,all:Icons.all,completed:Icons.done,inbox:Icons.inbox,calendar:Icons.calendar};
   const viewTitle=titles[view]||(view.startsWith("list:")?view.replace("list:",""):"Tasks");
   const viewIcon=iconsMap[view]||Icons.all;
-  const selectView=v=>{setView(v);setSelectedTask(null);setSearch("");if(isMobile)setSidebar(false);};
+  const selectView=v=>{setView(v);setSelectedTask(null);setSearch("");setShowSortMenu(false);if(isMobile)setSidebar(false);};
 
   /* Auth gate: show login if Supabase is configured but user isn't signed in */
   if (hasSupabase && authLoading) return <div style={{height:"100dvh",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"var(--font-display)",fontSize:22,color:"var(--muted)"}}>Loading...</div>;
@@ -3262,6 +3296,46 @@ export default function InkwellApp() {
             </>):(<input autoFocus value={search} onChange={e=>setSearch(e.target.value)} onKeyDown={e=>{if(e.key==="Escape"){setShowSearch(false);setSearch("");}}} placeholder="Search tasks, tags..." style={{flex:1,padding:"10px 14px",borderRadius:12,border:"1px solid var(--border)",fontSize:15,outline:"none",background:"white",fontFamily:"inherit",minWidth:0}}/>)}
           </div>
           <button onClick={()=>{setShowSearch(!showSearch);if(showSearch)setSearch("");}} style={{background:showSearch?"var(--surface)":"none",border:"none",cursor:"pointer",color:"var(--muted)",padding:8,borderRadius:8,display:"flex",flexShrink:0}} aria-label="Search">{Icons.search}</button>
+          {view!=="calendar"&&(<div style={{position:"relative",flexShrink:0}}>
+            <button onClick={()=>setShowSortMenu(!showSortMenu)}
+              style={{background:showSortMenu||(sortBy!=="default"||filterPriority!=="all")?"var(--accent-bg)":"none",border:"none",cursor:"pointer",
+                color:sortBy!=="default"||filterPriority!=="all"?"var(--accent)":"var(--muted)",padding:8,borderRadius:8,display:"flex",position:"relative"}}
+              aria-label="Sort & Filter" title="Sort & Filter">
+              {Icons.sort}
+              {(sortBy!=="default"||filterPriority!=="all")&&<div style={{position:"absolute",top:4,right:4,width:6,height:6,borderRadius:3,background:"var(--accent)"}}/>}
+            </button>
+            {showSortMenu&&(<>
+              <div style={{position:"fixed",inset:0,zIndex:1300}} onClick={()=>setShowSortMenu(false)}/>
+              <div style={{position:"absolute",top:"100%",right:0,marginTop:6,background:"white",borderRadius:14,border:"1px solid var(--border)",boxShadow:"0 8px 30px rgba(0,0,0,0.12)",padding:8,zIndex:1301,minWidth:200}}>
+                <div style={{fontSize:11,fontWeight:700,color:"var(--muted)",textTransform:"uppercase",letterSpacing:0.8,padding:"6px 10px 4px"}}>Sort by</div>
+                {[["default","Default"],["priority","Priority"],["alpha","A → Z"],["date","Due Date"],["created","Newest First"]].map(([val,label])=>(
+                  <button key={val} onClick={()=>{setSortBy(val);}} style={{width:"100%",padding:"8px 10px",border:"none",borderRadius:8,background:sortBy===val?"var(--accent-bg)":"transparent",
+                    color:sortBy===val?"var(--accent)":"var(--text)",fontSize:13,fontWeight:sortBy===val?600:500,cursor:"pointer",textAlign:"left",fontFamily:"inherit",display:"block",transition:"background 0.1s"}}
+                    onMouseEnter={e=>{if(sortBy!==val)e.currentTarget.style.background="var(--surface)";}} onMouseLeave={e=>{if(sortBy!==val)e.currentTarget.style.background="transparent";}}>
+                    {label}
+                  </button>
+                ))}
+                <div style={{height:1,background:"var(--border-light)",margin:"6px 4px"}}/>
+                <div style={{fontSize:11,fontWeight:700,color:"var(--muted)",textTransform:"uppercase",letterSpacing:0.8,padding:"6px 10px 4px"}}>Filter priority</div>
+                {[["all","All"],["high","High"],["medium","Medium"],["low","Low"]].map(([val,label])=>(
+                  <button key={val} onClick={()=>{setFilterPriority(val);}} style={{width:"100%",padding:"8px 10px",border:"none",borderRadius:8,background:filterPriority===val?"var(--accent-bg)":"transparent",
+                    color:filterPriority===val?"var(--accent)":"var(--text)",fontSize:13,fontWeight:filterPriority===val?600:500,cursor:"pointer",textAlign:"left",fontFamily:"inherit",display:"flex",alignItems:"center",gap:8,transition:"background 0.1s"}}
+                    onMouseEnter={e=>{if(filterPriority!==val)e.currentTarget.style.background="var(--surface)";}} onMouseLeave={e=>{if(filterPriority!==val)e.currentTarget.style.background="transparent";}}>
+                    {val!=="all"&&<div style={{width:8,height:8,borderRadius:4,background:PRIORITY[val].color,flexShrink:0}}/>}
+                    {label}
+                  </button>
+                ))}
+                {(sortBy!=="default"||filterPriority!=="all")&&(<>
+                  <div style={{height:1,background:"var(--border-light)",margin:"6px 4px"}}/>
+                  <button onClick={()=>{setSortBy("default");setFilterPriority("all");}} style={{width:"100%",padding:"8px 10px",border:"none",borderRadius:8,background:"transparent",
+                    color:"#ef4444",fontSize:13,fontWeight:500,cursor:"pointer",textAlign:"left",fontFamily:"inherit",transition:"background 0.1s"}}
+                    onMouseEnter={e=>e.currentTarget.style.background="#fef2f2"} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                    Clear all
+                  </button>
+                </>)}
+              </div>
+            </>)}
+          </div>)}
         </header>
 
         <div style={{flex:1,display:"flex",overflow:"hidden"}}>
@@ -3275,7 +3349,7 @@ export default function InkwellApp() {
                 <button onClick={()=>setTodayMode("kanban")} style={{padding:"5px 12px",borderRadius:6,border:"none",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:todayMode==="kanban"?"white":"transparent",color:todayMode==="kanban"?"var(--ink)":"var(--muted)",boxShadow:todayMode==="kanban"?"0 1px 3px rgba(0,0,0,0.08)":"none",transition:"all 0.15s"}}>Board</button>
                 <button onClick={()=>setTodayMode("list")} style={{padding:"5px 12px",borderRadius:6,border:"none",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:todayMode==="list"?"white":"transparent",color:todayMode==="list"?"var(--ink)":"var(--muted)",boxShadow:todayMode==="list"?"0 1px 3px rgba(0,0,0,0.08)":"none",transition:"all 0.15s"}}>List</button>
               </div>
-              <div style={{flex:1,minHeight:0}}><KanbanBoard tasks={tasks} columns={activeKanbanCols} onColumnsChange={setKanbanColumns} onResetColumns={kanbanColumns?resetKanbanCols:null} onSelect={t=>setSelectedTask(t)} onUpdate={updateTask} onToggle={toggleTask} onReorder={setTasks} onUpdateSubtask={(taskId,subId)=>{setTasks(prev=>prev.map(t=>t.id!==taskId?t:{...t,subtasks:updateSubById(t.subtasks,subId,{completed:!findSubById(t.subtasks,subId)?.completed,completedAt:!findSubById(t.subtasks,subId)?.completed?new Date().toISOString():null})}));}} onSubUpdate={(subId,changes)=>{setTasks(prev=>prev.map(t=>{const found=findSubById(t.subtasks,subId);if(!found)return t;return{...t,subtasks:updateSubById(t.subtasks,subId,changes)};}));}} flash={flash} setIsDragging={setIsDragging} animatingTasks={animatingTasks}/></div>
+              <div style={{flex:1,minHeight:0}}><KanbanBoard tasks={tasks} columns={activeKanbanCols} onColumnsChange={setKanbanColumns} onResetColumns={kanbanColumns?resetKanbanCols:null} onSelect={t=>setSelectedTask(t)} onUpdate={updateTask} onToggle={toggleTask} onReorder={setTasks} onUpdateSubtask={(taskId,subId)=>{setTasks(prev=>prev.map(t=>t.id!==taskId?t:{...t,subtasks:updateSubById(t.subtasks,subId,{completed:!findSubById(t.subtasks,subId)?.completed,completedAt:!findSubById(t.subtasks,subId)?.completed?new Date().toISOString():null})}));}} onSubUpdate={(subId,changes)=>{setTasks(prev=>prev.map(t=>{const found=findSubById(t.subtasks,subId);if(!found)return t;return{...t,subtasks:updateSubById(t.subtasks,subId,changes)};}));}} flash={flash} setIsDragging={setIsDragging} animatingTasks={animatingTasks} sortBy={sortBy} filterPriority={filterPriority}/></div>
             </div>):(<>
               {view!=="completed"&&view!=="overdue"&&(<div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",background:"white",borderRadius:14,border:"1px solid var(--border)",marginBottom:view==="today"?10:16,boxShadow:"0 1px 3px rgba(0,0,0,0.04)"}}>
                 <span style={{color:"var(--accent)",flexShrink:0}}>{Icons.plus}</span>
@@ -3386,10 +3460,10 @@ export default function InkwellApp() {
       {/* ── Trash drop zone (appears during any drag) ── */}
       {isDragging&&(
         <div data-drop-type="trash"
-          onDragOver={e=>{e.preventDefault();e.dataTransfer.dropEffect="move";e.currentTarget.style.transform="scale(1.15)";e.currentTarget.style.background="#ef4444";e.currentTarget.style.color="white";e.currentTarget.style.borderColor="#dc2626";}}
-          onDragLeave={e=>{e.currentTarget.style.transform="scale(1)";e.currentTarget.style.background="#fef2f2";e.currentTarget.style.color="#ef4444";e.currentTarget.style.borderColor="#fecaca";}}
+          onDragOver={e=>{e.preventDefault();e.dataTransfer.dropEffect="move";e.currentTarget.style.transform="translateX(-50%) scale(1.15)";e.currentTarget.style.background="#ef4444";e.currentTarget.style.color="white";e.currentTarget.style.borderColor="#dc2626";}}
+          onDragLeave={e=>{e.currentTarget.style.transform="translateX(-50%) scale(1)";e.currentTarget.style.background="#fef2f2";e.currentTarget.style.color="#ef4444";e.currentTarget.style.borderColor="#fecaca";}}
           onDrop={e=>{
-            e.preventDefault();e.currentTarget.style.transform="scale(1)";e.currentTarget.style.background="#fef2f2";e.currentTarget.style.color="#ef4444";
+            e.preventDefault();e.currentTarget.style.transform="translateX(-50%) scale(1)";e.currentTarget.style.background="#fef2f2";e.currentTarget.style.color="#ef4444";
             const tid=e.dataTransfer.getData("text/plain");const src=e.dataTransfer.getData("application/x-source");
             if(!tid)return;
             if(isSubSource(src)){
@@ -3402,7 +3476,7 @@ export default function InkwellApp() {
             }
             setIsDragging(false);setSelectedIds(new Set());
           }}
-          style={{position:"fixed",bottom:28,left:28,width:52,height:52,borderRadius:14,background:"#fef2f2",border:"2px solid #fecaca",display:"flex",alignItems:"center",justifyContent:"center",color:"#ef4444",zIndex:1400,animation:"trashPulse 2s ease infinite",transition:"transform 0.15s, background 0.15s, color 0.15s, border-color 0.15s",cursor:"default",boxShadow:"0 4px 16px rgba(239,68,68,0.15)"}}>
+          style={{position:"fixed",bottom:28,left:"50%",width:52,height:52,borderRadius:14,background:"#fef2f2",border:"2px solid #fecaca",display:"flex",alignItems:"center",justifyContent:"center",color:"#ef4444",zIndex:1400,animation:"trashPulse 2s ease infinite",transition:"background 0.15s, color 0.15s, border-color 0.15s",cursor:"default",boxShadow:"0 4px 16px rgba(239,68,68,0.15)",transform:"translateX(-50%)"}}>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
         </div>
       )}
