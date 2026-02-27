@@ -1,4 +1,4 @@
-const CACHE_NAME = 'inkwell-v3';
+const CACHE_NAME = 'inkwell-v5';
 const STATIC_ASSETS = [
   '/manifest.json',
   '/icon-192.png',
@@ -6,19 +6,20 @@ const STATIC_ASSETS = [
 ];
 
 self.addEventListener('install', (event) => {
+  /* Skip waiting immediately so new SW takes over */
+  self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS))
   );
-  self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
+  /* Claim all clients immediately + purge ALL old caches */
   event.waitUntil(
     caches.keys().then((keys) =>
       Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
-    )
+    ).then(() => self.clients.claim())
   );
-  self.clients.claim();
 });
 
 self.addEventListener('fetch', (event) => {

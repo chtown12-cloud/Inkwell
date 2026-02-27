@@ -123,6 +123,15 @@ const todayStr = () => { const d=new Date(); return localDateStr(d); };
 const tomorrowStr = () => { const d = new Date(); d.setDate(d.getDate() + 1); return localDateStr(d); };
 const nextMondayStr = () => { const d = new Date(); const day = d.getDay(); const diff = day === 0 ? 1 : day === 1 ? 7 : 8 - day; d.setDate(d.getDate() + diff); return localDateStr(d); };
 const dateOffset = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return localDateStr(d); };
+const nextWeekday = (wd) => { const d = new Date(); const cur = d.getDay(); const diff = wd <= cur ? 7 - cur + wd : wd - cur; d.setDate(d.getDate() + diff); return localDateStr(d); };
+const WEEKDAYS=["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+const resolveQuickDate = (offset) => {
+  if(offset==="tomorrow") return tomorrowStr();
+  if(offset==="nextMonday") return nextWeekday(1);
+  if(typeof offset==="string"&&offset.startsWith("next:")) return nextWeekday(parseInt(offset.split(":")[1]));
+  if(typeof offset==="string"&&offset.startsWith("+")) return dateOffset(parseInt(offset.slice(1)));
+  return todayStr();
+};
 
 /* ═══════════════════════════════════════════════════════════════════════
    TOUCH DRAG SYSTEM — long-press to drag on mobile
@@ -246,7 +255,7 @@ const useTouchDrag = (onDrop, onDragStateChange, onSidebarShow) => {
       g.textContent = s.srcEl.dataset.dragLabel || "•";
       Object.assign(g.style, {
         position:"fixed", top:rect.top+"px", left:rect.left+"px", zIndex:"9999",
-        padding:"8px 14px", background:"#1c1917", color:"white", borderRadius:"10px",
+        padding:"8px 14px", background:"var(--ink)", color:"white", borderRadius:"10px",
         fontSize:"13px", fontWeight:"600", fontFamily:"sans-serif",
         boxShadow:"0 8px 24px rgba(0,0,0,0.3)", pointerEvents:"none",
         whiteSpace:"nowrap", maxWidth:"200px", overflow:"hidden",
@@ -551,7 +560,7 @@ const Checkbox = ({checked, onChange, priority="none", size=20, animating=false}
   <button onClick={e=>{e.stopPropagation();onChange(!checked);}}
     aria-label={checked?"Mark incomplete":"Mark complete"} role="checkbox" aria-checked={checked}
     style={{width:size,height:size,borderRadius:6,flexShrink:0,padding:0,
-      border:`2px solid ${checked?PRIORITY[priority].color:(priority!=="none"?PRIORITY[priority].color:"#cbd5e1")}`,
+      border:`2px solid ${checked?PRIORITY[priority].color:(priority!=="none"?PRIORITY[priority].color:"var(--border)")}`,
       background:checked?PRIORITY[priority].color:"transparent",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",
       transition:animating?"none":"all 0.2s ease",
       boxShadow:animating&&checked?`0 0 0 4px ${PRIORITY[priority].color}33`:"none"}}>
@@ -577,7 +586,7 @@ const EditableText = ({value, onSave, onEditStart, style={}, tag:Tag="span"}) =>
 };
 
 const Overlay = ({onClose,children,wide}) => (
-  <div style={{position:"fixed",inset:0,background:"rgba(15,23,42,0.45)",backdropFilter:"blur(8px)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,animation:"fadeIn 0.2s ease",padding:16}} onClick={onClose} role="dialog" aria-modal="true">
+  <div style={{position:"fixed",inset:0,background:"var(--overlay)",backdropFilter:"blur(8px)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,animation:"fadeIn 0.2s ease",padding:16}} onClick={onClose} role="dialog" aria-modal="true">
     <div onClick={e=>e.stopPropagation()} style={{background:"var(--bg)",borderRadius:20,padding:28,width:"100%",maxWidth:wide?560:500,boxShadow:"0 25px 60px rgba(0,0,0,0.25)",position:"relative",display:"flex",flexDirection:"column",maxHeight:"90vh"}}>
       <button onClick={onClose} style={{position:"absolute",top:16,right:16,background:"none",border:"none",cursor:"pointer",color:"var(--muted)",padding:4}} aria-label="Close">{Icons.x}</button>
       {children}
@@ -585,12 +594,12 @@ const Overlay = ({onClose,children,wide}) => (
   </div>
 );
 const Btn = ({children,variant="primary",...p}) => (
-  <button {...p} style={{flex:1,padding:"12px 16px",borderRadius:12,border:variant==="secondary"?"1px solid var(--border)":"none",background:variant==="secondary"?"white":"linear-gradient(135deg,#d97706,#ea580c)",color:variant==="secondary"?"var(--text)":"white",fontSize:14,fontWeight:600,cursor:p.disabled?"wait":"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8,fontFamily:"inherit",opacity:p.disabled?0.6:1,...(p.style||{})}}>{children}</button>
+  <button {...p} style={{flex:1,padding:"12px 16px",borderRadius:12,border:variant==="secondary"?"1px solid var(--border)":"none",background:variant==="secondary"?"var(--card)":"linear-gradient(135deg,#d97706,#ea580c)",color:variant==="secondary"?"var(--text)":"white",fontSize:14,fontWeight:600,cursor:p.disabled?"wait":"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8,fontFamily:"inherit",opacity:p.disabled?0.6:1,...(p.style||{})}}>{children}</button>
 );
 const IconBtn = ({children,...p}) => (<button {...p} style={{background:"none",border:"none",cursor:"pointer",color:"var(--muted)",padding:6,borderRadius:6,display:"flex",...(p.style||{})}}>{children}</button>);
 const Spinner = () => <div style={{width:16,height:16,border:"2px solid rgba(255,255,255,0.3)",borderTopColor:"white",borderRadius:"50%",animation:"spin 0.8s linear infinite"}}/>;
 const Field = ({label,children}) => (<div style={{marginBottom:18}}><label style={{fontSize:11,fontWeight:700,color:"var(--muted)",display:"block",marginBottom:7,textTransform:"uppercase",letterSpacing:0.8}}>{label}</label>{children}</div>);
-const fieldInput = {width:"100%",padding:"10px 12px",borderRadius:10,border:"1px solid var(--border)",fontSize:14,color:"var(--text)",background:"white",fontFamily:"inherit",boxSizing:"border-box",outline:"none"};
+const fieldInput = {width:"100%",padding:"10px 12px",borderRadius:10,border:"1px solid var(--border)",fontSize:14,color:"var(--text)",background:"var(--card)",fontFamily:"inherit",boxSizing:"border-box",outline:"none"};
 const calNav = {background:"none",border:"1px solid var(--border)",borderRadius:8,padding:"8px 12px",cursor:"pointer",color:"var(--text)",display:"flex"};
 
 /* Inline date picker — click date label to reveal native date input */
@@ -602,12 +611,12 @@ const InlineDatePicker = ({value, overdue, onChange}) => {
     <input ref={ref} type="date" value={value||""} onClick={e=>e.stopPropagation()}
       onChange={e=>{onChange(e.target.value);setEditing(false);}}
       onBlur={()=>setEditing(false)}
-      style={{fontSize:12,fontWeight:600,border:"1px solid var(--accent)",borderRadius:6,padding:"2px 6px",outline:"none",fontFamily:"inherit",color:"var(--accent)",background:"white",cursor:"pointer"}}/>
+      style={{fontSize:12,fontWeight:600,border:"1px solid var(--accent)",borderRadius:6,padding:"2px 6px",outline:"none",fontFamily:"inherit",color:"var(--accent)",background:"var(--card)",cursor:"pointer"}}/>
   );
   return (
     <span onClick={e=>{e.stopPropagation();setEditing(true);}} title="Click to change date"
       style={{fontSize:12,fontWeight:600,display:"flex",alignItems:"center",gap:3,cursor:"pointer",borderRadius:4,padding:"1px 4px",transition:"background 0.15s",
-        color:value?(overdue?"#ef4444":value===todayStr()?"var(--accent)":"var(--muted)"):"#a78bfa",
+        color:value?(overdue?"var(--danger)":value===todayStr()?"var(--accent)":"var(--muted)"):"#a78bfa",
         background:value?"transparent":"#f5f3ff",border:value?"none":"1px solid #ede9fe"}}>
       {Icons.calendar} {value?formatDate(value):"No date"}
     </span>
@@ -645,7 +654,7 @@ const DraggableSubtaskTree = ({subtasks, onAction, onDragStart, onDragEnd, depth
               {depth > 0 && <span style={{fontSize:9,color:ds.prefixColor,flexShrink:0,fontWeight:700}}>{ds.prefix.trim()}</span>}
               <Checkbox checked={sub.completed} size={15} onChange={c=>onAction("update",sub.id,{completed:c,completedAt:c?new Date().toISOString():null})}/>
               <span style={{flex:1,color:sub.completed?"var(--muted)":"var(--text)",textDecoration:sub.completed?"line-through":"none",minWidth:0,fontSize:13}}>{sub.title}</span>
-              {sub.dueDate&&<span style={{fontSize:10,color:isOverdue(sub.dueDate)?"#ef4444":"var(--muted)",fontWeight:500,flexShrink:0}}>{formatDate(sub.dueDate)}</span>}
+              {sub.dueDate&&<span style={{fontSize:10,color:isOverdue(sub.dueDate)?"var(--danger)":"var(--muted)",fontWeight:500,flexShrink:0}}>{formatDate(sub.dueDate)}</span>}
               {hasChildren && (
                 <button onClick={e=>{e.stopPropagation();toggle(sub.id);}} style={{background:"none",border:"none",cursor:"pointer",padding:2,color:"var(--muted)",display:"flex",alignItems:"center",gap:2,fontSize:11,fontFamily:"inherit",flexShrink:0}}>
                   {childCount.done}/{childCount.total}
@@ -672,7 +681,7 @@ const ToggleRow = ({label, sublabel, checked, onChange}) => (
     <button onClick={()=>onChange(!checked)} role="switch" aria-checked={checked}
       style={{width:44,height:26,borderRadius:13,border:"none",cursor:"pointer",padding:2,
         background:checked?"var(--accent)":"var(--border)",transition:"background 0.2s",flexShrink:0,position:"relative"}}>
-      <div style={{width:22,height:22,borderRadius:11,background:"white",boxShadow:"0 1px 3px rgba(0,0,0,0.2)",
+      <div style={{width:22,height:22,borderRadius:11,background:"var(--card)",boxShadow:"0 1px 3px rgba(0,0,0,0.2)",
         transform:checked?"translateX(18px)":"translateX(0)",transition:"transform 0.2s"}}/>
     </button>
   </div>
@@ -741,7 +750,7 @@ const useSubtaskTouchDrag = (containerRef, onReorder) => {
         g.textContent = row.dataset.subLabel||"•";
         Object.assign(g.style, {
           position:"fixed",top:rect.top+"px",left:rect.left+"px",zIndex:"9999",
-          padding:"8px 14px",background:"#1c1917",color:"white",borderRadius:"10px",
+          padding:"8px 14px",background:"var(--ink)",color:"white",borderRadius:"10px",
           fontSize:"13px",fontWeight:"600",fontFamily:"sans-serif",
           boxShadow:"0 8px 24px rgba(0,0,0,0.3)",pointerEvents:"none",
           whiteSpace:"nowrap",maxWidth:"200px",overflow:"hidden",
@@ -928,7 +937,7 @@ const SubtaskTree = ({subtasks, onAction, onOpenSub, onReorder, depth=0, compact
               )}
 
               {sub.priority&&sub.priority!=="none"&&<span style={{width:6,height:6,borderRadius:"50%",background:PRIORITY[sub.priority].color,flexShrink:0}}/>}
-              {sub.dueDate&&<span style={{fontSize:10,color:isOverdue(sub.dueDate)?"#ef4444":"var(--muted)",fontWeight:500,flexShrink:0,whiteSpace:"nowrap"}}>{formatDate(sub.dueDate)}</span>}
+              {sub.dueDate&&<span style={{fontSize:10,color:isOverdue(sub.dueDate)?"var(--danger)":"var(--muted)",fontWeight:500,flexShrink:0,whiteSpace:"nowrap"}}>{formatDate(sub.dueDate)}</span>}
               {hasChildren && (
                 <button onClick={e=>{e.stopPropagation();toggle(sub.id);}} style={{background:"none",border:"none",cursor:"pointer",padding:2,color:"var(--muted)",display:"flex",alignItems:"center",gap:2,fontSize:11,fontFamily:"inherit",flexShrink:0}}>
                   {childCount.done}/{childCount.total}
@@ -947,7 +956,7 @@ const SubtaskTree = ({subtasks, onAction, onOpenSub, onReorder, depth=0, compact
                 <input autoFocus value={addText} onChange={e=>setAddText(e.target.value)} placeholder="Add nested subtask..."
                   onKeyDown={e=>{if(e.key==="Enter"&&addText.trim()){onAction("add",sub.id,newSubtask(addText.trim()));setAddText("");setAddingTo(null);}if(e.key==="Escape"){setAddingTo(null);setAddText("");}}}
                   onBlur={()=>{setAddingTo(null);setAddText("");}}
-                  style={{width:"100%",padding:"6px 10px",borderRadius:8,border:"1px solid var(--accent)",fontSize:13,outline:"none",background:"white",fontFamily:"inherit"}}/>
+                  style={{width:"100%",padding:"6px 10px",borderRadius:8,border:"1px solid var(--accent)",fontSize:13,outline:"none",background:"var(--card)",fontFamily:"inherit"}}/>
               </div>
             )}
             {hasChildren && isOpen && (
@@ -978,8 +987,8 @@ const PhotoModal = ({onClose,onProcess,processing,error}) => {
       </div>
       {!preview?(
         <div onDragOver={e=>{e.preventDefault();setDragOver(true);}} onDragLeave={()=>setDragOver(false)} onDrop={e=>{e.preventDefault();setDragOver(false);handleFile(e.dataTransfer.files[0]);}} onClick={()=>inputRef.current?.click()}
-          style={{border:`2px dashed ${dragOver?"var(--accent)":"#cbd5e1"}`,borderRadius:16,padding:"44px 24px",textAlign:"center",cursor:"pointer",background:dragOver?"var(--accent-bg)":"var(--surface)",transition:"all 0.2s"}}>
-          <div style={{marginBottom:14,color:dragOver?"var(--accent)":"#94a3b8"}}>{Icons.upload}</div>
+          style={{border:`2px dashed ${dragOver?"var(--accent)":"var(--border)"}`,borderRadius:16,padding:"44px 24px",textAlign:"center",cursor:"pointer",background:dragOver?"var(--accent-bg)":"var(--surface)",transition:"all 0.2s"}}>
+          <div style={{marginBottom:14,color:dragOver?"var(--accent)":"var(--muted)"}}>{Icons.upload}</div>
           <p style={{margin:0,fontSize:15,fontWeight:600,color:"var(--text)"}}>Drop your notebook photo here</p>
           <p style={{margin:"8px 0 0",fontSize:13,color:"var(--muted)"}}>or tap to browse</p>
           <input ref={inputRef} type="file" accept="image/*" capture="environment" style={{display:"none"}} onChange={e=>handleFile(e.target.files[0])}/>
@@ -988,7 +997,7 @@ const PhotoModal = ({onClose,onProcess,processing,error}) => {
         <div>
           <div style={{borderRadius:12,overflow:"hidden",marginBottom:16,border:"1px solid var(--border)",maxHeight:260}}><img src={preview} alt="Preview" style={{width:"100%",display:"block",objectFit:"contain",maxHeight:260}}/></div>
           {error && (
-            <div style={{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:10,padding:"10px 14px",marginBottom:12,fontSize:13,color:"#dc2626",lineHeight:1.4}}>
+            <div style={{background:"var(--danger-bg)",border:"1px solid var(--danger-border)",borderRadius:10,padding:"10px 14px",marginBottom:12,fontSize:13,color:"var(--danger)",lineHeight:1.4}}>
               <strong>Scan failed:</strong> {error}
             </div>
           )}
@@ -1186,7 +1195,7 @@ const ScanResultsModal = ({results,onConfirm,onClose,lists}) => {
               color:item.completed?"var(--muted)":"var(--ink)",background:"transparent",outline:"none",
               fontFamily:"inherit",boxSizing:"border-box",minWidth:0,
               textDecoration:item.completed?"line-through":"none"}}
-            onFocus={e=>{e.target.style.borderColor="var(--accent)";e.target.style.background="white";}}
+            onFocus={e=>{e.target.style.borderColor="var(--accent)";e.target.style.background="var(--card)";}}
             onBlur={e=>{e.target.style.borderColor="transparent";e.target.style.background="transparent";}}/>
           <div style={{display:"flex",gap:1,flexShrink:0}}>
             <button onClick={()=>outdent(idx)} disabled={item._depth<=0} title="Outdent"
@@ -1203,7 +1212,7 @@ const ScanResultsModal = ({results,onConfirm,onClose,lists}) => {
               const v=e.target.value;
               if(v==="__new__"){didCommit.current=false;setNewInputIdx(idx);setNewInputVal("");return;}
               updateItem(idx,{category:v||null});
-            }} style={{fontSize:12,padding:"2px 6px",borderRadius:4,border:"1px solid var(--border)",background:"white",color:"var(--text)",cursor:"pointer",fontFamily:"inherit"}}>
+            }} style={{fontSize:12,padding:"2px 6px",borderRadius:4,border:"1px solid var(--border)",background:"var(--card)",color:"var(--text)",cursor:"pointer",fontFamily:"inherit"}}>
               <option value="">Inbox</option>
               {allLists.filter(l=>l!=="Inbox").map(l=><option key={l} value={l}>{l}</option>)}
               <option value="__new__">+ New list...</option>
@@ -1216,7 +1225,7 @@ const ScanResultsModal = ({results,onConfirm,onClose,lists}) => {
                 style={{fontSize:12,padding:"3px 8px",borderRadius:4,border:"1px solid var(--accent)",width:140,outline:"none",fontFamily:"inherit",background:"#fffbeb"}}/>
             )}
             <input type="date" value={item.date||results.page_date||""} onChange={e=>updateItem(idx,{date:e.target.value||null})}
-              style={{fontSize:12,padding:"2px 6px",borderRadius:4,border:"1px solid var(--border)",background:"white",color:"var(--text)",cursor:"pointer",fontFamily:"inherit"}}/>
+              style={{fontSize:12,padding:"2px 6px",borderRadius:4,border:"1px solid var(--border)",background:"var(--card)",color:"var(--text)",cursor:"pointer",fontFamily:"inherit"}}/>
             {item.completed&&<span style={{fontSize:11,background:"#dcfce7",color:"#166534",padding:"1px 7px",borderRadius:4,fontWeight:600}}>✓ done</span>}
           </div>
         )}
@@ -1481,7 +1490,7 @@ const TaskDetail = ({task, onUpdate, onDelete, onClose, lists}) => {
           <div style={{paddingTop:4}}><Checkbox checked={current.completed} priority={current.priority||"none"} onChange={c=>updateCurrent({completed:c,completedAt:c?new Date().toISOString():null})}/></div>
           <textarea ref={el=>{if(el){el.style.height="auto";el.style.height=el.scrollHeight+"px";}}} value={title} onChange={e=>{setTitle(e.target.value);e.target.style.height="auto";e.target.style.height=e.target.scrollHeight+"px";}} rows={1} onBlur={e=>{if(title.trim())updateCurrent({title:title.trim()});e.target.style.borderColor="transparent";e.target.style.background="none";}} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();e.target.blur();}}}
             style={{flex:1,border:"1px solid transparent",borderRadius:8,background:"none",fontSize:18,fontFamily:"var(--font-display)",fontWeight:700,color:current.completed?"var(--muted)":"var(--ink)",textDecoration:current.completed?"line-through":"none",outline:"none",padding:"6px 8px",resize:"none",lineHeight:1.3,overflow:"hidden",transition:"border-color 0.15s, background 0.15s",cursor:"text"}}
-            onFocus={e=>{e.target.style.borderColor=accentColor;e.target.style.background="white";}}
+            onFocus={e=>{e.target.style.borderColor=accentColor;e.target.style.background="var(--card)";}}
             onMouseEnter={e=>{if(document.activeElement!==e.target)e.target.style.borderColor="var(--border)";}}
             onMouseLeave={e=>{if(document.activeElement!==e.target)e.target.style.borderColor="transparent";}}/>
         </div>
@@ -1503,7 +1512,7 @@ const TaskDetail = ({task, onUpdate, onDelete, onClose, lists}) => {
         <Field label="Priority">
           <div style={{display:"flex",gap:6}}>
             {Object.entries(PRIORITY).map(([k,{color,label}])=>(
-              <button key={k} onClick={()=>updateCurrent({priority:k})} style={{flex:1,padding:"8px 2px",borderRadius:8,fontSize:12,fontWeight:600,cursor:"pointer",transition:"all 0.15s",border:(current.priority||"none")===k?`2px solid ${color}`:"1px solid var(--border)",background:(current.priority||"none")===k?`${color}12`:"white",color:(current.priority||"none")===k?color:"var(--muted)"}}>{label}</button>
+              <button key={k} onClick={()=>updateCurrent({priority:k})} style={{flex:1,padding:"8px 2px",borderRadius:8,fontSize:12,fontWeight:600,cursor:"pointer",transition:"all 0.15s",border:(current.priority||"none")===k?`2px solid ${color}`:"1px solid var(--border)",background:(current.priority||"none")===k?`${color}12`:"var(--card)",color:(current.priority||"none")===k?color:"var(--muted)"}}>{label}</button>
             ))}
           </div>
         </Field>
@@ -1533,7 +1542,7 @@ const TaskDetail = ({task, onUpdate, onDelete, onClose, lists}) => {
 
         {/* Subtasks — recursive, with clickable items to drill in */}
         <Field label={`Subtasks (${countSubs(current.subtasks).done}/${countSubs(current.subtasks).total})`}>
-          <div ref={subTreeRef} style={(current.subtasks||[]).length>0?{background:"white",borderRadius:10,border:"1px solid var(--border)",marginBottom:8,padding:"6px 12px"}:{marginBottom:0}}>
+          <div ref={subTreeRef} style={(current.subtasks||[]).length>0?{background:"var(--card)",borderRadius:10,border:"1px solid var(--border)",marginBottom:8,padding:"6px 12px"}:{marginBottom:0}}>
             {(current.subtasks||[]).length>0&&(
               <SubtaskTree subtasks={current.subtasks} compact={true}
                 onAction={handleSubAction}
@@ -1668,33 +1677,30 @@ const KanbanBoard = ({tasks, columns, onColumnsChange, onResetColumns, onSelect,
   const [editDate, setEditDate] = useState("");
   const [cardDrop, setCardDrop] = useState(null); /* {id, zone:"before"|"after"} */
 
-  const PRIO_ORD={high:0,medium:1,low:2,none:3};
-  const sortCards=(arr)=>{
-    if(sortBy==="default")return arr;
-    return [...arr].sort((a,b)=>{
-      if(sortBy==="priority") return (PRIO_ORD[a.priority||"none"]||3)-(PRIO_ORD[b.priority||"none"]||3);
+  const KANBAN_PO={high:0,medium:1,low:2,none:3};
+  const kanbanSortAndFilter=(arr)=>{
+    let filtered=filterPriority==="all"?arr:arr.filter(t=>(t.priority||"none")===filterPriority);
+    if(sortBy==="default") return filtered;
+    return [...filtered].sort((a,b)=>{
+      if(sortBy==="priority") return (KANBAN_PO[a.priority||"none"]??3)-(KANBAN_PO[b.priority||"none"]??3);
       if(sortBy==="alpha") return (a.title||"").localeCompare(b.title||"");
       if(sortBy==="created") return (b.createdAt||"").localeCompare(a.createdAt||"");
       return 0;
     });
   };
-  const filterCards=(arr)=>filterPriority==="all"?arr:arr.filter(t=>t.priority===filterPriority);
 
-  const overdueTasks = useMemo(() => sortCards(filterCards(tasks.filter(t => !t.completed && t.dueDate && t.dueDate < todayStr()))), [tasks, sortBy, filterPriority]);
+  const overdueTasks = kanbanSortAndFilter(tasks.filter(t => !t.completed && t.dueDate && t.dueDate < todayStr()));
 
   /* Collect subtasks with own due dates */
   const datedSubs = useMemo(() => collectDatedSubtasks(tasks), [tasks]);
 
-  const byDate = useMemo(() => {
-    const map = {};
-    columns.forEach(c => {
-      const directTasks = sortCards(filterCards(tasks.filter(t => !t.completed && t.dueDate === c.dateStr)));
-      /* Surface every subtask whose dueDate matches this column as a standalone card */
-      const surfaced = datedSubs.filter(ds => ds.sub.dueDate === c.dateStr);
-      map[c.dateStr] = { tasks: directTasks, subtasks: surfaced };
-    });
-    return map;
-  }, [tasks, columns, datedSubs, sortBy, filterPriority]);
+  /* Compute column data — NOT memoized, recomputes every render to guarantee sort freshness */
+  const byDate = {};
+  columns.forEach(c => {
+    const directTasks = kanbanSortAndFilter(tasks.filter(t => !t.completed && t.dueDate === c.dateStr));
+    const surfaced = datedSubs.filter(ds => ds.sub.dueDate === c.dateStr);
+    byDate[c.dateStr] = { tasks: directTasks, subtasks: surfaced };
+  });
 
   const onColDragOver = (e, ds) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; setHoverCol(ds); };
   const onColDrop = (e, ds) => {
@@ -1799,16 +1805,16 @@ const KanbanBoard = ({tasks, columns, onColumnsChange, onResetColumns, onSelect,
   return (
     <div data-kanban-scroll style={{display:"flex",gap:16,height:"100%",overflowX:"auto",paddingBottom:16}}>
       {overdueTasks.length > 0 && (
-        <div style={{minWidth:220,maxWidth:280,flex:"1 0 220px",display:"flex",flexDirection:"column",background:"#fef2f2",borderRadius:14,border:"1px solid #fecaca",overflow:"hidden"}}>
-          <div style={{padding:"14px 14px 10px",borderBottom:"1px solid #fecaca",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+        <div style={{minWidth:220,maxWidth:280,flex:"1 0 220px",display:"flex",flexDirection:"column",background:"var(--danger-bg)",borderRadius:14,border:"1px solid var(--danger-border)",overflow:"hidden"}}>
+          <div style={{padding:"14px 14px 10px",borderBottom:"1px solid var(--danger-border)",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
             <div>
-              <div style={{fontSize:14,fontWeight:700,color:"#ef4444"}}>Overdue</div>
+              <div style={{fontSize:14,fontWeight:700,color:"var(--danger)"}}>Overdue</div>
               <div style={{fontSize:12,color:"#f87171",marginTop:2}}>{overdueTasks.length} task{overdueTasks.length !== 1 ? "s" : ""}</div>
             </div>
             <button onClick={()=>{overdueTasks.forEach(t=>onUpdate({...t,dueDate:todayStr()}));if(flash)flash(`Moved ${overdueTasks.length} task${overdueTasks.length!==1?"s":""} to today`);}}
-              style={{fontSize:11,fontWeight:700,color:"#ef4444",background:"white",border:"1px solid #fecaca",borderRadius:8,padding:"5px 10px",cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap",transition:"background 0.15s"}}
-              onMouseEnter={e=>e.currentTarget.style.background="#fef2f2"}
-              onMouseLeave={e=>e.currentTarget.style.background="white"}
+              style={{fontSize:11,fontWeight:700,color:"var(--danger)",background:"var(--card)",border:"1px solid var(--danger-border)",borderRadius:8,padding:"5px 10px",cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap",transition:"background 0.15s"}}
+              onMouseEnter={e=>e.currentTarget.style.background="var(--danger-bg)"}
+              onMouseLeave={e=>e.currentTarget.style.background="var(--card)"}
               title="Move all overdue tasks to today">→ Today</button>
           </div>
           <div style={{flex:1,overflowY:"auto",padding:8}}>
@@ -1843,12 +1849,12 @@ const KanbanBoard = ({tasks, columns, onColumnsChange, onResetColumns, onSelect,
                 <div style={{display:"flex",flexDirection:"column",gap:6}} onClick={e=>e.stopPropagation()}>
                   <input autoFocus value={editName} onChange={e=>setEditName(e.target.value)}
                     onKeyDown={e=>{if(e.key==="Enter")saveEdit();if(e.key==="Escape")setEditingCol(null);}}
-                    style={{fontSize:14,fontWeight:700,border:"1px solid var(--accent)",borderRadius:6,padding:"3px 8px",outline:"none",fontFamily:"inherit",background:"white",color:"var(--ink)",width:"100%",boxSizing:"border-box"}}/>
+                    style={{fontSize:14,fontWeight:700,border:"1px solid var(--accent)",borderRadius:6,padding:"3px 8px",outline:"none",fontFamily:"inherit",background:"var(--card)",color:"var(--ink)",width:"100%",boxSizing:"border-box"}}/>
                   <div style={{display:"flex",gap:6,alignItems:"center"}}>
                     <input type="date" value={editDate} onChange={e=>setEditDate(e.target.value)}
                       style={{fontSize:12,border:"1px solid var(--border)",borderRadius:6,padding:"3px 6px",fontFamily:"inherit",flex:1}}/>
                     <button onClick={saveEdit} style={{fontSize:11,fontWeight:700,color:"white",background:"var(--accent)",border:"none",borderRadius:6,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit"}}>Save</button>
-                    {columns.length > 1 && <button onClick={()=>{removeCol(col.id);setEditingCol(null);}} title="Remove column" style={{fontSize:13,fontWeight:700,color:"#ef4444",background:"#fef2f2",border:"none",borderRadius:6,padding:"3px 7px",cursor:"pointer",fontFamily:"inherit",lineHeight:1}}>✕</button>}
+                    {columns.length > 1 && <button onClick={()=>{removeCol(col.id);setEditingCol(null);}} title="Remove column" style={{fontSize:13,fontWeight:700,color:"var(--danger)",background:"var(--danger-bg)",border:"none",borderRadius:6,padding:"3px 7px",cursor:"pointer",fontFamily:"inherit",lineHeight:1}}>✕</button>}
                   </div>
                 </div>
               ) : (
@@ -1908,7 +1914,7 @@ const KanbanCard = ({task, onSelect, onToggle, onDragBegin, animateState, cardDr
       onDragLeave={onCardDragLeave}
       style={{position:"relative",marginBottom:6}}>
       {dz?.zone === "before" && <div style={{position:"absolute",top:-3,left:4,right:4,height:2,background:"var(--accent)",borderRadius:1,zIndex:5}}/>}
-      <div style={{background:"white",borderRadius:10,borderLeft:`3px solid ${pc}`,boxShadow:"0 1px 3px rgba(0,0,0,0.06)",
+      <div style={{background:"var(--card)",borderRadius:10,borderLeft:`3px solid ${pc}`,boxShadow:"0 1px 3px var(--shadow)",
         animation:animateState==="complete"?"cardComplete 0.6s ease forwards":animateState==="uncomplete"?"cardUncomplete 0.5s ease forwards":"none",
         transition:"box-shadow 0.15s,transform 0.15s",overflow:"hidden"}}>
         {/* ── Main card row (draggable) ── */}
@@ -1927,7 +1933,7 @@ const KanbanCard = ({task, onSelect, onToggle, onDragBegin, animateState, cardDr
               <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",marginTop:4}}>
                 {task.priority !== "none" && <span style={{fontSize:10,fontWeight:700,color:pc}}>{PRIORITY[task.priority].label}</span>}
                 {(task.tags||[]).map(t => <span key={t} style={{fontSize:10,color:"var(--accent)"}}>#{t}</span>)}
-                {task.notes && <span style={{color:"#cbd5e1",display:"flex",transform:"scale(0.8)"}}>{Icons.note}</span>}
+                {task.notes && <span style={{color:"var(--border)",display:"flex",transform:"scale(0.8)"}}>{Icons.note}</span>}
                 {hasSubs && (
                   <button onClick={e=>{e.stopPropagation();setExpanded(!expanded);}}
                     style={{fontSize:10,color:done===total?"#16a34a":"var(--muted)",background:"none",border:"none",cursor:"pointer",padding:0,fontFamily:"inherit",display:"flex",alignItems:"center",gap:2}}>
@@ -1998,7 +2004,7 @@ const KanbanSubtaskList = ({subs, taskId, depth, parentDueDate, onToggleSub, onS
                   overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",cursor:"pointer",lineHeight:1.3}}>
                 {sub.title}
               </span>
-              {sub.dueDate && <span style={{fontSize:9,color:sub.dueDate<todayStr()?"#ef4444":"var(--muted)",flexShrink:0,whiteSpace:"nowrap"}}>{formatDate(sub.dueDate)}</span>}
+              {sub.dueDate && <span style={{fontSize:9,color:sub.dueDate<todayStr()?"var(--danger)":"var(--muted)",flexShrink:0,whiteSpace:"nowrap"}}>{formatDate(sub.dueDate)}</span>}
               {hasCh && (
                 <button onClick={e=>{e.stopPropagation();toggle(sub.id);}}
                   style={{background:"none",border:"none",cursor:"pointer",padding:0,color:"var(--muted)",display:"flex",alignItems:"center",gap:1,fontSize:10,fontFamily:"inherit",flexShrink:0}}>
@@ -2043,8 +2049,8 @@ const SubtaskKanbanCard = ({subInfo, onSelect, onToggleSub, onDragBegin}) => {
       }}
       onDragEnd={() => { if(onDragBegin) onDragBegin(false); }}
       onClick={() => onSelect(parentTask)}
-      style={{padding:"10px 12px",background:"white",borderRadius:10,marginBottom:6,cursor:"grab",touchAction:"none",
-        boxShadow:"0 1px 3px rgba(0,0,0,0.04)",
+      style={{padding:"10px 12px",background:"var(--card)",borderRadius:10,marginBottom:6,cursor:"grab",touchAction:"none",
+        boxShadow:"0 1px 3px var(--shadow)",
         border:"1px dashed var(--accent)",borderLeft:`3px solid ${pc}`,transition:"box-shadow 0.15s"}}>
       <div style={{display:"flex",alignItems:"flex-start",gap:8}}>
         <div style={{paddingTop:1}}>
@@ -2352,7 +2358,7 @@ const TaskRow = ({task,isActive,isSelected,onSelect,onToggle,onUpdateTask,onDrag
             {task.priority!=="none"&&<span style={{fontSize:11,fontWeight:700,display:"flex",alignItems:"center",gap:3,color:PRIORITY[task.priority].color}}>{Icons.flag} {PRIORITY[task.priority].label}</span>}
             {subTotal>0&&(<button onClick={e=>{e.stopPropagation();setSubsOpen(!subsOpen);}} style={{fontSize:12,display:"flex",alignItems:"center",gap:3,color:subDone===subTotal?"#16a34a":"var(--muted)",background:"none",border:"none",cursor:"pointer",padding:0,fontFamily:"inherit"}}>{Icons.subtask} {subDone}/{subTotal} <span style={{transform:subsOpen?"rotate(0)":"rotate(-90deg)",transition:"transform 0.15s",display:"flex"}}>{Icons.chevD}</span></button>)}
             {(task.tags||[]).map(t=><span key={t} style={{fontSize:11,color:"var(--accent)",fontWeight:500}}>#{t}</span>)}
-            {task.notes&&<span style={{color:"#cbd5e1",display:"flex"}}>{Icons.note}</span>}
+            {task.notes&&<span style={{color:"var(--border)",display:"flex"}}>{Icons.note}</span>}
             {!view.startsWith("list:")&&view!=="inbox"&&<span style={{fontSize:11,color:"var(--muted)",background:"var(--surface)",padding:"1px 7px",borderRadius:4}}>{task.list}</span>}
           </div>
         </div>
@@ -2390,7 +2396,7 @@ const SurfacedSubtaskRow = ({task, onSelect, onToggleSub, view, lists, animateSt
           <span style={{fontSize:11,color:"var(--accent)",fontWeight:500,display:"flex",alignItems:"center",gap:2}}>
             ↳ {parentLabel}
           </span>
-          {view!=="today"&&task.dueDate&&<span style={{fontSize:11,color:isOverdue(task.dueDate)?"#ef4444":"var(--muted)",display:"flex",alignItems:"center",gap:3}}>{Icons.calendar} {formatDate(task.dueDate)}</span>}
+          {view!=="today"&&task.dueDate&&<span style={{fontSize:11,color:isOverdue(task.dueDate)?"var(--danger)":"var(--muted)",display:"flex",alignItems:"center",gap:3}}>{Icons.calendar} {formatDate(task.dueDate)}</span>}
           <span style={{fontSize:11,fontWeight:600,color:lc,background:`${lc}14`,padding:"0 6px",borderRadius:3}}>{task.list}</span>
         </div>
       </div>
@@ -2429,7 +2435,7 @@ const LoginScreen = ({ onSignIn, onSignInPassword, error }) => {
   return (
     <div style={{minHeight:"100dvh",display:"flex",alignItems:"center",justifyContent:"center",background:"var(--bg)",fontFamily:"var(--font-body)",padding:20}}>
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700;800&family=Source+Sans+3:wght@300;400;500;600;700&display=swap');
-        :root{--font-display:'Playfair Display',Georgia,serif;--font-body:'Source Sans 3',-apple-system,sans-serif;--ink:#1c1917;--text:#44403c;--muted:#a8a29e;--bg:#fafaf9;--surface:#f5f5f4;--border:#e7e5e4;--accent:#d97706;--accent-dark:#b45309;--accent-bg:#fffbeb;}
+        :root{--font-display:'Playfair Display',Georgia,serif;--font-body:'Source Sans 3',-apple-system,sans-serif;--ink:#1c1917;--text:#44403c;--muted:#79736f;--bg:#fafaf9;--surface:#f5f5f4;--border:#e7e5e4;--accent:#d97706;--accent-dark:#b45309;--accent-bg:#fffbeb;}
         *{box-sizing:border-box;margin:0;padding:0;font-family:var(--font-body);}
         html,body{height:100%;background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;}`}
       </style>
@@ -2448,7 +2454,7 @@ const LoginScreen = ({ onSignIn, onSignInPassword, error }) => {
             <button onClick={()=>setSent(false)} style={{marginTop:16,background:"none",border:"none",color:"var(--accent)",cursor:"pointer",fontSize:13,fontFamily:"inherit"}}>Use a different email</button>
           </div>
         ) : (
-          <div style={{background:"white",borderRadius:16,border:"1px solid var(--border)",padding:24,boxShadow:"0 2px 12px rgba(0,0,0,0.04)"}}>
+          <div style={{background:"var(--card)",borderRadius:16,border:"1px solid var(--border)",padding:24,boxShadow:"0 2px 12px var(--shadow)"}}>
             <input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="your@email.com"
               onKeyDown={e=>e.key==="Enter"&&(mode==="magic"?handleMagicLink():handlePassword())}
               style={{width:"100%",padding:"12px 14px",borderRadius:10,border:"1px solid var(--border)",fontSize:15,outline:"none",marginBottom:10,fontFamily:"inherit",background:"var(--surface)"}}/>
@@ -2459,7 +2465,7 @@ const LoginScreen = ({ onSignIn, onSignInPassword, error }) => {
                 style={{width:"100%",padding:"12px 14px",borderRadius:10,border:"1px solid var(--border)",fontSize:15,outline:"none",marginBottom:10,fontFamily:"inherit",background:"var(--surface)"}}/>
             )}
 
-            {error && <p style={{color:"#ef4444",fontSize:13,marginBottom:10}}>{error}</p>}
+            {error && <p style={{color:"var(--danger)",fontSize:13,marginBottom:10}}>{error}</p>}
 
             {mode === "magic" ? (
               <button onClick={handleMagicLink} disabled={loading}
@@ -2542,6 +2548,10 @@ export default function InkwellApp() {
   const [dragListOver,setDragListOver]=useState(null);
   const [showViewCounts,setShowViewCounts]=useState(()=>load("inkwell-showViewCounts",true));
   const [showListCounts,setShowListCounts]=useState(()=>load("inkwell-showListCounts",true));
+  const BUILD_VERSION = "2026.02.27-v2";
+  const [darkMode,setDarkMode]=useState(()=>load("inkwell-darkMode",false));
+  const defaultQuickDates=[{label:"Tomorrow",offset:"tomorrow"},{label:"Next Monday",offset:"nextMonday"}];
+  const [quickDates,setQuickDates]=useState(()=>load("inkwell-quickDates",defaultQuickDates));
   const [todayMode,setTodayMode]=useState(()=>load("inkwell-todayMode","kanban")); /* "kanban" | "list" */
   const [sortBy,setSortBy]=useState("default"); /* default|priority|alpha|date|created */
   const [filterPriority,setFilterPriority]=useState("all"); /* all|high|medium|low */
@@ -2584,6 +2594,8 @@ export default function InkwellApp() {
   }, []);
   useEffect(()=>{save("inkwell-showViewCounts",showViewCounts);},[showViewCounts]);
   useEffect(()=>{save("inkwell-showListCounts",showListCounts);},[showListCounts]);
+  useEffect(()=>{save("inkwell-darkMode",darkMode);},[darkMode]);
+  useEffect(()=>{save("inkwell-quickDates",quickDates);},[quickDates]);
   useEffect(()=>{save("inkwell-todayMode",todayMode);},[todayMode]);
 
   /* ── CLOUD-FIRST SYNC ──
@@ -2602,6 +2614,8 @@ export default function InkwellApp() {
     if (cloudData.settings) {
       if (cloudData.settings.showViewCounts !== undefined) setShowViewCounts(cloudData.settings.showViewCounts);
       if (cloudData.settings.showListCounts !== undefined) setShowListCounts(cloudData.settings.showListCounts);
+      if (cloudData.settings.darkMode !== undefined) setDarkMode(cloudData.settings.darkMode);
+      if (cloudData.settings.quickDates !== undefined) setQuickDates(cloudData.settings.quickDates);
     }
     /* Cache to localStorage for offline use */
     save(TASKS_KEY, cloudData.tasks || []);
@@ -2634,12 +2648,14 @@ export default function InkwellApp() {
       setReady(true);
     };
     init();
+    console.log("%c Inkwell " + BUILD_VERSION + " ", "background:#d97706;color:white;font-weight:bold;border-radius:4px;padding:2px 8px;");
     const mob=window.innerWidth<768;setIsMobile(mob);if(mob)setSidebar(false);
     const fn=()=>{const m=window.innerWidth<768;setIsMobile(m);if(m)setSidebar(false);};
     window.addEventListener("resize",fn);
     /* Service worker: register + detect updates → force reload for fresh code */
     if("serviceWorker" in navigator){
-      navigator.serviceWorker.register("/sw.js").then(reg=>{
+      /* Force browser to check sw.js freshness every time (bypass HTTP cache) */
+      navigator.serviceWorker.register("/sw.js",{updateViaCache:"none"}).then(reg=>{
         reg.addEventListener("updatefound",()=>{
           const nw=reg.installing;
           if(!nw)return;
@@ -2678,18 +2694,18 @@ export default function InkwellApp() {
     if(!ready) return;
     if(Date.now() - cloudLoadTimeRef.current < 2000) return;
     save(TASKS_KEY,tasks);
-    saveToCloud(tasks,lists,{showViewCounts,showListCounts});
+    saveToCloud(tasks,lists,{showViewCounts,showListCounts,darkMode,quickDates});
   },[tasks,ready]);
   useEffect(()=>{
     if(!ready) return;
     if(Date.now() - cloudLoadTimeRef.current < 2000) return;
     save(LISTS_KEY,lists);
-    saveToCloud(tasks,lists,{showViewCounts,showListCounts});
+    saveToCloud(tasks,lists,{showViewCounts,showListCounts,darkMode,quickDates});
   },[lists,ready]);
   useEffect(()=>{
     if(!ready) return;
     if(Date.now() - cloudLoadTimeRef.current < 2000) return;
-    saveToCloud(tasks,lists,{showViewCounts,showListCounts});
+    saveToCloud(tasks,lists,{showViewCounts,showListCounts,darkMode,quickDates});
   },[showViewCounts,showListCounts]);
 
   /* ── Flush to cloud on tab hide AND page unload ── */
@@ -2697,8 +2713,8 @@ export default function InkwellApp() {
   useEffect(()=>{tasksRef.current=tasks;},[tasks]);
   useEffect(()=>{listsRef.current=lists;},[lists]);
   useEffect(()=>{
-    const flushOnHide=()=>{if(document.hidden&&ready)saveToCloudNow(tasksRef.current,listsRef.current,{showViewCounts,showListCounts});};
-    const flushOnUnload=()=>{if(ready)flushToCloudKeepalive(tasksRef.current,listsRef.current,{showViewCounts,showListCounts});};
+    const flushOnHide=()=>{if(document.hidden&&ready)saveToCloudNow(tasksRef.current,listsRef.current,{showViewCounts,showListCounts,darkMode,quickDates});};
+    const flushOnUnload=()=>{if(ready)flushToCloudKeepalive(tasksRef.current,listsRef.current,{showViewCounts,showListCounts,darkMode,quickDates});};
     document.addEventListener("visibilitychange",flushOnHide);
     window.addEventListener("beforeunload",flushOnUnload);
     return()=>{document.removeEventListener("visibilitychange",flushOnHide);window.removeEventListener("beforeunload",flushOnUnload);};
@@ -3010,24 +3026,23 @@ export default function InkwellApp() {
     flash(`✓ Added ${added} task${added!==1?"s":""}${checked?`, checked off ${checked}`:""}${lm}`);};
 
   const PRIO_ORDER={high:0,medium:1,low:2,none:3};
-  const applySortFilter=(arr)=>{
-    /* Priority filter */
-    let f=filterPriority==="all"?arr:arr.filter(t=>t.priority===filterPriority);
-    /* Split incomplete/completed */
-    const inc=f.filter(t=>!t.completed);
-    const comp=f.filter(t=>t.completed);
-    /* Sort incomplete */
-    if(sortBy!=="default"){
-      inc.sort((a,b)=>{
-        if(sortBy==="priority") return (PRIO_ORDER[a.priority||"none"]||3)-(PRIO_ORDER[b.priority||"none"]||3);
-        if(sortBy==="alpha") return (a.title||"").localeCompare(b.title||"");
-        if(sortBy==="date") return (a.dueDate||"9999").localeCompare(b.dueDate||"9999");
-        if(sortBy==="created") return (b.createdAt||"").localeCompare(a.createdAt||"");
-        return 0;
-      });
-    }
-    return [...inc,...comp.sort((a,b)=>(b.completedAt||"").localeCompare(a.completedAt||""))];
-  };
+  const applySortFilter=useMemo(()=>{
+    return (arr)=>{
+      let f=filterPriority==="all"?arr:arr.filter(t=>(t.priority||"none")===filterPriority);
+      const inc=f.filter(t=>!t.completed);
+      const comp=f.filter(t=>t.completed);
+      if(sortBy!=="default"){
+        inc.sort((a,b)=>{
+          if(sortBy==="priority") return (PRIO_ORDER[a.priority||"none"]??3)-(PRIO_ORDER[b.priority||"none"]??3);
+          if(sortBy==="alpha") return (a.title||"").localeCompare(b.title||"");
+          if(sortBy==="date") return (a.dueDate||"9999").localeCompare(b.dueDate||"9999");
+          if(sortBy==="created") return (b.createdAt||"").localeCompare(a.createdAt||"");
+          return 0;
+        });
+      }
+      return [...inc,...comp.sort((a,b)=>(b.completedAt||"").localeCompare(a.completedAt||""))];
+    };
+  },[sortBy,filterPriority]);
 
   const filtered=useMemo(()=>{let f=tasks;
     if(search){const q=search.toLowerCase();f=f.filter(t=>t.title.toLowerCase().includes(q)||(t.notes||"").toLowerCase().includes(q)||(t.tags||[]).some(tg=>tg.toLowerCase().includes(q)));}
@@ -3046,7 +3061,7 @@ export default function InkwellApp() {
       result.splice(insertAt,0,...surfaced);
     }
     return result;
-  },[tasks,view,search,sortBy,filterPriority]);
+  },[tasks,view,search,sortBy,filterPriority,applySortFilter]);
 
   const overdueCount=useMemo(()=>tasks.filter(t=>!t.completed&&isOverdue(t.dueDate)).length,[tasks]);
   /* Auto-redirect from overdue view when all tasks resolved */
@@ -3077,12 +3092,14 @@ export default function InkwellApp() {
   if(!ready)return<div style={{height:"100dvh",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"var(--font-display)",fontSize:22,color:"var(--muted)"}}>Loading...</div>;
 
   return (
-    <div style={{height:"100dvh",display:"flex",overflow:"hidden"}}>
+    <div className={darkMode?"theme-dark":"theme-light"} style={{height:"100dvh",display:"flex",overflow:"hidden",background:"var(--bg)",color:"var(--ink)"}}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700;800&family=Source+Sans+3:wght@300;400;500;600;700&display=swap');
-        :root{--font-display:'Playfair Display',Georgia,serif;--font-body:'Source Sans 3',-apple-system,sans-serif;--ink:#1c1917;--text:#44403c;--muted:#a8a29e;--bg:#fafaf9;--surface:#f5f5f4;--border:#e7e5e4;--border-light:#f5f5f4;--active-bg:#fffbeb;--accent:#d97706;--accent-dark:#b45309;--accent-bg:#fffbeb;--accent2:#ea580c;}
+        :root{--font-display:'Playfair Display',Georgia,serif;--font-body:'Source Sans 3',-apple-system,sans-serif;}
+        .theme-light{--ink:#1c1917;--text:#44403c;--muted:#79736f;--bg:#fafaf9;--surface:#f5f5f4;--border:#e7e5e4;--border-light:#f5f5f4;--active-bg:#fffbeb;--accent:#d97706;--accent-dark:#b45309;--accent-bg:#fffbeb;--accent2:#ea580c;--card:#ffffff;--card-hover:#fafaf9;--overlay:rgba(15,23,42,0.45);--danger-bg:#fef2f2;--danger-border:#fecaca;--danger:#ef4444;--success-bg:rgba(34,197,94,0.15);--shadow:rgba(0,0,0,0.06);}
+        .theme-dark{--ink:#f5f5f4;--text:#d6d3d1;--muted:#9a938f;--bg:#1c1917;--surface:#292524;--border:#3f3935;--border-light:#292524;--active-bg:#422006;--accent:#f59e0b;--accent-dark:#fbbf24;--accent-bg:#422006;--accent2:#f97316;--card:#292524;--card-hover:#1c1917;--overlay:rgba(0,0,0,0.6);--danger-bg:#450a0a;--danger-border:#7f1d1d;--danger:#f87171;--success-bg:rgba(34,197,94,0.12);--shadow:rgba(0,0,0,0.3);}
         *{box-sizing:border-box;margin:0;padding:0;font-family:var(--font-body);}
-        html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;}
+        html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;color-scheme:${darkMode?"dark":"light"};}
         ::selection{background:rgba(217,119,6,0.15);}
         .list-row:hover .list-menu-btn{opacity:1!important;}
         @keyframes fadeIn{from{opacity:0;transform:scale(0.95)}to{opacity:1;transform:scale(1)}}
@@ -3130,13 +3147,14 @@ export default function InkwellApp() {
           0%{stroke-dashoffset:24}
           100%{stroke-dashoffset:0}
         }
-        ::-webkit-scrollbar{width:6px;}::-webkit-scrollbar-track{background:transparent;}::-webkit-scrollbar-thumb{background:#d6d3d1;border-radius:3px;}
-        input::placeholder,textarea::placeholder{color:#a8a29e;}
+        ::-webkit-scrollbar{width:6px;}::-webkit-scrollbar-track{background:transparent;}::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;}
+        input::placeholder,textarea::placeholder{color:var(--muted);}
         @keyframes fadeIn{from{opacity:0}to{opacity:1}}
         @keyframes slideIn{from{opacity:0;transform:translateX(12px)}to{opacity:1;transform:translateX(0)}}
         @keyframes spin{to{transform:rotate(360deg)}}
         @keyframes toastIn{from{opacity:0;transform:translate(-50%,20px)}to{opacity:1;transform:translate(-50%,0)}}
         button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+        @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:0.01ms!important;animation-iteration-count:1!important;transition-duration:0.01ms!important;}}
         [draggable]{user-select:none;}
         @media(max-width:768px){.sidebar{position:fixed!important;z-index:100!important;height:100dvh!important;}.detail-panel{position:fixed!important;right:0;top:0;height:100dvh!important;z-index:100;width:100%!important;max-width:100%!important;min-width:0!important;}.main-scroll{padding-bottom:calc(24px + env(safe-area-inset-bottom, 0px))!important;}}
       `}</style>
@@ -3156,9 +3174,9 @@ export default function InkwellApp() {
           <NavSection title="Views">
             {(()=>{
               const dateDrop=(dateStr,label)=>({
-                onDragOver:e=>{e.preventDefault();e.currentTarget.style.background="var(--accent-bg)";e.currentTarget.style.outline="2px solid var(--accent)";e.currentTarget.style.borderRadius="10px";},
-                onDragLeave:e=>{e.currentTarget.style.background="";e.currentTarget.style.outline="";},
-                onDrop:e=>{e.preventDefault();e.currentTarget.style.background="";e.currentTarget.style.outline="";const tid=e.dataTransfer.getData("text/plain");if(!tid)return;const src=e.dataTransfer.getData("application/x-source");
+                onDragOver:e=>{e.preventDefault();e.dataTransfer.dropEffect="move";e.currentTarget.style.background="var(--accent)";e.currentTarget.style.color="white";e.currentTarget.style.transform="scale(1.02)";},
+                onDragLeave:e=>{e.currentTarget.style.background="";e.currentTarget.style.color="";e.currentTarget.style.transform="";},
+                onDrop:e=>{e.preventDefault();e.currentTarget.style.background="";e.currentTarget.style.color="";e.currentTarget.style.transform="";const tid=e.dataTransfer.getData("text/plain");if(!tid)return;const src=e.dataTransfer.getData("application/x-source");
                   if(isSubSource(src)){setTasks(prev=>prev.map(t=>{const found=findSubById(t.subtasks,tid);if(!found)return t;const newDate=t.dueDate===dateStr?null:dateStr;return{...t,subtasks:updateSubById(t.subtasks,tid,{dueDate:newDate})};}));flash(tasks.find(t=>findSubById(t.subtasks,tid))?.dueDate===dateStr?"Subtask rejoined parent":`Subtask due ${label}`);setIsDragging(false);}
                   else{const ids=selectedIds.size>1&&selectedIds.has(tid)?selectedIds:new Set([tid]);setTasks(prev=>prev.map(t=>ids.has(t.id)?{...t,dueDate:dateStr}:t));flash(`Set ${ids.size>1?ids.size+" tasks":"task"} to ${label}`);setSelectedIds(new Set());setIsDragging(false);}
                 }
@@ -3170,26 +3188,27 @@ export default function InkwellApp() {
                 {id:"calendar",icon:Icons.calendar,label:"Calendar"},
               ];
               return (<>
-                {/* Today — fans out into Today/Tomorrow/Next Monday during drag */}
-                <div {...dateDrop(todayStr(),"Today")} data-drop-type="date" data-drop-value={todayStr()}>
-                  <NavItem active={view==="today"} icon={Icons.today} label="Today" count={showViewCounts?todayCount:0}
-                    onClick={()=>selectView("today")} countColor={overdueCount>0?"#ef4444":undefined}/>
+                {/* Today — fans out into quick-date drop zones during drag */}
+                <div {...dateDrop(todayStr(),"Today")} data-drop-type="date" data-drop-value={todayStr()}
+                  style={isDragging?{background:"var(--accent-bg)",border:"2px dashed var(--accent)",borderRadius:10,padding:"2px 0",marginBottom:2,transition:"all 0.15s"}:{}}>
+                  <NavItem active={view==="today"} icon={Icons.today} label={isDragging?<><span>Today</span><span style={{fontSize:11,opacity:0.6,fontWeight:400,marginLeft:4}}>— drop here</span></>:"Today"} count={showViewCounts?todayCount:0}
+                    onClick={()=>selectView("today")} countColor={overdueCount>0?"var(--danger)":undefined}/>
                 </div>
-                {isDragging&&(<>
-                  <div style={{overflow:"hidden",animation:"fanOut 0.2s ease",paddingLeft:16}}>
-                    <div {...dateDrop(tomorrowStr(),"Tomorrow")} data-drop-type="date" data-drop-value={tomorrowStr()}>
-                      <NavItem icon={Icons.upcoming} label="Tomorrow" count={0}/>
-                    </div>
-                  </div>
-                  <div style={{overflow:"hidden",animation:"fanOut 0.25s ease",paddingLeft:16}}>
-                    <div {...dateDrop(nextMondayStr(),"Next Monday")} data-drop-type="date" data-drop-value={nextMondayStr()}>
-                      <NavItem icon={Icons.calendar} label="Next Monday" count={0}/>
-                    </div>
-                  </div>
-                </>)}
+                {isDragging&&(<div style={{display:"flex",flexDirection:"column",gap:2,paddingLeft:12,marginBottom:2}}>
+                  {quickDates.map((qd,qi)=>{const ds=resolveQuickDate(qd.offset);return(
+                    <div key={qi} {...dateDrop(ds,qd.label)} data-drop-type="date" data-drop-value={ds}
+                      style={{animation:`fanOut ${0.15+qi*0.05}s ease`,background:"var(--accent-bg)",border:"2px dashed var(--accent)",borderRadius:10,padding:"2px 4px",transition:"all 0.12s",cursor:"default"}}>
+                      <div style={{display:"flex",alignItems:"center",gap:8,padding:"7px 8px",fontSize:13,fontWeight:600,color:"var(--accent)",borderRadius:8}}>
+                        <span style={{display:"flex",flexShrink:0}}>{Icons.calendar}</span>
+                        <span style={{flex:1}}>{qd.label}</span>
+                        <span style={{fontSize:11,fontWeight:400,color:"var(--muted)"}}>{formatDate(ds)}</span>
+                      </div>
+                    </div>);
+                  })}
+                </div>)}
                 {overdueCount>0&&(
                   <NavItem active={view==="overdue"} icon={Icons.overdue} label="Overdue" count={showViewCounts?overdueCount:0}
-                    onClick={()=>selectView("overdue")} countColor="#ef4444" labelColor="#ef4444" iconColor="#ef4444"/>
+                    onClick={()=>selectView("overdue")} countColor="var(--danger)" labelColor="var(--danger)" iconColor="var(--danger)"/>
                 )}
                 {baseViews.map(({id,icon,label,count})=>(
                   <div key={id}>
@@ -3245,20 +3264,20 @@ export default function InkwellApp() {
             {/* List context menu */}
             {listMenu&&(<>
               <div style={{position:"fixed",inset:0,zIndex:999}} onClick={()=>setListMenu(null)}/>
-              <div style={{position:"fixed",left:listMenu.x,top:listMenu.y,background:"white",borderRadius:10,boxShadow:"0 4px 20px rgba(0,0,0,0.15)",border:"1px solid var(--border)",padding:4,zIndex:1000,minWidth:140,animation:"fadeIn 0.1s ease"}}>
+              <div style={{position:"fixed",left:listMenu.x,top:listMenu.y,background:"var(--card)",borderRadius:10,boxShadow:"0 4px 20px rgba(0,0,0,0.15)",border:"1px solid var(--border)",padding:4,zIndex:1000,minWidth:140,animation:"fadeIn 0.1s ease"}}>
                 <button onClick={()=>{setEditingList(listMenu.name);setListMenu(null);}} style={{width:"100%",padding:"8px 12px",border:"none",background:"none",cursor:"pointer",fontSize:13,fontWeight:500,color:"var(--text)",textAlign:"left",borderRadius:6,fontFamily:"inherit",display:"flex",alignItems:"center",gap:8}}
                   onMouseEnter={e=>e.currentTarget.style.background="var(--surface)"} onMouseLeave={e=>e.currentTarget.style.background="none"}>✏️ Rename</button>
-                <button onClick={()=>{deleteList(listMenu.name);setListMenu(null);}} style={{width:"100%",padding:"8px 12px",border:"none",background:"none",cursor:"pointer",fontSize:13,fontWeight:500,color:"#ef4444",textAlign:"left",borderRadius:6,fontFamily:"inherit",display:"flex",alignItems:"center",gap:8}}
-                  onMouseEnter={e=>e.currentTarget.style.background="#fef2f2"} onMouseLeave={e=>e.currentTarget.style.background="none"}>🗑 Delete list</button>
+                <button onClick={()=>{deleteList(listMenu.name);setListMenu(null);}} style={{width:"100%",padding:"8px 12px",border:"none",background:"none",cursor:"pointer",fontSize:13,fontWeight:500,color:"var(--danger)",textAlign:"left",borderRadius:6,fontFamily:"inherit",display:"flex",alignItems:"center",gap:8}}
+                  onMouseEnter={e=>e.currentTarget.style.background="var(--danger-bg)"} onMouseLeave={e=>e.currentTarget.style.background="none"}>🗑 Delete list</button>
               </div>
             </>)}
             {showNewList&&(<div style={{padding:"4px 6px"}}><input autoFocus value={newList} onChange={e=>setNewList(e.target.value)}
               onKeyDown={e=>{if(e.key==="Enter"&&newList.trim()&&!lists.includes(newList.trim())){setLists(p=>[...p,newList.trim()]);setNewList("");setShowNewList(false);}if(e.key==="Escape"){setShowNewList(false);setNewList("");}}}
-              onBlur={()=>{setShowNewList(false);setNewList("");}} placeholder="List name..." style={{width:"100%",padding:"8px 10px",borderRadius:8,border:"1px solid var(--accent)",fontSize:13,outline:"none",background:"white",fontFamily:"inherit"}}/></div>)}
+              onBlur={()=>{setShowNewList(false);setNewList("");}} placeholder="List name..." style={{width:"100%",padding:"8px 10px",borderRadius:8,border:"1px solid var(--accent)",fontSize:13,outline:"none",background:"var(--card)",fontFamily:"inherit"}}/></div>)}
           </NavSection>
         </div>
-        {overdueCount>0&&view!=="overdue"&&<button onClick={()=>selectView("overdue")} style={{margin:"0 8px 8px",padding:"10px 14px",borderRadius:10,background:"#fef2f2",border:"1px solid #fecaca",fontSize:13,color:"#ef4444",fontWeight:600,flexShrink:0,cursor:"pointer",width:"calc(100% - 16px)",textAlign:"left",fontFamily:"inherit",transition:"background 0.15s"}}
-          onMouseEnter={e=>e.currentTarget.style.background="#fee2e2"} onMouseLeave={e=>e.currentTarget.style.background="#fef2f2"}>⚠ {overdueCount} overdue — view →</button>}
+        {overdueCount>0&&view!=="overdue"&&<button onClick={()=>selectView("overdue")} style={{margin:"0 8px 8px",padding:"10px 14px",borderRadius:10,background:"var(--danger-bg)",border:"1px solid var(--danger-border)",fontSize:13,color:"var(--danger)",fontWeight:600,flexShrink:0,cursor:"pointer",width:"calc(100% - 16px)",textAlign:"left",fontFamily:"inherit",transition:"background 0.15s"}}
+          onMouseEnter={e=>e.currentTarget.style.background="var(--danger-border)"} onMouseLeave={e=>e.currentTarget.style.background="var(--danger-bg)"}>⚠ {overdueCount} overdue — view →</button>}
         {hasSupabase && user && (
           <div style={{padding:"6px 16px",fontSize:11,color:"var(--muted)",display:"flex",alignItems:"center",gap:5,flexShrink:0}}>
             <span>☁️</span><span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{user.email}</span>
@@ -3285,15 +3304,15 @@ export default function InkwellApp() {
           <button onClick={()=>setSidebar(!sidebar)} title={sidebar?"Hide sidebar (B)":"Show sidebar (B)"} style={{background:"none",border:"none",cursor:"pointer",color:sidebar?"var(--muted)":"var(--accent)",padding:6,display:"flex",borderRadius:6,transition:"color 0.15s"}} aria-label="Toggle sidebar">{Icons.menu}</button>
           <div style={{flex:1,display:"flex",alignItems:"center",gap:10,minWidth:0}}>
             {!showSearch?(<>
-              <span style={{color:view==="overdue"?"#ef4444":"var(--accent)",flexShrink:0}}>{viewIcon}</span>
-              {view.startsWith("list:")?(<EditableText value={viewTitle} onSave={n=>renameList(viewTitle,n)} tag="h1" style={{fontSize:isMobile?20:22,fontFamily:"var(--font-display)",fontWeight:700,color:"var(--ink)"}}/>):(<h1 style={{margin:0,fontSize:isMobile?20:22,fontFamily:"var(--font-display)",fontWeight:700,color:view==="overdue"?"#dc2626":"var(--ink)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{viewTitle}</h1>)}
+              <span style={{color:view==="overdue"?"var(--danger)":"var(--accent)",flexShrink:0}}>{viewIcon}</span>
+              {view.startsWith("list:")?(<EditableText value={viewTitle} onSave={n=>renameList(viewTitle,n)} tag="h1" style={{fontSize:isMobile?20:22,fontFamily:"var(--font-display)",fontWeight:700,color:"var(--ink)"}}/>):(<h1 style={{margin:0,fontSize:isMobile?20:22,fontFamily:"var(--font-display)",fontWeight:700,color:view==="overdue"?"var(--danger)":"var(--ink)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{viewTitle}</h1>)}
               {view==="today"&&!isMobile&&<span style={{fontSize:13,color:"var(--muted)"}}>{new Date().toLocaleDateString("en-IE",{weekday:"long",month:"long",day:"numeric"})}</span>}
               {view==="overdue"&&<button onClick={()=>{const ot=tasks.filter(t=>!t.completed&&t.dueDate&&t.dueDate<todayStr());setTasks(prev=>prev.map(t=>(!t.completed&&t.dueDate&&t.dueDate<todayStr())?{...t,dueDate:todayStr()}:t));flash(`Moved ${ot.length} task${ot.length!==1?"s":""} to today`);setView("today");}}
-                style={{padding:"6px 14px",borderRadius:8,border:"1px solid #fecaca",background:"#fef2f2",color:"#dc2626",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap",transition:"all 0.15s"}}
-                onMouseEnter={e=>{e.currentTarget.style.background="#fee2e2";}} onMouseLeave={e=>{e.currentTarget.style.background="#fef2f2";}}>
+                style={{padding:"6px 14px",borderRadius:8,border:"1px solid var(--danger-border)",background:"var(--danger-bg)",color:"var(--danger)",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap",transition:"all 0.15s"}}
+                onMouseEnter={e=>{e.currentTarget.style.background="var(--danger-border)"}} onMouseLeave={e=>{e.currentTarget.style.background="var(--danger-bg)"}}>
                 → Move All to Today
               </button>}
-            </>):(<input autoFocus value={search} onChange={e=>setSearch(e.target.value)} onKeyDown={e=>{if(e.key==="Escape"){setShowSearch(false);setSearch("");}}} placeholder="Search tasks, tags..." style={{flex:1,padding:"10px 14px",borderRadius:12,border:"1px solid var(--border)",fontSize:15,outline:"none",background:"white",fontFamily:"inherit",minWidth:0}}/>)}
+            </>):(<input autoFocus value={search} onChange={e=>setSearch(e.target.value)} onKeyDown={e=>{if(e.key==="Escape"){setShowSearch(false);setSearch("");}}} placeholder="Search tasks, tags..." style={{flex:1,padding:"10px 14px",borderRadius:12,border:"1px solid var(--border)",fontSize:15,outline:"none",background:"var(--card)",fontFamily:"inherit",minWidth:0}}/>)}
           </div>
           <button onClick={()=>{setShowSearch(!showSearch);if(showSearch)setSearch("");}} style={{background:showSearch?"var(--surface)":"none",border:"none",cursor:"pointer",color:"var(--muted)",padding:8,borderRadius:8,display:"flex",flexShrink:0}} aria-label="Search">{Icons.search}</button>
           {view!=="calendar"&&(<div style={{position:"relative",flexShrink:0}}>
@@ -3306,7 +3325,7 @@ export default function InkwellApp() {
             </button>
             {showSortMenu&&(<>
               <div style={{position:"fixed",inset:0,zIndex:1300}} onClick={()=>setShowSortMenu(false)}/>
-              <div style={{position:"absolute",top:"100%",right:0,marginTop:6,background:"white",borderRadius:14,border:"1px solid var(--border)",boxShadow:"0 8px 30px rgba(0,0,0,0.12)",padding:8,zIndex:1301,minWidth:200}}>
+              <div style={{position:"absolute",top:"100%",right:0,marginTop:6,background:"var(--card)",borderRadius:14,border:"1px solid var(--border)",boxShadow:"0 8px 30px rgba(0,0,0,0.12)",padding:8,zIndex:1301,minWidth:200}}>
                 <div style={{fontSize:11,fontWeight:700,color:"var(--muted)",textTransform:"uppercase",letterSpacing:0.8,padding:"6px 10px 4px"}}>Sort by</div>
                 {[["default","Default"],["priority","Priority"],["alpha","A → Z"],["date","Due Date"],["created","Newest First"]].map(([val,label])=>(
                   <button key={val} onClick={()=>{setSortBy(val);}} style={{width:"100%",padding:"8px 10px",border:"none",borderRadius:8,background:sortBy===val?"var(--accent-bg)":"transparent",
@@ -3328,8 +3347,8 @@ export default function InkwellApp() {
                 {(sortBy!=="default"||filterPriority!=="all")&&(<>
                   <div style={{height:1,background:"var(--border-light)",margin:"6px 4px"}}/>
                   <button onClick={()=>{setSortBy("default");setFilterPriority("all");}} style={{width:"100%",padding:"8px 10px",border:"none",borderRadius:8,background:"transparent",
-                    color:"#ef4444",fontSize:13,fontWeight:500,cursor:"pointer",textAlign:"left",fontFamily:"inherit",transition:"background 0.1s"}}
-                    onMouseEnter={e=>e.currentTarget.style.background="#fef2f2"} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                    color:"var(--danger)",fontSize:13,fontWeight:500,cursor:"pointer",textAlign:"left",fontFamily:"inherit",transition:"background 0.1s"}}
+                    onMouseEnter={e=>e.currentTarget.style.background="var(--danger-bg)"} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
                     Clear all
                   </button>
                 </>)}
@@ -3341,37 +3360,37 @@ export default function InkwellApp() {
         <div style={{flex:1,display:"flex",overflow:"hidden"}}>
           <div className="main-scroll" style={{flex:1,overflowY:"auto",padding:isMobile?"16px":"20px 24px"}}>
             {view==="calendar"?(<CalendarView tasks={tasks} onSelect={t=>setSelectedTask(t)} onUpdate={updateTask}/>):(view==="today"&&todayMode==="kanban")?(<div style={{display:"flex",flexDirection:"column",height:"100%"}}>
-              <div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",background:"white",borderRadius:14,border:"1px solid var(--border)",marginBottom:10,boxShadow:"0 1px 3px rgba(0,0,0,0.04)",flexShrink:0}}>
+              <div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",background:"var(--card)",borderRadius:14,border:"1px solid var(--border)",marginBottom:10,boxShadow:"0 1px 3px var(--shadow)",flexShrink:0}}>
                 <span style={{color:"var(--accent)",flexShrink:0}}>{Icons.plus}</span>
                 <input id="quick-add" value={newTitle} onChange={e=>setNewTitle(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&newTitle.trim()){const t=addTask({title:newTitle.trim()});setNewTitle("");flash(`✓ Added "${t.title}"`);}}} placeholder="Add a task... (Enter) · defaults to today" style={{flex:1,border:"none",outline:"none",fontSize:15,color:"var(--ink)",background:"none",fontFamily:"inherit",minWidth:0}}/>
               </div>
               <div style={{display:"flex",background:"var(--surface)",borderRadius:8,padding:2,marginBottom:14,width:"fit-content",flexShrink:0}}>
-                <button onClick={()=>setTodayMode("kanban")} style={{padding:"5px 12px",borderRadius:6,border:"none",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:todayMode==="kanban"?"white":"transparent",color:todayMode==="kanban"?"var(--ink)":"var(--muted)",boxShadow:todayMode==="kanban"?"0 1px 3px rgba(0,0,0,0.08)":"none",transition:"all 0.15s"}}>Board</button>
-                <button onClick={()=>setTodayMode("list")} style={{padding:"5px 12px",borderRadius:6,border:"none",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:todayMode==="list"?"white":"transparent",color:todayMode==="list"?"var(--ink)":"var(--muted)",boxShadow:todayMode==="list"?"0 1px 3px rgba(0,0,0,0.08)":"none",transition:"all 0.15s"}}>List</button>
+                <button onClick={()=>setTodayMode("kanban")} style={{padding:"5px 12px",borderRadius:6,border:"none",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:todayMode==="kanban"?"var(--card)":"transparent",color:todayMode==="kanban"?"var(--ink)":"var(--muted)",boxShadow:todayMode==="kanban"?"0 1px 3px rgba(0,0,0,0.08)":"none",transition:"all 0.15s"}}>Board</button>
+                <button onClick={()=>setTodayMode("list")} style={{padding:"5px 12px",borderRadius:6,border:"none",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:todayMode==="list"?"var(--card)":"transparent",color:todayMode==="list"?"var(--ink)":"var(--muted)",boxShadow:todayMode==="list"?"0 1px 3px rgba(0,0,0,0.08)":"none",transition:"all 0.15s"}}>List</button>
               </div>
-              <div style={{flex:1,minHeight:0}}><KanbanBoard tasks={tasks} columns={activeKanbanCols} onColumnsChange={setKanbanColumns} onResetColumns={kanbanColumns?resetKanbanCols:null} onSelect={t=>setSelectedTask(t)} onUpdate={updateTask} onToggle={toggleTask} onReorder={setTasks} onUpdateSubtask={(taskId,subId)=>{setTasks(prev=>prev.map(t=>t.id!==taskId?t:{...t,subtasks:updateSubById(t.subtasks,subId,{completed:!findSubById(t.subtasks,subId)?.completed,completedAt:!findSubById(t.subtasks,subId)?.completed?new Date().toISOString():null})}));}} onSubUpdate={(subId,changes)=>{setTasks(prev=>prev.map(t=>{const found=findSubById(t.subtasks,subId);if(!found)return t;return{...t,subtasks:updateSubById(t.subtasks,subId,changes)};}));}} flash={flash} setIsDragging={setIsDragging} animatingTasks={animatingTasks} sortBy={sortBy} filterPriority={filterPriority}/></div>
+              <div style={{flex:1,minHeight:0}}><KanbanBoard key={`kb-${sortBy}-${filterPriority}`} tasks={tasks} columns={activeKanbanCols} onColumnsChange={setKanbanColumns} onResetColumns={kanbanColumns?resetKanbanCols:null} onSelect={t=>setSelectedTask(t)} onUpdate={updateTask} onToggle={toggleTask} onReorder={setTasks} onUpdateSubtask={(taskId,subId)=>{setTasks(prev=>prev.map(t=>t.id!==taskId?t:{...t,subtasks:updateSubById(t.subtasks,subId,{completed:!findSubById(t.subtasks,subId)?.completed,completedAt:!findSubById(t.subtasks,subId)?.completed?new Date().toISOString():null})}));}} onSubUpdate={(subId,changes)=>{setTasks(prev=>prev.map(t=>{const found=findSubById(t.subtasks,subId);if(!found)return t;return{...t,subtasks:updateSubById(t.subtasks,subId,changes)};}));}} flash={flash} setIsDragging={setIsDragging} animatingTasks={animatingTasks} sortBy={sortBy} filterPriority={filterPriority}/></div>
             </div>):(<>
-              {view!=="completed"&&view!=="overdue"&&(<div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",background:"white",borderRadius:14,border:"1px solid var(--border)",marginBottom:view==="today"?10:16,boxShadow:"0 1px 3px rgba(0,0,0,0.04)"}}>
+              {view!=="completed"&&view!=="overdue"&&(<div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",background:"var(--card)",borderRadius:14,border:"1px solid var(--border)",marginBottom:view==="today"?10:16,boxShadow:"0 1px 3px var(--shadow)"}}>
                 <span style={{color:"var(--accent)",flexShrink:0}}>{Icons.plus}</span>
                 <input id="quick-add" value={newTitle} onChange={e=>setNewTitle(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&newTitle.trim()){const t=addTask({title:newTitle.trim()});setNewTitle("");flash(`✓ Added "${t.title}"`);}}} placeholder="Add a task... (Enter) · defaults to today" style={{flex:1,border:"none",outline:"none",fontSize:15,color:"var(--ink)",background:"none",fontFamily:"inherit",minWidth:0}}/>
               </div>)}
               {view==="overdue"&&(
-                <div style={{padding:"14px 16px",borderRadius:12,background:"#fef2f2",border:"1px solid #fecaca",marginBottom:16,display:"flex",alignItems:"center",gap:10}}>
+                <div style={{padding:"14px 16px",borderRadius:12,background:"var(--danger-bg)",border:"1px solid var(--danger-border)",marginBottom:16,display:"flex",alignItems:"center",gap:10}}>
                   <span style={{fontSize:20,flexShrink:0}}>⏰</span>
                   <div style={{flex:1}}>
                     <div style={{fontSize:14,fontWeight:600,color:"#991b1b"}}>These tasks are past due</div>
-                    <div style={{fontSize:12,color:"#dc2626",marginTop:2}}>Reschedule them or move everything to today</div>
+                    <div style={{fontSize:12,color:"var(--danger)",marginTop:2}}>Reschedule them or move everything to today</div>
                   </div>
                 </div>
               )}
               {view==="today"&&(
                 <div style={{display:"flex",background:"var(--surface)",borderRadius:8,padding:2,marginBottom:14,width:"fit-content",flexShrink:0}}>
-                  <button onClick={()=>setTodayMode("kanban")} style={{padding:"5px 12px",borderRadius:6,border:"none",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:todayMode==="kanban"?"white":"transparent",color:todayMode==="kanban"?"var(--ink)":"var(--muted)",boxShadow:todayMode==="kanban"?"0 1px 3px rgba(0,0,0,0.08)":"none",transition:"all 0.15s"}}>Board</button>
-                  <button onClick={()=>setTodayMode("list")} style={{padding:"5px 12px",borderRadius:6,border:"none",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:todayMode==="list"?"white":"transparent",color:todayMode==="list"?"var(--ink)":"var(--muted)",boxShadow:todayMode==="list"?"0 1px 3px rgba(0,0,0,0.08)":"none",transition:"all 0.15s"}}>List</button>
+                  <button onClick={()=>setTodayMode("kanban")} style={{padding:"5px 12px",borderRadius:6,border:"none",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:todayMode==="kanban"?"var(--card)":"transparent",color:todayMode==="kanban"?"var(--ink)":"var(--muted)",boxShadow:todayMode==="kanban"?"0 1px 3px rgba(0,0,0,0.08)":"none",transition:"all 0.15s"}}>Board</button>
+                  <button onClick={()=>setTodayMode("list")} style={{padding:"5px 12px",borderRadius:6,border:"none",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:todayMode==="list"?"var(--card)":"transparent",color:todayMode==="list"?"var(--ink)":"var(--muted)",boxShadow:todayMode==="list"?"0 1px 3px rgba(0,0,0,0.08)":"none",transition:"all 0.15s"}}>List</button>
                 </div>
               )}
-              {filtered.length===0?(<div style={{textAlign:"center",padding:"50px 20px",color:view==="overdue"?"#dc2626":"var(--muted)"}}><div style={{fontSize:44,marginBottom:14,opacity:0.4}}>{view==="completed"?"🎉":view==="today"?"☀️":view==="overdue"?"🎉":search?"🔍":"📋"}</div><div style={{fontSize:16,fontWeight:600,marginBottom:4}}>{view==="completed"?"No completed tasks yet":view==="overdue"?"All caught up!":search?"No matching tasks":"All clear!"}</div><div style={{fontSize:14}}>{view==="overdue"?"No overdue tasks — nice work!":"Add a task above or scan a notebook page"}</div></div>):(
-                <div role="list" aria-label="Tasks" style={view==="overdue"?{background:"#fef2f2",borderRadius:14,border:"1px solid #fecaca",padding:"8px 10px"}:undefined}>
+              {filtered.length===0?(<div style={{textAlign:"center",padding:"50px 20px",color:view==="overdue"?"var(--danger)":"var(--muted)"}}><div style={{fontSize:44,marginBottom:14,opacity:0.4}}>{view==="completed"?"🎉":view==="today"?"☀️":view==="overdue"?"🎉":search?"🔍":"📋"}</div><div style={{fontSize:16,fontWeight:600,marginBottom:4}}>{view==="completed"?"No completed tasks yet":view==="overdue"?"All caught up!":search?"No matching tasks":"All clear!"}</div><div style={{fontSize:14}}>{view==="overdue"?"No overdue tasks — nice work!":"Add a task above or scan a notebook page"}</div></div>):(
+                <div role="list" aria-label="Tasks" style={view==="overdue"?{background:"var(--danger-bg)",borderRadius:14,border:"1px solid var(--danger-border)",padding:"8px 10px"}:undefined}>
                   {filtered.map((task,i)=>{const prev=i>0?filtered[i-1]:null;const showSep=task.completed&&!task._surfacedSub&&prev&&!prev.completed;
                     /* Date group headers for overdue view */
                     const showDateHeader = view==="overdue" && (!prev || prev.dueDate !== task.dueDate);
@@ -3380,14 +3399,14 @@ export default function InkwellApp() {
                     </div>);
                     return(<div key={task.id} role="listitem">
                       {showDateHeader&&(<div style={{display:"flex",alignItems:"center",gap:8,padding:"10px 8px 6px",marginTop:i>0?6:0}}>
-                        <span style={{fontSize:12,fontWeight:700,color:"#dc2626"}}>{(() => {
+                        <span style={{fontSize:12,fontWeight:700,color:"var(--danger)"}}>{(() => {
                           const d = new Date(task.dueDate + "T00:00:00");
                           const diff = Math.floor((new Date(todayStr()+"T00:00:00") - d) / 86400000);
                           return `${d.toLocaleDateString("en-IE",{weekday:"short",month:"short",day:"numeric"})} — ${diff} day${diff!==1?"s":""} ago`;
                         })()}</span>
                         <div style={{height:1,flex:1,background:"#fecaca"}}/>
                         <button onClick={()=>{const count=filtered.filter(t=>t.dueDate===task.dueDate).length;setTasks(prev=>prev.map(t=>(!t.completed&&t.dueDate===task.dueDate)?{...t,dueDate:todayStr()}:t));flash(`Moved ${count} task${count!==1?"s":""} to today`);}}
-                          style={{fontSize:11,fontWeight:600,color:"#dc2626",background:"white",border:"1px solid #fecaca",borderRadius:6,padding:"3px 8px",cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>→ Today</button>
+                          style={{fontSize:11,fontWeight:600,color:"var(--danger)",background:"var(--card)",border:"1px solid var(--danger-border)",borderRadius:6,padding:"3px 8px",cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>→ Today</button>
                       </div>)}
                       {showSep&&(<div style={{display:"flex",alignItems:"center",gap:10,padding:"12px 12px 8px",marginTop:8}}><div style={{height:1,flex:1,background:"var(--border)"}}/><span style={{fontSize:12,fontWeight:600,color:"var(--muted)",textTransform:"uppercase",letterSpacing:0.8}}>Completed</span><div style={{height:1,flex:1,background:"var(--border)"}}/></div>)}
                       <TaskRow task={task} isActive={selectedTask?.id===task.id} isSelected={selectedIds.has(task.id)} onSelect={handleTaskClick} onToggle={toggleTask} onUpdateTask={updateTask} view={view} lists={lists} onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop} onDragEnd={onDragEnd} dropTarget={dropTarget?.id===task.id?dropTarget:null} animateState={animatingTasks[task.id]}/>
@@ -3398,7 +3417,7 @@ export default function InkwellApp() {
           </div>
           {selectedTask&&!isMobile&&<TaskDetail task={selectedTask} onUpdate={updateTask} onDelete={deleteTask} onClose={()=>setSelectedTask(null)} lists={lists}/>}
         </div>
-        {selectedTask&&isMobile&&(<div style={{position:"fixed",inset:0,background:"rgba(15,23,42,0.4)",zIndex:100,display:"flex",justifyContent:"flex-end"}} onClick={()=>setSelectedTask(null)}><div onClick={e=>e.stopPropagation()} style={{width:"100%"}}><TaskDetail task={selectedTask} onUpdate={updateTask} onDelete={deleteTask} onClose={()=>setSelectedTask(null)} lists={lists}/></div></div>)}
+        {selectedTask&&isMobile&&(<div style={{position:"fixed",inset:0,background:"var(--overlay)",zIndex:100,display:"flex",justifyContent:"flex-end"}} onClick={()=>setSelectedTask(null)}><div onClick={e=>e.stopPropagation()} style={{width:"100%"}}><TaskDetail task={selectedTask} onUpdate={updateTask} onDelete={deleteTask} onClose={()=>setSelectedTask(null)} lists={lists}/></div></div>)}
       </main>
 
       {showPhoto&&<PhotoModal onClose={()=>{setShowPhoto(false);setScanError(null);}} onProcess={handleScan} processing={processing} error={scanError}/>}
@@ -3410,10 +3429,56 @@ export default function InkwellApp() {
           <div style={{width:36,height:36,borderRadius:10,background:"var(--surface)",display:"flex",alignItems:"center",justifyContent:"center",color:"var(--muted)"}}>{Icons.settings}</div>
           <h2 style={{margin:0,fontSize:19,fontFamily:"var(--font-display)"}}>Settings</h2>
         </div>
+        <div style={{flex:1,overflowY:"auto"}}>
+        <div style={{marginBottom:24}}>
+          <div style={{fontSize:11,fontWeight:700,color:"var(--muted)",textTransform:"uppercase",letterSpacing:1,marginBottom:12}}>Appearance</div>
+          <ToggleRow label="Dark Mode" sublabel="Switch to a dark colour scheme" checked={darkMode} onChange={setDarkMode}/>
+        </div>
         <div style={{marginBottom:24}}>
           <div style={{fontSize:11,fontWeight:700,color:"var(--muted)",textTransform:"uppercase",letterSpacing:1,marginBottom:12}}>Sidebar Display</div>
           <ToggleRow label="Show task counts on Views" sublabel="Today, All Tasks, Completed, etc." checked={showViewCounts} onChange={setShowViewCounts}/>
           <ToggleRow label="Show task counts on Lists" sublabel="Inbox, Work, Personal, etc." checked={showListCounts} onChange={setShowListCounts}/>
+        </div>
+        <div style={{marginBottom:24}}>
+          <div style={{fontSize:11,fontWeight:700,color:"var(--muted)",textTransform:"uppercase",letterSpacing:1,marginBottom:12}}>Quick Date Drop Zones</div>
+          <div style={{fontSize:12,color:"var(--muted)",marginBottom:10}}>These appear when dragging tasks onto the sidebar. Drag a task to reschedule it quickly.</div>
+          {quickDates.map((qd,i)=>(
+            <div key={i} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 0",borderBottom:"1px solid var(--border-light)"}}>
+              <input value={qd.label} onChange={e=>{const n=[...quickDates];n[i]={...n[i],label:e.target.value};setQuickDates(n);}}
+                style={{flex:1,padding:"6px 10px",borderRadius:8,border:"1px solid var(--border)",fontSize:13,background:"var(--surface)",color:"var(--ink)",fontFamily:"inherit",outline:"none"}} placeholder="Label"/>
+              <select value={qd.offset} onChange={e=>{const n=[...quickDates];n[i]={...n[i],offset:e.target.value};setQuickDates(n);}}
+                style={{padding:"6px 8px",borderRadius:8,border:"1px solid var(--border)",fontSize:12,background:"var(--surface)",color:"var(--ink)",fontFamily:"inherit",cursor:"pointer"}}>
+                <option value="tomorrow">Tomorrow</option>
+                <option value="+2">In 2 days</option>
+                <option value="+3">In 3 days</option>
+                <option value="+7">In 1 week</option>
+                <option value="+14">In 2 weeks</option>
+                <option value="next:1">Next Monday</option>
+                <option value="next:2">Next Tuesday</option>
+                <option value="next:3">Next Wednesday</option>
+                <option value="next:4">Next Thursday</option>
+                <option value="next:5">Next Friday</option>
+                <option value="next:6">Next Saturday</option>
+                <option value="next:0">Next Sunday</option>
+              </select>
+              <button onClick={()=>setQuickDates(prev=>prev.filter((_,j)=>j!==i))}
+                style={{background:"none",border:"none",cursor:"pointer",color:"var(--danger)",padding:4,display:"flex",flexShrink:0}} title="Remove">{Icons.x}</button>
+            </div>
+          ))}
+          <div style={{display:"flex",gap:8,marginTop:8}}>
+            <button onClick={()=>setQuickDates(prev=>[...prev,{label:"New Date",offset:"tomorrow"}])}
+              style={{flex:1,padding:"8px 12px",borderRadius:8,border:"2px dashed var(--border)",background:"transparent",color:"var(--muted)",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}}
+              onMouseEnter={e=>{e.currentTarget.style.borderColor="var(--accent)";e.currentTarget.style.color="var(--accent)";}}
+              onMouseLeave={e=>{e.currentTarget.style.borderColor="var(--border)";e.currentTarget.style.color="var(--muted)";}}>
+              + Add Quick Date
+            </button>
+            {JSON.stringify(quickDates)!==JSON.stringify(defaultQuickDates)&&(
+              <button onClick={()=>setQuickDates(defaultQuickDates)}
+                style={{padding:"8px 12px",borderRadius:8,border:"1px solid var(--border)",background:"var(--surface)",color:"var(--muted)",fontSize:12,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
+                Reset
+              </button>
+            )}
+          </div>
         </div>
         {hasSupabase && user && (
           <div style={{marginBottom:24}}>
@@ -3424,7 +3489,7 @@ export default function InkwellApp() {
                 <div style={{fontSize:12,color:"var(--muted)"}}>Synced to cloud ☁️</div>
               </div>
               <button onClick={async()=>{await signOut();setShowSettings(false);}}
-                style={{padding:"6px 14px",borderRadius:8,border:"1px solid var(--border)",background:"white",color:"#ef4444",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>
+                style={{padding:"6px 14px",borderRadius:8,border:"1px solid var(--border)",background:"var(--card)",color:"var(--danger)",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>
                 Sign out
               </button>
             </div>
@@ -3436,6 +3501,8 @@ export default function InkwellApp() {
             <div style={{padding:"12px 14px",background:"var(--surface)",borderRadius:10,fontSize:13,color:"var(--muted)"}}> Data stored in this browser only. Set up Supabase for cloud sync.</div>
           </div>
         )}
+        </div>
+        <div style={{textAlign:"center",padding:"8px 0 4px",fontSize:10,color:"var(--muted)",opacity:0.6}}>Inkwell {BUILD_VERSION}</div>
       </Overlay>)}
       {/* ═══ BULK ACTION BAR ═══ */}
       {selectedIds.size>1&&(
@@ -3444,11 +3511,11 @@ export default function InkwellApp() {
           <div style={{width:1,height:20,background:"rgba(255,255,255,0.2)"}}/>
           <select onChange={e=>{if(e.target.value)bulkMove(e.target.value);e.target.value="";}} defaultValue="" style={{background:"rgba(255,255,255,0.15)",border:"none",color:"white",borderRadius:6,padding:"5px 8px",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
             <option value="" disabled>Move to…</option>
-            {lists.map(l=><option key={l} value={l} style={{color:"#1c1917"}}>{l}</option>)}
+            {lists.map(l=><option key={l} value={l} style={{color:"var(--ink)"}}>{l}</option>)}
           </select>
           <select onChange={e=>{if(e.target.value)bulkPriority(e.target.value);e.target.value="";}} defaultValue="" style={{background:"rgba(255,255,255,0.15)",border:"none",color:"white",borderRadius:6,padding:"5px 8px",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
             <option value="" disabled>Priority…</option>
-            {Object.entries(PRIORITY).map(([k,v])=><option key={k} value={k} style={{color:"#1c1917"}}>{v.label}</option>)}
+            {Object.entries(PRIORITY).map(([k,v])=><option key={k} value={k} style={{color:"var(--ink)"}}>{v.label}</option>)}
           </select>
           <button onClick={bulkComplete} style={{background:"rgba(255,255,255,0.15)",border:"none",color:"white",borderRadius:6,padding:"5px 10px",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>✓ Done</button>
           <input type="date" onChange={e=>{if(e.target.value)bulkDate(e.target.value);}} style={{background:"rgba(255,255,255,0.15)",border:"none",color:"white",borderRadius:6,padding:"4px 8px",fontSize:12,cursor:"pointer",fontFamily:"inherit",colorScheme:"dark"}} title="Set due date"/>
@@ -3460,10 +3527,10 @@ export default function InkwellApp() {
       {/* ── Trash drop zone (appears during any drag) ── */}
       {isDragging&&(
         <div data-drop-type="trash"
-          onDragOver={e=>{e.preventDefault();e.dataTransfer.dropEffect="move";e.currentTarget.style.transform="translateX(-50%) scale(1.15)";e.currentTarget.style.background="#ef4444";e.currentTarget.style.color="white";e.currentTarget.style.borderColor="#dc2626";}}
-          onDragLeave={e=>{e.currentTarget.style.transform="translateX(-50%) scale(1)";e.currentTarget.style.background="#fef2f2";e.currentTarget.style.color="#ef4444";e.currentTarget.style.borderColor="#fecaca";}}
+          onDragOver={e=>{e.preventDefault();e.dataTransfer.dropEffect="move";e.currentTarget.style.transform="translateX(-50%) scale(1.15)";e.currentTarget.style.background="var(--danger)";e.currentTarget.style.color="white";e.currentTarget.style.borderColor="var(--danger)";}}
+          onDragLeave={e=>{e.currentTarget.style.transform="translateX(-50%) scale(1)";e.currentTarget.style.background="var(--danger-bg)";e.currentTarget.style.color="var(--danger)";e.currentTarget.style.borderColor="var(--danger-border)"}}
           onDrop={e=>{
-            e.preventDefault();e.currentTarget.style.transform="translateX(-50%) scale(1)";e.currentTarget.style.background="#fef2f2";e.currentTarget.style.color="#ef4444";
+            e.preventDefault();e.currentTarget.style.transform="translateX(-50%) scale(1)";e.currentTarget.style.background="var(--danger-bg)";e.currentTarget.style.color="var(--danger)";
             const tid=e.dataTransfer.getData("text/plain");const src=e.dataTransfer.getData("application/x-source");
             if(!tid)return;
             if(isSubSource(src)){
@@ -3476,7 +3543,7 @@ export default function InkwellApp() {
             }
             setIsDragging(false);setSelectedIds(new Set());
           }}
-          style={{position:"fixed",bottom:28,left:"50%",width:52,height:52,borderRadius:14,background:"#fef2f2",border:"2px solid #fecaca",display:"flex",alignItems:"center",justifyContent:"center",color:"#ef4444",zIndex:1400,animation:"trashPulse 2s ease infinite",transition:"background 0.15s, color 0.15s, border-color 0.15s",cursor:"default",boxShadow:"0 4px 16px rgba(239,68,68,0.15)",transform:"translateX(-50%)"}}>
+          style={{position:"fixed",bottom:28,left:"50%",width:52,height:52,borderRadius:14,background:"var(--danger-bg)",border:"2px solid var(--danger-border)",display:"flex",alignItems:"center",justifyContent:"center",color:"var(--danger)",zIndex:1400,animation:"trashPulse 2s ease infinite",transition:"background 0.15s, color 0.15s, border-color 0.15s",cursor:"default",boxShadow:"0 4px 16px rgba(239,68,68,0.15)",transform:"translateX(-50%)"}}>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
         </div>
       )}
@@ -3485,4 +3552,4 @@ export default function InkwellApp() {
 }
 
 function NavSection({title,action,children}){return(<div style={{marginBottom:14}}><div style={{fontSize:11,fontWeight:700,color:"var(--muted)",textTransform:"uppercase",letterSpacing:1,padding:"0 8px",marginBottom:4,display:"flex",alignItems:"center",justifyContent:"space-between"}}>{title}{action&&<button onClick={action} style={{background:"none",border:"none",cursor:"pointer",color:"var(--muted)",padding:0,display:"flex"}} aria-label={`Add ${title.toLowerCase()}`}>{Icons.plus}</button>}</div>{children}</div>);}
-function NavItem({active,icon,label,count,onClick,countColor,labelColor,iconColor}){return(<button onClick={onClick} style={{width:"100%",padding:"8px 10px",borderRadius:10,border:"none",background:active?(labelColor?"#fef2f2":"#fef3c7"):"transparent",color:active?"var(--ink)":"var(--text)",fontSize:14,fontWeight:active?600:500,cursor:"pointer",display:"flex",alignItems:"center",gap:10,textAlign:"left",transition:"all 0.12s",whiteSpace:"nowrap",fontFamily:"inherit"}}><span style={{display:"flex",flexShrink:0,color:iconColor||undefined}}>{icon}</span><span style={{flex:1,color:labelColor||undefined}}>{typeof label==="string"?label:label}</span>{count>0&&<span style={{fontSize:12,fontWeight:700,minWidth:18,textAlign:"right",color:countColor||"var(--muted)"}}>{count}</span>}</button>);}
+function NavItem({active,icon,label,count,onClick,countColor,labelColor,iconColor}){return(<button onClick={onClick} style={{width:"100%",padding:"8px 10px",borderRadius:10,border:"none",background:active?(labelColor?"var(--danger-bg)":"var(--active-bg)"):"transparent",color:active?"var(--ink)":"var(--text)",fontSize:14,fontWeight:active?600:500,cursor:"pointer",display:"flex",alignItems:"center",gap:10,textAlign:"left",transition:"all 0.12s",whiteSpace:"nowrap",fontFamily:"inherit"}}><span style={{display:"flex",flexShrink:0,color:iconColor||undefined}}>{icon}</span><span style={{flex:1,color:labelColor||undefined}}>{typeof label==="string"?label:label}</span>{count>0&&<span style={{fontSize:12,fontWeight:700,minWidth:18,textAlign:"right",color:countColor||"var(--muted)"}}>{count}</span>}</button>);}

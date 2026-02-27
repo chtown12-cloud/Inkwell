@@ -9,8 +9,8 @@ html, body {
   height: 100dvh;
   overflow: hidden;
   font-family: 'Source Sans 3', 'Source Sans Pro', -apple-system, sans-serif;
-  background: #faf9f7;
-  color: #1c1917;
+  background: var(--bg, #faf9f7);
+  color: var(--ink, #1c1917);
   -webkit-font-smoothing: antialiased;
 }
 
@@ -20,10 +20,10 @@ html, body {
 
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #d6d3d1; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #a8a29e; }
+::-webkit-scrollbar-thumb { background: var(--border, #d6d3d1); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--muted, #a8a29e); }
 
-input::placeholder, textarea::placeholder { color: #a8a29e; }
+input::placeholder, textarea::placeholder { color: var(--muted, #a8a29e); }
 
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes slideUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
