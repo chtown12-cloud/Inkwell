@@ -1567,59 +1567,57 @@ const TaskDetail = ({task, onUpdate, onDelete, onClose, lists}) => {
 /* ═══════════════════════════════════════════════════════════════════════
    SCAN TIPS MODAL — notebook formatting guide for best photo recognition
    ═══════════════════════════════════════════════════════════════════════ */
-const HelpSection = ({icon, title, children, defaultOpen=false}) => {
-  const [open,setOpen]=useState(defaultOpen);
-  return (
-    <div style={{borderBottom:"1px solid var(--border-light)",overflow:"hidden"}}>
-      <button onClick={()=>setOpen(!open)} style={{width:"100%",padding:"12px 4px",border:"none",background:"none",cursor:"pointer",display:"flex",alignItems:"center",gap:10,textAlign:"left",fontFamily:"inherit",color:"var(--ink)"}}>
-        <span style={{fontSize:16,flexShrink:0,width:24,textAlign:"center"}}>{icon}</span>
-        <span style={{flex:1,fontSize:14,fontWeight:600}}>{title}</span>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{transition:"transform 0.2s",transform:open?"rotate(180deg)":"rotate(0)"}}><polyline points="6 9 12 15 18 9"/></svg>
-      </button>
-      <div style={{maxHeight:open?2000:0,opacity:open?1:0,transition:"max-height 0.35s ease, opacity 0.2s ease",overflow:"hidden"}}>
-        <div style={{padding:"0 4px 16px 38px",fontSize:13,color:"var(--text)",lineHeight:1.7}}>
-          {children}
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const HelpGuideModal = ({onClose, initialSection}) => {
-  const codeStyle={display:"block",background:"var(--surface)",borderRadius:8,padding:"10px 14px",fontSize:12,fontFamily:"monospace",lineHeight:1.7,color:"var(--ink)",marginTop:8,marginBottom:8,whiteSpace:"pre",overflowX:"auto"};
-  const kbdStyle={display:"inline-block",fontSize:11,fontWeight:600,background:"var(--surface)",padding:"2px 6px",borderRadius:4,border:"1px solid var(--border)",fontFamily:"inherit",margin:"0 2px"};
-  const featureStyle={display:"flex",alignItems:"flex-start",gap:8,marginBottom:8};
-  const dotStyle={width:6,height:6,borderRadius:3,background:"var(--accent)",flexShrink:0,marginTop:7};
+const ScanTipsModal = ({onClose}) => {
+  const tipStyle={marginBottom:18};
+  const numStyle={display:"inline-flex",alignItems:"center",justifyContent:"center",width:22,height:22,borderRadius:"50%",background:"var(--accent)",color:"white",fontSize:12,fontWeight:700,marginRight:8,flexShrink:0};
+  const headStyle={fontSize:14,fontWeight:700,color:"var(--ink)",display:"flex",alignItems:"center",marginBottom:6};
+  const bodyStyle={fontSize:13,color:"var(--muted)",lineHeight:1.6,paddingLeft:30};
+  const codeStyle={display:"block",background:"var(--surface)",borderRadius:8,padding:"10px 14px",fontSize:12,fontFamily:"monospace",lineHeight:1.7,color:"var(--ink)",marginTop:8,whiteSpace:"pre",overflowX:"auto"};
 
   return (
     <Overlay onClose={onClose}>
       <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:4}}>
-        <div style={{width:34,height:34,borderRadius:10,background:"linear-gradient(135deg,#d97706,#ea580c)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:17,fontWeight:800,color:"white",fontFamily:"var(--font-display)"}}>I</div>
-        <div>
-          <h2 style={{margin:0,fontSize:19,fontFamily:"var(--font-display)"}}>Inkwell Guide</h2>
-          <p style={{margin:0,fontSize:12,color:"var(--muted)"}}>Everything you can do with Inkwell</p>
-        </div>
+        <span style={{fontSize:22}}>📓</span>
+        <h2 style={{margin:0,fontSize:19,fontFamily:"var(--font-display)"}}>Scan Tips</h2>
       </div>
+      <p style={{fontSize:13,color:"var(--muted)",margin:"0 0 20px"}}>Format your notebook pages like this for the best scan accuracy.</p>
 
-      <div style={{overflowY:"auto",maxHeight:"60vh",margin:"16px -4px 0",padding:"0 4px"}}>
+      <div style={{overflowY:"auto",maxHeight:"55vh"}}>
+        <div style={tipStyle}>
+          <div style={headStyle}><span style={numStyle}>1</span>Date at the top</div>
+          <div style={bodyStyle}>Write the date clearly at the top of the page — <b>19/2</b>, <b>Feb 19</b>, or <b>2026-02-19</b> all work. This becomes the default due date for everything on the page.</div>
+        </div>
 
-        <HelpSection icon="✨" title="Getting Started" defaultOpen={initialSection==="welcome"}>
-          <p style={{marginBottom:10}}>Inkwell is a task manager built for people who think on paper. Snap a photo of your notebook, and Inkwell turns your handwritten lists into organised digital tasks — complete with subtasks, due dates, and categories.</p>
-          <p style={{marginBottom:10}}>But it's much more than a scanner. You can also type tasks directly, organise them into lists, drag to reorder and reschedule, track progress on a kanban board, and sync everything across devices.</p>
-          <div style={{padding:"10px 14px",background:"var(--accent-bg)",borderRadius:10,border:"1px solid rgba(217,119,6,0.15)",fontSize:12,color:"var(--accent-dark)",lineHeight:1.6}}>
-            <b>Quick start:</b> Type a task in the bar at the top and press Enter, or tap <b>Scan Notebook Page</b> in the sidebar to photograph your notes.
+        <div style={tipStyle}>
+          <div style={headStyle}><span style={numStyle}>2</span>Underline category headers</div>
+          <div style={bodyStyle}>Underline or box each section name so it stands out. Inkwell fuzzy-matches headers to your existing lists — e.g. "Work tasks" matches your "Work" list.</div>
+        </div>
+
+        <div style={tipStyle}>
+          <div style={headStyle}><span style={numStyle}>3</span>Indent for subtasks</div>
+          <div style={bodyStyle}>
+            Use indentation to show hierarchy. Anything indented beneath a task becomes its subtask, and further indentation becomes a sub-subtask.
+            <span style={codeStyle}>{`☐ Plan team offsite
+    - Book venue
+    - Send invitations
+        - Draft email template
+☐ Update project roadmap`}</span>
           </div>
-        </HelpSection>
+        </div>
 
-        <HelpSection icon="📸" title="Scanning Notebook Pages" defaultOpen={initialSection==="scan"}>
-          <p style={{marginBottom:10}}>Format your pages like this for the best scan accuracy:</p>
-          <div style={{marginBottom:12}}>
-            <div style={featureStyle}><div style={dotStyle}/><div><b>Date at the top</b> — write <b>19/2</b>, <b>Feb 19</b>, or <b>2026-02-19</b>. This becomes the default due date.</div></div>
-            <div style={featureStyle}><div style={dotStyle}/><div><b>Underline category headers</b> — Inkwell fuzzy-matches them to your existing lists (e.g. "Work tasks" → Work).</div></div>
-            <div style={featureStyle}><div style={dotStyle}/><div><b>Indent for subtasks</b> — anything indented beneath a task becomes a subtask. Deeper indentation creates nested sub-subtasks.</div></div>
-            <div style={featureStyle}><div style={dotStyle}/><div><b>Use clear markers</b> — ☐ □ [ ] – • for open tasks; ☑ ✓ [x] or strikethrough for completed.</div></div>
+        <div style={tipStyle}>
+          <div style={headStyle}><span style={numStyle}>4</span>Use clear markers</div>
+          <div style={bodyStyle}>
+            <b>Open tasks:</b> ☐  □  [ ]  –  •<br/>
+            <b>Completed:</b> ☑  ✓  [x]  or strikethrough<br/>
+            <b>Subtasks:</b> indented –  →  {'>'}  or letters (a, b, c)
           </div>
-          <span style={codeStyle}>{`Feb 19
+        </div>
+
+        <div style={tipStyle}>
+          <div style={headStyle}><span style={numStyle}>5</span>Example page</div>
+          <div style={bodyStyle}>
+            <span style={codeStyle}>{`Feb 19
 
 Work
 ──────
@@ -1634,93 +1632,14 @@ Personal
 ────────
 ☐ Book dentist appointment
 ☐ Research weekend trips
-    - Compare prices`}</span>
-          <div style={{padding:"10px 14px",background:"var(--accent-bg)",borderRadius:10,border:"1px solid rgba(217,119,6,0.15)",fontSize:12,color:"var(--accent-dark)",lineHeight:1.6,marginTop:4}}>
-            <b>💡</b> After scanning, you can drag rows to reorder, use ← → to fix nesting, edit titles, and reassign lists — all before importing.
+    - Compare prices
+    - Check availability`}</span>
           </div>
-        </HelpSection>
+        </div>
 
-        <HelpSection icon="📋" title="Tasks & Infinite Subtasks" defaultOpen={initialSection==="subtasks"}>
-          <p style={{marginBottom:10}}>Every task can have subtasks, and every subtask can have its own subtasks — there's no depth limit. Open any task's detail panel to see and manage its full subtask tree.</p>
-          <div style={{marginBottom:12}}>
-            <div style={featureStyle}><div style={dotStyle}/><div><b>Add subtasks</b> — open a task's detail panel (click it), then use the subtask input at the bottom of the subtask list.</div></div>
-            <div style={featureStyle}><div style={dotStyle}/><div><b>Nest deeper</b> — drag a subtask onto another subtask to create sub-sub-subtasks, or use the indent button in the detail panel.</div></div>
-            <div style={featureStyle}><div style={dotStyle}/><div><b>Independent due dates</b> — give any subtask its own due date and it will appear independently in Today and Upcoming views while staying nested under its parent.</div></div>
-            <div style={featureStyle}><div style={dotStyle}/><div><b>Notes, priority & tags</b> — every task and subtask supports rich metadata accessible from the detail panel.</div></div>
-          </div>
-        </HelpSection>
-
-        <HelpSection icon="🖐️" title="Drag & Drop" defaultOpen={initialSection==="dragdrop"}>
-          <p style={{marginBottom:10}}>Drag tasks to reorder, reorganise, and reschedule — on both desktop and mobile (long-press to start a drag on mobile).</p>
-          <div style={{marginBottom:12}}>
-            <div style={featureStyle}><div style={dotStyle}/><div><b>Reorder</b> — drag a task above or below another task. Drop on the top or bottom edge to insert before/after.</div></div>
-            <div style={featureStyle}><div style={dotStyle}/><div><b>Nest as subtask</b> — drop a task onto the middle of another task to make it a subtask.</div></div>
-            <div style={featureStyle}><div style={dotStyle}/><div><b>Move to list</b> — drag a task onto any list in the sidebar to move it.</div></div>
-            <div style={featureStyle}><div style={dotStyle}/><div><b>Reschedule</b> — drag onto Today or any quick date zone in the sidebar to change the due date.</div></div>
-            <div style={featureStyle}><div style={dotStyle}/><div><b>Promote subtasks</b> — drag a subtask out of its parent to promote it to a standalone task. Drop it on a list or date zone.</div></div>
-            <div style={featureStyle}><div style={dotStyle}/><div><b>Delete</b> — drag to the trash zone that appears at the bottom centre of the screen during any drag.</div></div>
-          </div>
-          <div style={{padding:"10px 14px",background:"var(--accent-bg)",borderRadius:10,border:"1px solid rgba(217,119,6,0.15)",fontSize:12,color:"var(--accent-dark)",lineHeight:1.6}}>
-            <b>💡</b> Circular nesting is handled automatically — if you drag a parent onto its own subtask, Inkwell promotes the subtask instead of creating a loop.
-          </div>
-        </HelpSection>
-
-        <HelpSection icon="📅" title="Quick Date Drop Zones" defaultOpen={initialSection==="quickdates"}>
-          <p style={{marginBottom:10}}>When you start dragging a task, extra date targets fan out below "Today" in the sidebar — like "Tomorrow" and "Next Monday". Drop a task on any zone to instantly reschedule it.</p>
-          <div style={{marginBottom:12}}>
-            <div style={featureStyle}><div style={dotStyle}/><div><b>Customise zones</b> — go to Settings → Quick Date Drop Zones to add, edit, remove, or reorder your quick date targets.</div></div>
-            <div style={featureStyle}><div style={dotStyle}/><div><b>Offset options</b> — choose from relative dates (+2 days, +1 week, +2 weeks) or named days (Next Monday, Next Friday, etc.).</div></div>
-            <div style={featureStyle}><div style={dotStyle}/><div><b>Works with subtasks</b> — dragging a subtask to a date zone gives it an independent due date so it surfaces in Today/Upcoming views.</div></div>
-          </div>
-        </HelpSection>
-
-        <HelpSection icon="🗂️" title="Kanban Board" defaultOpen={initialSection==="kanban"}>
-          <p style={{marginBottom:10}}>Switch the Today view to Board mode for a visual kanban layout. Tasks are grouped into columns by list, and you can drag cards between columns.</p>
-          <div style={{marginBottom:12}}>
-            <div style={featureStyle}><div style={dotStyle}/><div><b>Toggle view</b> — use the Board / List switch at the top of the Today view.</div></div>
-            <div style={featureStyle}><div style={dotStyle}/><div><b>Drag between columns</b> — move cards across columns to reassign them to different lists.</div></div>
-            <div style={featureStyle}><div style={dotStyle}/><div><b>Reorder within columns</b> — drag cards up and down to set your own priority order.</div></div>
-            <div style={featureStyle}><div style={dotStyle}/><div><b>Expand subtasks</b> — click the subtask count badge on any card to expand and manage subtasks inline, with cross-column drag support.</div></div>
-            <div style={featureStyle}><div style={dotStyle}/><div><b>Customise columns</b> — choose which lists appear as columns via the column settings in the board header.</div></div>
-          </div>
-        </HelpSection>
-
-        <HelpSection icon="🔍" title="Sort, Filter & Search" defaultOpen={false}>
-          <div style={{marginBottom:12}}>
-            <div style={featureStyle}><div style={dotStyle}/><div><b>Sort</b> — click the sort/filter icon in the header to sort by priority, alphabetical, due date, or creation date.</div></div>
-            <div style={featureStyle}><div style={dotStyle}/><div><b>Filter by priority</b> — show only High, Medium, or Low priority tasks.</div></div>
-            <div style={featureStyle}><div style={dotStyle}/><div><b>Search</b> — press <kbd style={kbdStyle}>/</kbd> or <kbd style={kbdStyle}>⌘F</kbd> to search across task titles, notes, and tags.</div></div>
-            <div style={featureStyle}><div style={dotStyle}/><div><b>Smart views</b> — Today, Upcoming, Overdue, and Completed views automatically filter tasks. The Overdue view includes bulk "Move to Today" actions per date group.</div></div>
-          </div>
-        </HelpSection>
-
-        <HelpSection icon="✅" title="Multi-Select & Bulk Actions" defaultOpen={false}>
-          <div style={{marginBottom:12}}>
-            <div style={featureStyle}><div style={dotStyle}/><div><b>Select multiple</b> — hold <kbd style={kbdStyle}>⌘</kbd> / <kbd style={kbdStyle}>Ctrl</kbd> and click to toggle individual tasks, or <kbd style={kbdStyle}>Shift</kbd>+click to select a range.</div></div>
-            <div style={featureStyle}><div style={dotStyle}/><div><b>Select all</b> — press <kbd style={kbdStyle}>⌘A</kbd> to select every task in the current view.</div></div>
-            <div style={featureStyle}><div style={dotStyle}/><div><b>Bulk action bar</b> — when multiple tasks are selected, a floating bar appears at the bottom with options to move, set priority, complete, reschedule, or delete all selected tasks at once.</div></div>
-          </div>
-        </HelpSection>
-
-        <HelpSection icon="📆" title="Calendar View" defaultOpen={false}>
-          <p style={{marginBottom:10}}>The Calendar view shows a month grid with task dots on each day. Click any day to see its tasks and quickly reschedule by clicking a different date.</p>
-        </HelpSection>
-
-        <HelpSection icon="⌨️" title="Keyboard Shortcuts" defaultOpen={false}>
-          <div style={{display:"grid",gridTemplateColumns:"auto 1fr",gap:"6px 14px",fontSize:13}}>
-            {[["N","New task"],["B","Toggle sidebar"],["/ or ⌘F","Search"],["⌘Z","Undo"],["⌘⇧Z / ⌘Y","Redo"],["⌘A","Select all"],["Shift+Click","Select range"],["⌘+Click","Toggle select"],["Delete","Delete selected"],["Esc","Close / clear"],["?","Shortcut reference"]].map(([k,d],ki)=>(<div key={ki} style={{display:"contents"}}><kbd style={{...kbdStyle,textAlign:"center",minWidth:36}}>{k}</kbd><span style={{color:"var(--text)",paddingTop:2}}>{d}</span></div>))}
-          </div>
-        </HelpSection>
-
-        <HelpSection icon="⚙️" title="Settings & Cloud Sync" defaultOpen={false}>
-          <div style={{marginBottom:12}}>
-            <div style={featureStyle}><div style={dotStyle}/><div><b>Dark mode</b> — toggle under Settings → Appearance. Syncs across all your devices.</div></div>
-            <div style={featureStyle}><div style={dotStyle}/><div><b>Cloud sync</b> — sign in with your email and all tasks, lists, and settings sync automatically via Supabase. Changes are saved in real time and loaded when you switch tabs back.</div></div>
-            <div style={featureStyle}><div style={dotStyle}/><div><b>Undo / Redo</b> — press <kbd style={kbdStyle}>⌘Z</kbd> to undo and <kbd style={kbdStyle}>⌘⇧Z</kbd> to redo. Works up to 50 steps back.</div></div>
-            <div style={featureStyle}><div style={dotStyle}/><div><b>Double-click to rename</b> — double-click any list name in the sidebar or the view title to rename it inline.</div></div>
-          </div>
-        </HelpSection>
-
+        <div style={{padding:"12px 14px",background:"#fffbeb",borderRadius:10,border:"1px solid rgba(217,119,6,0.2)",fontSize:12,color:"var(--accent-dark)",lineHeight:1.6}}>
+          <b>💡 Tip:</b> After scanning, you can drag rows to reorder, use ← → to fix nesting, edit titles, and reassign lists — all before importing.
+        </div>
       </div>
 
       <div style={{marginTop:16,flexShrink:0}}>
@@ -2622,14 +2541,14 @@ export default function InkwellApp() {
   },[isDragging,dragTask]);
   const [showShortcuts,setShowShortcuts]=useState(false);
   const [showSettings,setShowSettings]=useState(false);
-  const [showTips,setShowTips]=useState(()=>{if(typeof window==="undefined")return null;if(!localStorage.getItem("inkwell-welcomed")){localStorage.setItem("inkwell-welcomed","1");return "welcome";}return null;});
+  const [showTips,setShowTips]=useState(()=>{if(typeof window==="undefined")return false;if(!localStorage.getItem("inkwell-welcomed")){localStorage.setItem("inkwell-welcomed","1");return true;}return false;});
   const [listMenu,setListMenu]=useState(null); // {name, x, y}
   const [editingList,setEditingList]=useState(null);
   const [dragList,setDragList]=useState(null);
   const [dragListOver,setDragListOver]=useState(null);
   const [showViewCounts,setShowViewCounts]=useState(()=>load("inkwell-showViewCounts",true));
   const [showListCounts,setShowListCounts]=useState(()=>load("inkwell-showListCounts",true));
-  const BUILD_VERSION = "2026.02.28-v1";
+  const BUILD_VERSION = "2026.02.27-v3";
   const [darkMode,setDarkMode]=useState(()=>load("inkwell-darkMode",false));
   const defaultQuickDates=[{label:"Tomorrow",offset:"tomorrow"},{label:"Next Monday",offset:"nextMonday"}];
   const [quickDates,setQuickDates]=useState(()=>load("inkwell-quickDates",defaultQuickDates));
@@ -2782,43 +2701,36 @@ export default function InkwellApp() {
     return () => document.removeEventListener("visibilitychange", syncOnFocus);
   },[user, hasSupabase, ready, loadFromCloud, applyCloudData]);
 
-  /* ── Refs for latest values (prevent stale closures in save effects) ── */
-  const tasksRef=useRef(tasks);const listsRef=useRef(lists);
-  const settingsRef=useRef({showViewCounts,showListCounts,darkMode,quickDates,kanbanColumns});
-  useEffect(()=>{tasksRef.current=tasks;},[tasks]);
-  useEffect(()=>{listsRef.current=lists;},[lists]);
-  useEffect(()=>{settingsRef.current={showViewCounts,showListCounts,darkMode,quickDates,kanbanColumns};},[showViewCounts,showListCounts,darkMode,quickDates,kanbanColumns]);
-
   /* ── Save on every USER edit (skip saves within 2s of cloud load) ── */
   useEffect(()=>{
     if(!ready) return;
     if(Date.now() - cloudLoadTimeRef.current < 2000) return;
     save(TASKS_KEY,tasks);
-    saveToCloud(tasks,listsRef.current,settingsRef.current);
+    saveToCloud(tasks,lists,{showViewCounts,showListCounts,darkMode,quickDates,kanbanColumns});
   },[tasks,ready]);
   useEffect(()=>{
     if(!ready) return;
     if(Date.now() - cloudLoadTimeRef.current < 2000) return;
     save(LISTS_KEY,lists);
-    saveToCloud(tasksRef.current,lists,settingsRef.current);
+    saveToCloud(tasks,lists,{showViewCounts,showListCounts,darkMode,quickDates,kanbanColumns});
   },[lists,ready]);
-
-  /* ── Save settings changes to cloud ── */
   useEffect(()=>{
     if(!ready) return;
-    /* No cloudLoadTimeRef guard — settings changes are user-initiated.
-       Re-saving same values after cloud load is harmless (identical data, debounced). */
-    saveToCloud(tasksRef.current,listsRef.current,{showViewCounts,showListCounts,darkMode,quickDates,kanbanColumns});
+    if(Date.now() - cloudLoadTimeRef.current < 2000) return;
+    saveToCloud(tasks,lists,{showViewCounts,showListCounts,darkMode,quickDates,kanbanColumns});
   },[showViewCounts,showListCounts,darkMode,quickDates,kanbanColumns]);
 
   /* ── Flush to cloud on tab hide AND page unload ── */
+  const tasksRef=useRef(tasks);const listsRef=useRef(lists);
+  useEffect(()=>{tasksRef.current=tasks;},[tasks]);
+  useEffect(()=>{listsRef.current=lists;},[lists]);
   useEffect(()=>{
-    const flushOnHide=()=>{if(document.hidden&&ready)saveToCloudNow(tasksRef.current,listsRef.current,settingsRef.current);};
-    const flushOnUnload=()=>{if(ready)flushToCloudKeepalive(tasksRef.current,listsRef.current,settingsRef.current);};
+    const flushOnHide=()=>{if(document.hidden&&ready)saveToCloudNow(tasksRef.current,listsRef.current,{showViewCounts,showListCounts,darkMode,quickDates,kanbanColumns});};
+    const flushOnUnload=()=>{if(ready)flushToCloudKeepalive(tasksRef.current,listsRef.current,{showViewCounts,showListCounts,darkMode,quickDates,kanbanColumns});};
     document.addEventListener("visibilitychange",flushOnHide);
     window.addEventListener("beforeunload",flushOnUnload);
     return()=>{document.removeEventListener("visibilitychange",flushOnHide);window.removeEventListener("beforeunload",flushOnUnload);};
-  },[ready,saveToCloudNow,flushToCloudKeepalive]);
+  },[ready,saveToCloudNow,flushToCloudKeepalive,showViewCounts,showListCounts,darkMode,quickDates,kanbanColumns]);
   useEffect(()=>{if(selectedTask){const u=tasks.find(t=>t.id===selectedTask.id);if(u)setSelectedTask(u);else setSelectedTask(null);}},[tasks]);
   const flash=msg=>{setToast(msg);setTimeout(()=>setToast(null),3000);};
 
@@ -3178,7 +3090,7 @@ export default function InkwellApp() {
     if((e.metaKey||e.ctrlKey)&&e.key==="z"&&!e.shiftKey){e.preventDefault();undo();return;}
     if((e.metaKey||e.ctrlKey)&&e.key==="z"&&e.shiftKey){e.preventDefault();redo();return;}
     if((e.metaKey||e.ctrlKey)&&e.key==="y"){e.preventDefault();redo();return;}
-    if(["INPUT","TEXTAREA","SELECT"].includes(e.target.tagName))return;if(e.key==="n"&&!e.metaKey){e.preventDefault();document.getElementById("quick-add")?.focus();}if(e.key==="/"||((e.metaKey||e.ctrlKey)&&e.key==="f")){e.preventDefault();setShowSearch(true);}if(e.key==="b"&&!e.metaKey&&!e.ctrlKey){setSidebar(s=>!s);}if(e.key==="?")setShowShortcuts(s=>!s);if(e.key==="Escape"){setShowSearch(false);setSearch("");setSelectedTask(null);setShowShortcuts(false);setShowTips(null);setSelectedIds(new Set());}if(e.key==="a"&&(e.metaKey||e.ctrlKey)){e.preventDefault();setSelectedIds(new Set(filtered.map(t=>t.id)));}if((e.key==="Delete"||e.key==="Backspace")&&selectedIds.size>0&&!e.metaKey){bulkDelete();}};window.addEventListener("keydown",h);return()=>window.removeEventListener("keydown",h);},[filtered,selectedIds,undo,redo]);
+    if(["INPUT","TEXTAREA","SELECT"].includes(e.target.tagName))return;if(e.key==="n"&&!e.metaKey){e.preventDefault();document.getElementById("quick-add")?.focus();}if(e.key==="/"||((e.metaKey||e.ctrlKey)&&e.key==="f")){e.preventDefault();setShowSearch(true);}if(e.key==="b"&&!e.metaKey&&!e.ctrlKey){setSidebar(s=>!s);}if(e.key==="?")setShowShortcuts(s=>!s);if(e.key==="Escape"){setShowSearch(false);setSearch("");setSelectedTask(null);setShowShortcuts(false);setShowTips(false);setSelectedIds(new Set());}if(e.key==="a"&&(e.metaKey||e.ctrlKey)){e.preventDefault();setSelectedIds(new Set(filtered.map(t=>t.id)));}if((e.key==="Delete"||e.key==="Backspace")&&selectedIds.size>0&&!e.metaKey){bulkDelete();}};window.addEventListener("keydown",h);return()=>window.removeEventListener("keydown",h);},[filtered,selectedIds,undo,redo]);
   const titles={today:"Today",overdue:"Overdue",upcoming:"Upcoming",all:"All Tasks",completed:"Completed",inbox:"Inbox",calendar:"Calendar"};
   const iconsMap={today:Icons.today,overdue:Icons.overdue,upcoming:Icons.upcoming,all:Icons.all,completed:Icons.done,inbox:Icons.inbox,calendar:Icons.calendar};
   const viewTitle=titles[view]||(view.startsWith("list:")?view.replace("list:",""):"Tasks");
@@ -3388,10 +3300,10 @@ export default function InkwellApp() {
             <button onClick={()=>setShowShortcuts(true)} style={{background:"none",border:"none",cursor:"pointer",fontSize:12,color:"var(--muted)",display:"flex",alignItems:"center",gap:6,fontFamily:"inherit",padding:0}}>{Icons.keyboard}{!isMobile&&" Press ? for shortcuts"}</button>
           </div>
           <div style={{display:"flex",alignItems:"center",gap:4}}>
-            <button onClick={()=>setShowTips("guide")} style={{background:"none",border:"none",cursor:"pointer",color:"var(--muted)",padding:4,display:"flex",borderRadius:6,transition:"color 0.15s"}} aria-label="Help guide" title="Help guide"
+            <button onClick={()=>setShowTips(true)} style={{background:"none",border:"none",cursor:"pointer",color:"var(--muted)",padding:4,display:"flex",borderRadius:6,transition:"color 0.15s"}} aria-label="Scan tips" title="Scan tips"
               onMouseEnter={e=>e.currentTarget.style.color="var(--accent)"}
               onMouseLeave={e=>e.currentTarget.style.color="var(--muted)"}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/><path d="M8 7h6"/><path d="M8 11h8"/></svg>
             </button>
             <button onClick={()=>setShowSettings(true)} style={{background:"none",border:"none",cursor:"pointer",color:"var(--muted)",padding:4,display:"flex",borderRadius:6}} aria-label="Settings" title="Settings">{Icons.settings}</button>
           </div>
@@ -3489,7 +3401,7 @@ export default function InkwellApp() {
                   <button onClick={()=>setTodayMode("list")} style={{padding:"5px 12px",borderRadius:6,border:"none",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:todayMode==="list"?"var(--card)":"transparent",color:todayMode==="list"?"var(--ink)":"var(--muted)",boxShadow:todayMode==="list"?"0 1px 3px rgba(0,0,0,0.08)":"none",transition:"all 0.15s"}}>List</button>
                 </div>
               )}
-              {filtered.length===0?(<div style={{textAlign:"center",padding:"50px 20px",color:view==="overdue"?"var(--danger)":"var(--muted)"}}><div style={{fontSize:44,marginBottom:14,opacity:0.4}}>{view==="completed"?"🎉":view==="today"?"☀️":view==="overdue"?"🎉":search?"🔍":"📋"}</div><div style={{fontSize:16,fontWeight:600,marginBottom:4}}>{view==="completed"?"No completed tasks yet":view==="overdue"?"All caught up!":search?"No matching tasks":"All clear!"}</div><div style={{fontSize:14}}>{view==="overdue"?"No overdue tasks — nice work!":(<>Add a task above or scan a notebook page. <span onClick={()=>setShowTips("welcome")} style={{color:"var(--accent)",cursor:"pointer",fontWeight:600,textDecoration:"underline",textDecorationColor:"rgba(217,119,6,0.3)",textUnderlineOffset:2}}>See what Inkwell can do →</span></>)}</div></div>):(
+              {filtered.length===0?(<div style={{textAlign:"center",padding:"50px 20px",color:view==="overdue"?"var(--danger)":"var(--muted)"}}><div style={{fontSize:44,marginBottom:14,opacity:0.4}}>{view==="completed"?"🎉":view==="today"?"☀️":view==="overdue"?"🎉":search?"🔍":"📋"}</div><div style={{fontSize:16,fontWeight:600,marginBottom:4}}>{view==="completed"?"No completed tasks yet":view==="overdue"?"All caught up!":search?"No matching tasks":"All clear!"}</div><div style={{fontSize:14}}>{view==="overdue"?"No overdue tasks — nice work!":"Add a task above or scan a notebook page"}</div></div>):(
                 <div role="list" aria-label="Tasks" style={view==="overdue"?{background:"var(--danger-bg)",borderRadius:14,border:"1px solid var(--danger-border)",padding:"8px 10px"}:undefined}>
                   {filtered.map((task,i)=>{const prev=i>0?filtered[i-1]:null;const showSep=task.completed&&!task._surfacedSub&&prev&&!prev.completed;
                     /* Date group headers for overdue view */
@@ -3522,7 +3434,7 @@ export default function InkwellApp() {
 
       {showPhoto&&<PhotoModal onClose={()=>{setShowPhoto(false);setScanError(null);}} onProcess={handleScan} processing={processing} error={scanError}/>}
       {scanResults&&<ScanResultsModal results={scanResults} onConfirm={confirmScan} onClose={()=>setScanResults(null)} lists={lists}/>}
-      {showTips&&<HelpGuideModal initialSection={showTips} onClose={()=>setShowTips(null)}/>}
+      {showTips&&<ScanTipsModal onClose={()=>setShowTips(false)}/>}
       {showShortcuts&&(<Overlay onClose={()=>setShowShortcuts(false)}><h2 style={{fontSize:19,fontFamily:"var(--font-display)",marginBottom:16}}>Keyboard Shortcuts</h2>{[["N","New task"],["B","Toggle sidebar"],["/ or ⌘F","Search"],["⌘Z","Undo"],["⌘⇧Z","Redo"],["⌘A","Select all tasks"],["Shift+Click","Select range"],["⌘/Ctrl+Click","Toggle select"],["Delete","Delete selected"],["Esc","Clear selection / close"],["?","This help"],["Double-click","Edit any name"]].map(([k,d])=>(<div key={k} style={{display:"flex",alignItems:"center",gap:12,padding:"8px 0",borderBottom:"1px solid var(--border-light)"}}><kbd style={{fontSize:12,fontWeight:600,background:"var(--surface)",padding:"3px 8px",borderRadius:6,border:"1px solid var(--border)",fontFamily:"inherit",minWidth:50,textAlign:"center"}}>{k}</kbd><span style={{fontSize:14,color:"var(--text)"}}>{d}</span></div>))}</Overlay>)}
       {showSettings&&(<Overlay onClose={()=>setShowSettings(false)}>
         <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20}}>
