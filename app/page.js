@@ -127,6 +127,8 @@ function useSupabaseSync() {
    ═══════════════════════════════════════════════════════════════════════ */
 const TASKS_KEY = "inkwell-tasks-v2";
 const LISTS_KEY = "inkwell-lists-v2";
+const TOMBSTONES_KEY = "inkwell-tombstones";
+const PENDING_SYNC_KEY = "inkwell-pending-sync";
 const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 const localDateStr = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 const todayStr = () => { const d=new Date(); return localDateStr(d); };
@@ -464,6 +466,115 @@ const formatDate = (d) => {
 const isOverdue = (d) => d && new Date(d+"T23:59:59") < new Date();
 const load = (k,fb) => { try { const r=localStorage.getItem(k); return r?JSON.parse(r):fb; } catch{return fb;} };
 const save = (k,d) => { try{localStorage.setItem(k,JSON.stringify(d));}catch{} };
+
+/* ═══ OFFLINE MERGE UTILITIES ═══ */
+const taskTs = (t) => t?.updatedAt || t?.createdAt || "1970-01-01";
+const subTs = (s) => s?.updatedAt || s?.createdAt || "1970-01-01";
+
+/**
+ * Merge two subtask arrays at the individual subtask level.
+ * - Both have same subtask ID → newer updatedAt wins (recursive for nested subtasks)
+ * - Subtask only in local → keep (added offline)
+ * - Subtask only in cloud → keep (added on other device)
+ */
+const mergeSubtasks = (localSubs, cloudSubs) => {
+  if (!localSubs?.length && !cloudSubs?.length) return [];
+  if (!localSubs?.length) return cloudSubs || [];
+  if (!cloudSubs?.length) return localSubs || [];
+
+  const localMap = new Map(localSubs.map(s => [s.id, s]));
+  const cloudMap = new Map(cloudSubs.map(s => [s.id, s]));
+  const allIds = new Set([...localMap.keys(), ...cloudMap.keys()]);
+  const merged = [];
+
+  for (const id of allIds) {
+    const local = localMap.get(id);
+    const cloud = cloudMap.get(id);
+    if (local && cloud) {
+      /* Both have it — pick newer, then recursively merge nested subtasks */
+      const winner = subTs(local) >= subTs(cloud) ? { ...local } : { ...cloud };
+      winner.subtasks = mergeSubtasks(local.subtasks, cloud.subtasks);
+      merged.push(winner);
+    } else {
+      merged.push(local || cloud);
+    }
+  }
+  return merged;
+};
+
+/**
+ * Merge local + cloud tasks with tombstone-aware conflict resolution.
+ * - Both have same task ID → merge field-by-field (newer updatedAt wins for task props,
+ *   subtasks are merged recursively at subtask level)
+ * - Task only in local → new offline task → keep (unless cloud-tombstoned)
+ * - Task only in cloud → new from other device → keep (unless local-tombstoned)
+ * - Tombstoned task → stays deleted unless edited AFTER the deletion
+ */
+const mergeTasks = (localTasks, cloudTasks, localTombstones, cloudTombstones) => {
+  /* 1. Combine tombstones (union by ID, keep newer timestamp) */
+  const tombMap = new Map();
+  for (const t of (localTombstones || [])) tombMap.set(t.id, t);
+  for (const t of (cloudTombstones || [])) {
+    const existing = tombMap.get(t.id);
+    if (!existing || t.deletedAt > existing.deletedAt) tombMap.set(t.id, t);
+  }
+
+  /* 2. Build ID→task maps */
+  const localMap = new Map((localTasks||[]).map(t => [t.id, t]));
+  const cloudMap = new Map((cloudTasks||[]).map(t => [t.id, t]));
+  const allIds = new Set([...localMap.keys(), ...cloudMap.keys()]);
+
+  /* 3. Merge each task */
+  const merged = [];
+  for (const id of allIds) {
+    const tomb = tombMap.get(id);
+    const local = localMap.get(id);
+    const cloud = cloudMap.get(id);
+
+    if (tomb) {
+      /* Task was deleted somewhere — resurrect only if edited after deletion */
+      const winner = local && cloud
+        ? (taskTs(local) >= taskTs(cloud) ? local : cloud)
+        : (local || cloud);
+      if (winner && taskTs(winner) > tomb.deletedAt) {
+        merged.push(winner); /* Resurrection — edit happened after delete */
+        tombMap.delete(id);
+      }
+      /* else: stays deleted */
+      continue;
+    }
+
+    if (local && cloud) {
+      /* Both have it — pick the one with newer updatedAt for task-level props,
+         but merge subtasks at the subtask level for better conflict resolution */
+      const winner = taskTs(local) >= taskTs(cloud) ? { ...local } : { ...cloud };
+      winner.subtasks = mergeSubtasks(local.subtasks, cloud.subtasks);
+      merged.push(winner);
+    } else {
+      merged.push(local || cloud);
+    }
+  }
+
+  /* 4. Prune tombstones older than 30 days */
+  const cutoff = new Date(Date.now() - 30*24*60*60*1000).toISOString();
+  const prunedTombstones = [...tombMap.values()].filter(t => t.deletedAt > cutoff);
+
+  return { tasks: merged, tombstones: prunedTombstones };
+};
+
+/**
+ * Merge two lists arrays — union preserving order.
+ * Cloud order first, then any local-only lists appended.
+ */
+const mergeLists = (localLists, cloudLists) => {
+  const merged = [...(cloudLists || DEFAULT_LISTS)];
+  for (const l of (localLists || [])) {
+    if (!merged.includes(l)) merged.push(l);
+  }
+  return merged;
+};
+
+/* ═══ END MERGE UTILITIES ═══ */
 const getListColor = (name, lists) => LIST_PALETTE[lists.indexOf(name) % LIST_PALETTE.length];
 
 /* Default subtask with all properties (mirrors parent task shape) */
@@ -1731,6 +1842,20 @@ Personal
           </div>
         </HelpSection>
 
+        <HelpSection icon="📶" title="Offline Editing" defaultOpen={false}>
+          <p style={{marginBottom:10}}>Inkwell works fully offline. Add, edit, complete, delete, and reorganise tasks without an internet connection — everything is saved to your device instantly.</p>
+          <div style={{marginBottom:12}}>
+            <div style={featureStyle}><div style={dotStyle}/><div><b>Automatic local save</b> — every change is saved to your device the instant you make it. Even if you close the browser or your phone dies, nothing is lost.</div></div>
+            <div style={featureStyle}><div style={dotStyle}/><div><b>Offline indicator</b> — when you're offline, a yellow banner appears at the top and the sync dot in the sidebar turns red. Your edits are queued for sync.</div></div>
+            <div style={featureStyle}><div style={dotStyle}/><div><b>Smart merge on reconnect</b> — when you come back online, Inkwell merges your local changes with any changes made on other devices. Each task is compared individually by timestamp, so only conflicting edits on the same task need resolution (newer edit wins).</div></div>
+            <div style={featureStyle}><div style={dotStyle}/><div><b>Multi-device offline edits</b> — if you edit on your phone offline and your laptop offline, both sets of changes merge cleanly when each device reconnects. Tasks added on either device appear on both; tasks deleted on either device are properly removed via tombstone tracking.</div></div>
+            <div style={featureStyle}><div style={dotStyle}/><div><b>Scanning requires internet</b> — the notebook scanner uses a cloud AI model, so it needs a connection. You'll see a clear message if you try to scan while offline.</div></div>
+          </div>
+          <div style={{padding:"10px 14px",background:"var(--accent-bg)",borderRadius:10,border:"1px solid rgba(217,119,6,0.15)",fontSize:12,color:"var(--accent-dark)",lineHeight:1.6}}>
+            <b>💡</b> Inkwell checks for unsynced changes every 30 seconds while online, so even if the initial reconnect attempt fails on flaky wifi, your data will sync shortly after.
+          </div>
+        </HelpSection>
+
       </div>
 
       <div style={{marginTop:16,flexShrink:0}}>
@@ -2592,7 +2717,44 @@ const LoginScreen = ({ onSignIn, onSignInPassword, error }) => {
 
 export default function InkwellApp() {
   const { user, authLoading, authError, signInWithEmail, signInWithPassword, signOut, loadFromCloud, saveToCloud, saveToCloudNow, flushToCloudKeepalive, hasSupabase } = useSupabaseSync();
-  const [tasks,setTasks]=useState([]);
+  const [tasks,_setTasks]=useState([]);
+  /* ── Auto-stamp updatedAt on user-mutated tasks ── */
+  const setTasks = useCallback((updater) => {
+    const ts = new Date().toISOString();
+    _setTasks(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      if (!Array.isArray(next) || !Array.isArray(prev)) return next;
+      const prevMap = new Map(prev.map(t => [t.id, t]));
+      return next.map(t => {
+        const old = prevMap.get(t.id);
+        if (old === t) return t; /* unchanged reference — don't stamp */
+        return { ...t, updatedAt: ts }; /* changed or new — stamp */
+      });
+    });
+  }, []);
+  /* Raw setter for cloud loads, init, undo/redo — preserves existing updatedAt */
+  const setTasksRaw = _setTasks;
+
+  /* ── Tombstone tracking for offline-safe deletions ── */
+  const tombstonesRef = useRef(load(TOMBSTONES_KEY, []));
+  const addTombstone = useCallback((id) => {
+    const ts = new Date().toISOString();
+    tombstonesRef.current = [...tombstonesRef.current.filter(t => t.id !== id), { id, deletedAt: ts }];
+    save(TOMBSTONES_KEY, tombstonesRef.current);
+  }, []);
+  const addTombstones = useCallback((ids) => {
+    const ts = new Date().toISOString();
+    const idSet = new Set(ids);
+    tombstonesRef.current = [
+      ...tombstonesRef.current.filter(t => !idSet.has(t.id)),
+      ...ids.map(id => ({ id, deletedAt: ts }))
+    ];
+    save(TOMBSTONES_KEY, tombstonesRef.current);
+  }, []);
+
+  /* ── Online/offline detection ── */
+  const [isOnline,setIsOnline]=useState(typeof navigator!=="undefined"?navigator.onLine:true);
+  const hasPendingSync=useRef(load(PENDING_SYNC_KEY, false));
   const [lists,setLists]=useState(DEFAULT_LISTS);
   const [view,setView]=useState("today");
   const [selectedTask,setSelectedTask]=useState(null);
@@ -2610,6 +2772,7 @@ export default function InkwellApp() {
   const localDataVersion=useRef(null); /* ISO timestamp of last user-initiated data change */
   const [sidebar,setSidebar]=useState(true);
   const [toast,setToast]=useState(null);
+  const flash=msg=>{setToast(msg);setTimeout(()=>setToast(null),3000);};
   const [isMobile,setIsMobile]=useState(false);
   const [dragTask,setDragTask]=useState(null);
   const [isDragging,setIsDragging]=useState(false);
@@ -2641,7 +2804,7 @@ export default function InkwellApp() {
   const [dragListOver,setDragListOver]=useState(null);
   const [showViewCounts,setShowViewCounts]=useState(()=>load("inkwell-showViewCounts",true));
   const [showListCounts,setShowListCounts]=useState(()=>load("inkwell-showListCounts",true));
-  const BUILD_VERSION = "2026.03.02-v1";
+  const BUILD_VERSION = "2026.03.02-v2";
   const [darkMode,setDarkMode]=useState(()=>load("inkwell-darkMode",false));
   const defaultQuickDates=[{label:"Tomorrow",offset:"tomorrow"},{label:"Next Monday",offset:"nextMonday"}];
   const [quickDates,setQuickDates]=useState(()=>load("inkwell-quickDates",defaultQuickDates));
@@ -2701,10 +2864,10 @@ export default function InkwellApp() {
   const cloudLoadTimeRef = useRef(0); /* timestamp of last cloud load — save effects skip within 2s */
   const initializedUserRef = useRef(null); /* prevents token-refresh re-init */
 
-  /* Helper: apply cloud data to state + localStorage cache */
+  /* Helper: apply cloud data to state + localStorage cache (no updatedAt stamping) */
   const applyCloudData = useCallback((cloudData) => {
     cloudLoadTimeRef.current = Date.now(); /* mark cloud load time BEFORE setters */
-    setTasks(cloudData.tasks || []);
+    setTasksRaw(cloudData.tasks || []);
     setLists(cloudData.lists || DEFAULT_LISTS);
     if (cloudData.settings) {
       if (cloudData.settings.showViewCounts !== undefined) setShowViewCounts(cloudData.settings.showViewCounts);
@@ -2722,12 +2885,24 @@ export default function InkwellApp() {
           setKanbanColumns(cols);
         }
       }
+      /* Merge cloud tombstones into local tombstones */
+      if (cloudData.settings._tombstones) {
+        const cloudTombs = cloudData.settings._tombstones;
+        const localTombs = tombstonesRef.current;
+        const tombMap = new Map(localTombs.map(t => [t.id, t]));
+        for (const ct of cloudTombs) {
+          const existing = tombMap.get(ct.id);
+          if (!existing || ct.deletedAt > existing.deletedAt) tombMap.set(ct.id, ct);
+        }
+        tombstonesRef.current = [...tombMap.values()];
+        save(TOMBSTONES_KEY, tombstonesRef.current);
+      }
     }
     /* Cache to localStorage for offline use (with timestamp) */
     save(TASKS_KEY, cloudData.tasks || []);
     save(LISTS_KEY, cloudData.lists || DEFAULT_LISTS);
     save("inkwell-data-ts", cloudData.updated_at || new Date().toISOString());
-  }, []);
+  }, [setTasksRaw]);
 
   useEffect(()=>{
     if(authLoading) return; /* wait for auth to resolve */
@@ -2738,52 +2913,90 @@ export default function InkwellApp() {
 
     const init = async () => {
       if (hasSupabase && user) {
-        /* ── Logged in: load from cloud + compare with localStorage ── */
+        /* ── Logged in: load from cloud + merge with localStorage ── */
         const cloudData = await loadFromCloud();
+        const localTasks = load(TASKS_KEY, []);
+        const localLists = load(LISTS_KEY, DEFAULT_LISTS);
         const localTs = load("inkwell-data-ts", null);
+        const hasPendingLocal = load(PENDING_SYNC_KEY, false);
 
         if (cloudData) {
           const cloudTs = cloudData.updated_at || "1970-01-01";
+          const cloudTombs = cloudData.settings?._tombstones || [];
 
-          if (localTs && localTs > cloudTs) {
-            /* localStorage is NEWER than cloud (keepalive may not have completed).
-               Use localStorage data, then push it to cloud to reconcile. */
-            console.log("%c[Inkwell Sync] localStorage newer than cloud — using local data","color:#d97706;font-weight:bold",
-              "\n  localStorage:", localTs, "\n  cloud:", cloudTs);
-            const localTasks = load(TASKS_KEY, []);
-            const localLists = load(LISTS_KEY, DEFAULT_LISTS);
-            setTasks(localTasks);
-            setLists(localLists);
+          if (hasPendingLocal || (localTs && localTs > cloudTs && localTasks.length > 0)) {
+            /* Local data has unsynced changes — MERGE instead of overwrite */
+            console.log("%c[Inkwell Sync] Merging local + cloud data","color:#d97706;font-weight:bold",
+              "\n  localStorage:", localTs, "\n  cloud:", cloudTs, "\n  pending:", hasPendingLocal);
+            const result = mergeTasks(localTasks, cloudData.tasks || [], tombstonesRef.current, cloudTombs);
+            const mergedLists = mergeLists(localLists, cloudData.lists || DEFAULT_LISTS);
+
+            setTasksRaw(result.tasks);
+            setLists(mergedLists);
+            tombstonesRef.current = result.tombstones;
+            save(TOMBSTONES_KEY, result.tombstones);
+
+            /* Apply cloud settings (they don't conflict — last-write-wins is fine for settings) */
+            if (cloudData.settings) {
+              if (cloudData.settings.showViewCounts !== undefined) setShowViewCounts(cloudData.settings.showViewCounts);
+              if (cloudData.settings.showListCounts !== undefined) setShowListCounts(cloudData.settings.showListCounts);
+              if (cloudData.settings.darkMode !== undefined) setDarkMode(cloudData.settings.darkMode);
+              if (cloudData.settings.quickDates !== undefined) setQuickDates(cloudData.settings.quickDates);
+              if (cloudData.settings.kanbanColumns !== undefined) {
+                const today = todayStr();
+                const cols = cloudData.settings.kanbanColumns;
+                if (cols && Array.isArray(cols)) {
+                  const fresh = cols.filter(c => !c.dateStr || c.dateStr >= today);
+                  setKanbanColumns(fresh.length > 0 ? fresh : null);
+                } else { setKanbanColumns(cols); }
+              }
+            }
+
             cloudLoadTimeRef.current = Date.now();
             cloudSyncReady.current = true;
-            localDataVersion.current = localTs;
-            /* Gather settings from localStorage for the reconciliation save */
+            localDataVersion.current = new Date().toISOString();
+
+            /* Save merged data to both localStorage and cloud */
+            save(TASKS_KEY, result.tasks);
+            save(LISTS_KEY, mergedLists);
+            save("inkwell-data-ts", localDataVersion.current);
+            save(PENDING_SYNC_KEY, false);
+            hasPendingSync.current = false;
+
             const localSettings = {
               showViewCounts: load("inkwell-showViewCounts", true),
               showListCounts: load("inkwell-showListCounts", true),
               darkMode: load("inkwell-darkMode", false),
               quickDates: load("inkwell-quickDates", defaultQuickDates),
-              kanbanColumns: null
+              kanbanColumns: null,
+              _tombstones: result.tombstones
             };
-            /* Push local data to cloud to reconcile (non-debounced) */
-            saveToCloudNow(localTasks, localLists, localSettings);
+            saveToCloudNow(result.tasks, mergedLists, localSettings);
           } else {
-            /* Cloud is newer or same — use cloud data (normal case) */
+            /* Cloud is newer or same and no pending local changes — use cloud data (normal case) */
             applyCloudData(cloudData);
             cloudSyncReady.current = true;
             localDataVersion.current = cloudTs;
+            save(PENDING_SYNC_KEY, false);
+            hasPendingSync.current = false;
           }
         } else {
-          /* Cloud load failed (network error / empty row) — use localStorage for display
-             but DO NOT enable cloud saves to prevent stale data from overwriting. */
+          /* Cloud load failed (network error / empty row / OFFLINE) — use localStorage.
+             DO NOT enable cloud saves to prevent stale data from overwriting.
+             Mark pending sync so next reconnection triggers a merge. */
           console.warn("[Inkwell Sync] Cloud load failed — using localStorage, cloud saves DISABLED until next successful sync");
-          setTasks(load(TASKS_KEY, []));
-          setLists(load(LISTS_KEY, DEFAULT_LISTS));
+          setTasksRaw(localTasks);
+          setLists(localLists);
           cloudSyncReady.current = false; /* ← KEY: prevents stale overwrites */
+          /* If we have tasks, mark pending so reconnect triggers merge */
+          if (localTasks.length > 0) {
+            hasPendingSync.current = true;
+            save(PENDING_SYNC_KEY, true);
+          }
         }
       } else {
         /* ── Not logged in: use localStorage only ── */
-        setTasks(load(TASKS_KEY, []));
+        setTasksRaw(load(TASKS_KEY, []));
         setLists(load(LISTS_KEY, DEFAULT_LISTS));
       }
       setReady(true);
@@ -2814,34 +3027,109 @@ export default function InkwellApp() {
     return()=>window.removeEventListener("resize",fn);
   },[user, hasSupabase, authLoading]);
 
+  /* ── Merge-based sync function (used by tab-refocus AND reconnection) ── */
+  const mergeSync = useCallback(async (source) => {
+    if(!hasSupabase || !user || !ready) return;
+    try {
+      const cloudData = await loadFromCloud();
+      if(!cloudData) return;
+
+      /* Re-enable cloud saves if they were disabled */
+      if(!cloudSyncReady.current) {
+        console.log("%c[Inkwell Sync] Cloud reconnected — re-enabling cloud saves","color:#22c55e;font-weight:bold");
+      }
+      cloudSyncReady.current = true;
+
+      const cloudTs = cloudData.updated_at || "1970-01-01";
+      const localTs = localDataVersion.current || "1970-01-01";
+      const hasPending = hasPendingSync.current;
+      const cloudTombs = cloudData.settings?._tombstones || [];
+
+      if (hasPending || localTs > cloudTs) {
+        /* Local has unsynced changes — do a full merge */
+        console.log(`%c[Inkwell Sync] Merge triggered (${source})`, "color:#d97706;font-weight:bold",
+          "\n  local:", localTs, "\n  cloud:", cloudTs, "\n  pending:", hasPending);
+        const localTasks = tasksRef.current;
+        const localLists = listsRef.current;
+        const result = mergeTasks(localTasks, cloudData.tasks || [], tombstonesRef.current, cloudTombs);
+        const mergedLists = mergeLists(localLists, cloudData.lists || DEFAULT_LISTS);
+
+        cloudLoadTimeRef.current = Date.now();
+        setTasksRaw(result.tasks);
+        setLists(mergedLists);
+        tombstonesRef.current = result.tombstones;
+        save(TOMBSTONES_KEY, result.tombstones);
+
+        const mergeTs = new Date().toISOString();
+        save(TASKS_KEY, result.tasks);
+        save(LISTS_KEY, mergedLists);
+        save("inkwell-data-ts", mergeTs);
+        save(PENDING_SYNC_KEY, false);
+        hasPendingSync.current = false;
+        localDataVersion.current = mergeTs;
+
+        /* Push merged result to cloud */
+        const mergedSettings = { ...settingsRef.current, _tombstones: result.tombstones };
+        saveToCloudNow(result.tasks, mergedLists, mergedSettings);
+
+        /* Count changes for user feedback */
+        const localSet = new Set(localTasks.map(t=>t.id));
+        const cloudSet = new Set((cloudData.tasks||[]).map(t=>t.id));
+        const newFromCloud = [...cloudSet].filter(id => !localSet.has(id)).length;
+        if (newFromCloud > 0 || hasPending) {
+          flash(hasPending ? "Changes synced ✓" : `Synced ${newFromCloud} new task${newFromCloud!==1?"s":""}`);
+        }
+      } else if (cloudTs > localTs) {
+        /* Cloud is newer and we have no pending changes — apply cloud data */
+        applyCloudData(cloudData);
+        localDataVersion.current = cloudTs;
+        save(PENDING_SYNC_KEY, false);
+        hasPendingSync.current = false;
+      }
+      /* If timestamps are equal and no pending, nothing to do */
+    } catch(e) { /* network error — keep local state */ }
+  }, [user, hasSupabase, ready, loadFromCloud, applyCloudData, saveToCloudNow, flash]);
+
   /* ── Sync from cloud when tab regains focus ── */
   useEffect(()=>{
     if(!hasSupabase || !user) return;
-    const syncOnFocus = async () => {
-      if(document.hidden || !ready) return;
-      try {
-        const cloudData = await loadFromCloud();
-        if(cloudData) {
-          /* If cloud sync was disabled (failed init), re-enable it now */
-          if(!cloudSyncReady.current) {
-            console.log("%c[Inkwell Sync] Cloud reconnected — re-enabling cloud saves","color:#22c55e;font-weight:bold");
-          }
-          cloudSyncReady.current = true;
-
-          /* Compare timestamps: only apply cloud if it's actually newer than our local data */
-          const cloudTs = cloudData.updated_at || "1970-01-01";
-          const localTs = localDataVersion.current || "1970-01-01";
-          if(cloudTs > localTs) {
-            applyCloudData(cloudData);
-            localDataVersion.current = cloudTs;
-          }
-          /* If local is newer, our save effects will eventually push to cloud */
-        }
-      } catch(e) { /* network error — keep local state, don't change cloudSyncReady */ }
+    const syncOnFocus = () => {
+      if(!document.hidden && ready) mergeSync("tab-focus");
     };
     document.addEventListener("visibilitychange", syncOnFocus);
     return () => document.removeEventListener("visibilitychange", syncOnFocus);
-  },[user, hasSupabase, ready, loadFromCloud, applyCloudData]);
+  },[user, hasSupabase, ready, mergeSync]);
+
+  /* ── Online/offline detection + reconnection sync ── */
+  useEffect(()=>{
+    const onOnline = () => {
+      setIsOnline(true);
+      console.log("%c[Inkwell] Back online","color:#22c55e;font-weight:bold");
+      /* Debounce reconnection to avoid rapid on/off/on */
+      setTimeout(() => {
+        if(navigator.onLine) mergeSync("reconnect");
+      }, 1500);
+    };
+    const onOffline = () => {
+      setIsOnline(false);
+      console.log("%c[Inkwell] Offline","color:#ef4444;font-weight:bold");
+    };
+    window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
+    return () => { window.removeEventListener("online", onOnline); window.removeEventListener("offline", onOffline); };
+  },[mergeSync]);
+
+  /* ── Periodic sync retry — catches missed reconnect events & flaky wifi ── */
+  useEffect(()=>{
+    if(!hasSupabase || !user || !ready) return;
+    const interval = setInterval(() => {
+      if(navigator.onLine && hasPendingSync.current) {
+        console.log("%c[Inkwell Sync] Periodic retry — pending changes found","color:#d97706");
+        mergeSync("periodic-retry");
+      }
+    }, 30000); /* Check every 30 seconds */
+    return () => clearInterval(interval);
+  },[hasSupabase, user, ready, mergeSync]);
 
   /* ── Refs for latest values (prevent stale closures in save effects) ── */
   const tasksRef=useRef(tasks);const listsRef=useRef(lists);
@@ -2859,9 +3147,14 @@ export default function InkwellApp() {
     const ts = new Date().toISOString();
     save("inkwell-data-ts", ts);
     localDataVersion.current = ts;
-    /* Only push to cloud if we've successfully loaded from cloud first */
-    if(cloudSyncReady.current) {
-      saveToCloud(tasks,listsRef.current,settingsRef.current);
+    /* Only push to cloud if we've successfully loaded from cloud first AND we're online */
+    if(cloudSyncReady.current && navigator.onLine) {
+      const settings = { ...settingsRef.current, _tombstones: tombstonesRef.current };
+      saveToCloud(tasks,listsRef.current,settings);
+    } else if (hasSupabase && user) {
+      /* Offline or not cloud-ready — mark pending sync for later merge */
+      hasPendingSync.current = true;
+      save(PENDING_SYNC_KEY, true);
     }
   },[tasks,ready]);
   useEffect(()=>{
@@ -2871,26 +3164,30 @@ export default function InkwellApp() {
     const ts = new Date().toISOString();
     save("inkwell-data-ts", ts);
     localDataVersion.current = ts;
-    if(cloudSyncReady.current) {
-      saveToCloud(tasksRef.current,lists,settingsRef.current);
+    if(cloudSyncReady.current && navigator.onLine) {
+      const settings = { ...settingsRef.current, _tombstones: tombstonesRef.current };
+      saveToCloud(tasksRef.current,lists,settings);
+    } else if (hasSupabase && user) {
+      hasPendingSync.current = true;
+      save(PENDING_SYNC_KEY, true);
     }
   },[lists,ready]);
 
   /* ── Save settings changes to cloud ── */
   useEffect(()=>{
     if(!ready) return;
-    /* No cloudLoadTimeRef guard — settings changes are user-initiated.
-       Re-saving same values after cloud load is harmless (identical data, debounced). */
-    if(cloudSyncReady.current) {
-      saveToCloud(tasksRef.current,listsRef.current,{showViewCounts,showListCounts,darkMode,quickDates,kanbanColumns});
+    if(cloudSyncReady.current && navigator.onLine) {
+      const settings = { ...({showViewCounts,showListCounts,darkMode,quickDates,kanbanColumns}), _tombstones: tombstonesRef.current };
+      saveToCloud(tasksRef.current,listsRef.current,settings);
     }
   },[showViewCounts,showListCounts,darkMode,quickDates,kanbanColumns]);
 
   /* ── Flush to cloud on tab hide AND page unload ── */
   useEffect(()=>{
     const flushOnHide=()=>{
-      if(document.hidden&&ready&&cloudSyncReady.current){
-        saveToCloudNow(tasksRef.current,listsRef.current,settingsRef.current);
+      if(document.hidden&&ready&&cloudSyncReady.current&&navigator.onLine){
+        const settings = { ...settingsRef.current, _tombstones: tombstonesRef.current };
+        saveToCloudNow(tasksRef.current,listsRef.current,settings);
       }
     };
     const flushOnUnload=()=>{
@@ -2899,11 +3196,13 @@ export default function InkwellApp() {
       try {
         save(TASKS_KEY, tasksRef.current);
         save(LISTS_KEY, listsRef.current);
+        save(TOMBSTONES_KEY, tombstonesRef.current);
         save("inkwell-data-ts", new Date().toISOString());
       } catch(e) { /* best effort */ }
-      /* ── ALSO send keepalive fetch if cloud sync is ready ── */
-      if(cloudSyncReady.current){
-        flushToCloudKeepalive(tasksRef.current,listsRef.current,settingsRef.current);
+      /* ── ALSO send keepalive fetch if cloud sync is ready AND online ── */
+      if(cloudSyncReady.current && navigator.onLine){
+        const settings = { ...settingsRef.current, _tombstones: tombstonesRef.current };
+        flushToCloudKeepalive(tasksRef.current,listsRef.current,settings);
       }
     };
     document.addEventListener("visibilitychange",flushOnHide);
@@ -2911,7 +3210,6 @@ export default function InkwellApp() {
     return()=>{document.removeEventListener("visibilitychange",flushOnHide);window.removeEventListener("beforeunload",flushOnUnload);};
   },[ready,saveToCloudNow,flushToCloudKeepalive]);
   useEffect(()=>{if(selectedTask){const u=tasks.find(t=>t.id===selectedTask.id);if(u)setSelectedTask(u);else setSelectedTask(null);}},[tasks]);
-  const flash=msg=>{setToast(msg);setTimeout(()=>setToast(null),3000);};
 
   /* ═══ UNDO / REDO ═══ */
   const historyRef = useRef({ stack: [], idx: -1, skip: false });
@@ -2934,7 +3232,7 @@ export default function InkwellApp() {
     if(h.idx <= 0) return;
     h.idx--;
     h.skip = true;
-    setTasks(JSON.parse(h.stack[h.idx]));
+    setTasksRaw(JSON.parse(h.stack[h.idx]));
     flash("Undone");
   }, []);
   const redo = useCallback(() => {
@@ -2942,12 +3240,12 @@ export default function InkwellApp() {
     if(h.idx >= h.stack.length - 1) return;
     h.idx++;
     h.skip = true;
-    setTasks(JSON.parse(h.stack[h.idx]));
+    setTasksRaw(JSON.parse(h.stack[h.idx]));
     flash("Redone");
   }, []);
 
   /* Bulk operations */
-  const bulkDelete=()=>{setTasks(prev=>prev.filter(t=>!selectedIds.has(t.id)));flash(`Deleted ${selectedIds.size} tasks`);setSelectedIds(new Set());setSelectedTask(null);};
+  const bulkDelete=()=>{addTombstones([...selectedIds]);setTasks(prev=>prev.filter(t=>!selectedIds.has(t.id)));flash(`Deleted ${selectedIds.size} tasks`);setSelectedIds(new Set());setSelectedTask(null);};
   const bulkMove=(listName)=>{setTasks(prev=>prev.map(t=>selectedIds.has(t.id)?{...t,list:listName}:t));flash(`Moved ${selectedIds.size} tasks to ${listName}`);setSelectedIds(new Set());};
   const bulkPriority=(p)=>{setTasks(prev=>prev.map(t=>selectedIds.has(t.id)?{...t,priority:p}:t));flash(`Set ${selectedIds.size} tasks to ${PRIORITY[p].label}`);setSelectedIds(new Set());};
   const bulkComplete=()=>{setTasks(prev=>prev.map(t=>selectedIds.has(t.id)?{...t,completed:true,completedAt:new Date().toISOString()}:t));flash(`Completed ${selectedIds.size} tasks`);setSelectedIds(new Set());};
@@ -2976,7 +3274,7 @@ export default function InkwellApp() {
     });
     setTimeout(()=>setAnimatingTasks(prev=>{const n={...prev};delete n[id];return n;}), 900);
   },[tasks]);
-  const deleteTask=useCallback(id=>{setTasks(prev=>prev.filter(t=>t.id!==id));if(selectedTask?.id===id)setSelectedTask(null);},[selectedTask]);
+  const deleteTask=useCallback(id=>{addTombstone(id);setTasks(prev=>prev.filter(t=>t.id!==id));if(selectedTask?.id===id)setSelectedTask(null);},[selectedTask,addTombstone]);
 
   const renameList=useCallback((oldN,newN)=>{if(!newN.trim()||newN===oldN||lists.includes(newN))return;setLists(prev=>prev.map(l=>l===oldN?newN:l));setTasks(prev=>prev.map(t=>t.list===oldN?{...t,list:newN}:t));if(view===`list:${oldN}`)setView(`list:${newN}`);},[lists,view]);
   const deleteList=useCallback((name)=>{if(name==="Inbox")return;const ct=tasks.filter(t=>t.list===name).length;if(ct>0&&!confirm(`"${name}" has ${ct} task${ct>1?"s":""}. They'll be moved to Inbox. Continue?`))return;setTasks(prev=>prev.map(t=>t.list===name?{...t,list:"Inbox"}:t));setLists(prev=>prev.filter(l=>l!==name));if(view===`list:${name}`)setView("all");flash(`Deleted list "${name}"`);},[tasks,view,flash]);
@@ -3207,7 +3505,7 @@ export default function InkwellApp() {
   /* Bulk operations */
 
 
-  const handleScan=async(b64,mt)=>{setProcessing(true);setScanError(null);try{const res=await fetch("/api/scan",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({imageData:b64,mediaType:mt,existingTasks:tasks.map(t=>t.title),existingLists:lists})});if(!res.ok){let errMsg="Scan failed ("+res.status+")";try{const err=await res.json();errMsg=err.error||errMsg;}catch(_){}throw new Error(errMsg);}const results=await res.json();setShowPhoto(false);setScanResults(results);}catch(e){const msg=e.message||"Unknown error";setScanError(msg);flash("⚠ "+msg);}setProcessing(false);};
+  const handleScan=async(b64,mt)=>{if(!navigator.onLine){setScanError("You're offline. Scanning requires an internet connection — try again when you're back online.");flash("⚠ Can't scan while offline");return;}setProcessing(true);setScanError(null);try{const res=await fetch("/api/scan",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({imageData:b64,mediaType:mt,existingTasks:tasks.map(t=>t.title),existingLists:lists})});if(!res.ok){let errMsg="Scan failed ("+res.status+")";try{const err=await res.json();errMsg=err.error||errMsg;}catch(_){}throw new Error(errMsg);}const results=await res.json();setShowPhoto(false);setScanResults(results);}catch(e){const msg=e.message||"Unknown error";setScanError(msg);flash("⚠ "+msg);}setProcessing(false);};
 
   const confirmScan=items=>{let added=0,checked=0;const pageDate=scanResults?.page_date;const newCats=new Set();items.forEach(it=>{if(it.category?.trim()&&!lists.includes(it.category.trim()))newCats.add(it.category.trim());});if(newCats.size>0)setLists(prev=>[...prev,...Array.from(newCats)]);const all=[...lists,...Array.from(newCats)];
     /* Convert scanned subtask tree to app format */
@@ -3479,6 +3777,14 @@ export default function InkwellApp() {
             <button onClick={()=>setShowShortcuts(true)} style={{background:"none",border:"none",cursor:"pointer",fontSize:12,color:"var(--muted)",display:"flex",alignItems:"center",gap:6,fontFamily:"inherit",padding:0}}>{Icons.keyboard}{!isMobile&&" Press ? for shortcuts"}</button>
           </div>
           <div style={{display:"flex",alignItems:"center",gap:4}}>
+            {/* Online/offline indicator */}
+            {hasSupabase && user && (
+              <div title={isOnline ? (hasPendingSync.current ? "Pending sync" : "Synced") : "Offline — edits saved locally"}
+                style={{display:"flex",alignItems:"center",gap:4,padding:"2px 6px",borderRadius:6,fontSize:11,color:isOnline?"var(--muted)":"var(--danger)",fontWeight:500,fontFamily:"inherit"}}>
+                <div style={{width:7,height:7,borderRadius:"50%",background:isOnline?(hasPendingSync.current?"#f59e0b":"#22c55e"):"#ef4444",boxShadow:isOnline?undefined:"0 0 4px rgba(239,68,68,0.4)",transition:"background 0.3s"}}/>
+                {!isOnline && <span>Offline</span>}
+              </div>
+            )}
             <button onClick={()=>setShowTips("guide")} style={{background:"none",border:"none",cursor:"pointer",color:"var(--muted)",padding:4,display:"flex",borderRadius:6,transition:"color 0.15s"}} aria-label="Help guide" title="Help guide"
               onMouseEnter={e=>e.currentTarget.style.color="var(--accent)"}
               onMouseLeave={e=>e.currentTarget.style.color="var(--muted)"}>
@@ -3491,6 +3797,13 @@ export default function InkwellApp() {
 
       {/* ═══ MAIN ═══ */}
       <main style={{flex:1,display:"flex",flexDirection:"column",minWidth:0}}>
+        {/* Offline banner */}
+        {!isOnline && hasSupabase && user && (
+          <div style={{padding:"8px 16px",background:"linear-gradient(90deg,#fef3c7,#fde68a)",borderBottom:"1px solid #f59e0b",display:"flex",alignItems:"center",justifyContent:"center",gap:8,flexShrink:0,fontSize:13,color:"#92400e",fontWeight:500}}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 1l22 22"/><path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"/><path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"/><path d="M10.71 5.05A16 16 0 0 1 22.56 9"/><path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
+            <span>You're offline — your edits are saved locally and will sync when you reconnect</span>
+          </div>
+        )}
         <header style={{padding:isMobile?"14px 16px":"14px 24px",borderBottom:"1px solid var(--border)",display:"flex",alignItems:"center",gap:12,flexShrink:0}}>
           <button onClick={()=>setSidebar(!sidebar)} title={sidebar?"Hide sidebar (B)":"Show sidebar (B)"} style={{background:"none",border:"none",cursor:"pointer",color:sidebar?"var(--muted)":"var(--accent)",padding:6,display:"flex",borderRadius:6,transition:"color 0.15s"}} aria-label="Toggle sidebar">{Icons.menu}</button>
           <div style={{flex:1,display:"flex",alignItems:"center",gap:10,minWidth:0}}>
@@ -3728,6 +4041,7 @@ export default function InkwellApp() {
               setTasks(prev=>prev.map(t=>({...t,subtasks:deleteSubById(t.subtasks||[],tid)})));
               flash("Subtask deleted");
             }else{
+              addTombstone(tid);
               setTasks(prev=>prev.filter(t=>t.id!==tid));
               if(selectedTask?.id===tid)setSelectedTask(null);
               flash("Task deleted");
