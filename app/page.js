@@ -67,6 +67,11 @@ function useSupabaseSync() {
 
   const saveToCloud = useCallback((tasks, lists, settings) => {
     if (!supabase || !user) return;
+    /* ── SAFETY: Never save empty tasks to cloud — this would wipe user data ── */
+    if (!tasks || (Array.isArray(tasks) && tasks.length === 0)) {
+      console.warn("[Inkwell Sync] Blocked save: refusing to push empty tasks array to cloud");
+      return;
+    }
     clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(async () => {
       const { error } = await supabase
@@ -79,6 +84,10 @@ function useSupabaseSync() {
   /* Immediate (non-debounced) cloud save — for flush on tab hide */
   const saveToCloudNow = useCallback(async (tasks, lists, settings) => {
     if (!supabase || !user) return;
+    if (!tasks || (Array.isArray(tasks) && tasks.length === 0)) {
+      console.warn("[Inkwell Sync] Blocked immediate save: refusing to push empty tasks array");
+      return;
+    }
     clearTimeout(saveTimer.current);
     try {
       await supabase
@@ -90,6 +99,7 @@ function useSupabaseSync() {
   /* keepalive flush for beforeunload — survives page close/refresh */
   const flushToCloudKeepalive = useCallback((tasks, lists, settings) => {
     if (!supabase || !user) return;
+    if (!tasks || (Array.isArray(tasks) && tasks.length === 0)) return;
     clearTimeout(saveTimer.current);
     try {
       const token = accessTokenRef.current;
@@ -2596,6 +2606,8 @@ export default function InkwellApp() {
   const [newList,setNewList]=useState("");
   const [showNewList,setShowNewList]=useState(false);
   const [ready,setReady]=useState(false);
+  const cloudSyncReady=useRef(false); /* true only after successful cloud load — prevents stale overwrites */
+  const localDataVersion=useRef(null); /* ISO timestamp of last user-initiated data change */
   const [sidebar,setSidebar]=useState(true);
   const [toast,setToast]=useState(null);
   const [isMobile,setIsMobile]=useState(false);
@@ -2629,7 +2641,7 @@ export default function InkwellApp() {
   const [dragListOver,setDragListOver]=useState(null);
   const [showViewCounts,setShowViewCounts]=useState(()=>load("inkwell-showViewCounts",true));
   const [showListCounts,setShowListCounts]=useState(()=>load("inkwell-showListCounts",true));
-  const BUILD_VERSION = "2026.02.28-v1";
+  const BUILD_VERSION = "2026.03.02-v1";
   const [darkMode,setDarkMode]=useState(()=>load("inkwell-darkMode",false));
   const defaultQuickDates=[{label:"Tomorrow",offset:"tomorrow"},{label:"Next Monday",offset:"nextMonday"}];
   const [quickDates,setQuickDates]=useState(()=>load("inkwell-quickDates",defaultQuickDates));
@@ -2683,6 +2695,7 @@ export default function InkwellApp() {
   /* ── CLOUD-FIRST SYNC ──
      When logged in: cloud is always the source of truth.
      localStorage is a write-through cache for offline use.
+     Cloud saves are gated by cloudSyncReady (only true after successful cloud load).
      Save effects are suppressed for 2s after any cloud load
      to prevent writing cloud data back to cloud. */
   const cloudLoadTimeRef = useRef(0); /* timestamp of last cloud load — save effects skip within 2s */
@@ -2710,9 +2723,10 @@ export default function InkwellApp() {
         }
       }
     }
-    /* Cache to localStorage for offline use */
+    /* Cache to localStorage for offline use (with timestamp) */
     save(TASKS_KEY, cloudData.tasks || []);
     save(LISTS_KEY, cloudData.lists || DEFAULT_LISTS);
+    save("inkwell-data-ts", cloudData.updated_at || new Date().toISOString());
   }, []);
 
   useEffect(()=>{
@@ -2724,14 +2738,48 @@ export default function InkwellApp() {
 
     const init = async () => {
       if (hasSupabase && user) {
-        /* ── Logged in: always load from cloud ── */
+        /* ── Logged in: load from cloud + compare with localStorage ── */
         const cloudData = await loadFromCloud();
+        const localTs = load("inkwell-data-ts", null);
+
         if (cloudData) {
-          applyCloudData(cloudData);
+          const cloudTs = cloudData.updated_at || "1970-01-01";
+
+          if (localTs && localTs > cloudTs) {
+            /* localStorage is NEWER than cloud (keepalive may not have completed).
+               Use localStorage data, then push it to cloud to reconcile. */
+            console.log("%c[Inkwell Sync] localStorage newer than cloud — using local data","color:#d97706;font-weight:bold",
+              "\n  localStorage:", localTs, "\n  cloud:", cloudTs);
+            const localTasks = load(TASKS_KEY, []);
+            const localLists = load(LISTS_KEY, DEFAULT_LISTS);
+            setTasks(localTasks);
+            setLists(localLists);
+            cloudLoadTimeRef.current = Date.now();
+            cloudSyncReady.current = true;
+            localDataVersion.current = localTs;
+            /* Gather settings from localStorage for the reconciliation save */
+            const localSettings = {
+              showViewCounts: load("inkwell-showViewCounts", true),
+              showListCounts: load("inkwell-showListCounts", true),
+              darkMode: load("inkwell-darkMode", false),
+              quickDates: load("inkwell-quickDates", defaultQuickDates),
+              kanbanColumns: null
+            };
+            /* Push local data to cloud to reconcile (non-debounced) */
+            saveToCloudNow(localTasks, localLists, localSettings);
+          } else {
+            /* Cloud is newer or same — use cloud data (normal case) */
+            applyCloudData(cloudData);
+            cloudSyncReady.current = true;
+            localDataVersion.current = cloudTs;
+          }
         } else {
-          /* Cloud load failed (network error / empty) — fall back to localStorage */
+          /* Cloud load failed (network error / empty row) — use localStorage for display
+             but DO NOT enable cloud saves to prevent stale data from overwriting. */
+          console.warn("[Inkwell Sync] Cloud load failed — using localStorage, cloud saves DISABLED until next successful sync");
           setTasks(load(TASKS_KEY, []));
           setLists(load(LISTS_KEY, DEFAULT_LISTS));
+          cloudSyncReady.current = false; /* ← KEY: prevents stale overwrites */
         }
       } else {
         /* ── Not logged in: use localStorage only ── */
@@ -2774,9 +2822,22 @@ export default function InkwellApp() {
       try {
         const cloudData = await loadFromCloud();
         if(cloudData) {
-          applyCloudData(cloudData);
+          /* If cloud sync was disabled (failed init), re-enable it now */
+          if(!cloudSyncReady.current) {
+            console.log("%c[Inkwell Sync] Cloud reconnected — re-enabling cloud saves","color:#22c55e;font-weight:bold");
+          }
+          cloudSyncReady.current = true;
+
+          /* Compare timestamps: only apply cloud if it's actually newer than our local data */
+          const cloudTs = cloudData.updated_at || "1970-01-01";
+          const localTs = localDataVersion.current || "1970-01-01";
+          if(cloudTs > localTs) {
+            applyCloudData(cloudData);
+            localDataVersion.current = cloudTs;
+          }
+          /* If local is newer, our save effects will eventually push to cloud */
         }
-      } catch(e) { /* network error — keep local state */ }
+      } catch(e) { /* network error — keep local state, don't change cloudSyncReady */ }
     };
     document.addEventListener("visibilitychange", syncOnFocus);
     return () => document.removeEventListener("visibilitychange", syncOnFocus);
@@ -2789,18 +2850,30 @@ export default function InkwellApp() {
   useEffect(()=>{listsRef.current=lists;},[lists]);
   useEffect(()=>{settingsRef.current={showViewCounts,showListCounts,darkMode,quickDates,kanbanColumns};},[showViewCounts,showListCounts,darkMode,quickDates,kanbanColumns]);
 
-  /* ── Save on every USER edit (skip saves within 2s of cloud load) ── */
+  /* ── Save on every USER edit ── */
   useEffect(()=>{
     if(!ready) return;
     if(Date.now() - cloudLoadTimeRef.current < 2000) return;
     save(TASKS_KEY,tasks);
-    saveToCloud(tasks,listsRef.current,settingsRef.current);
+    /* Update localStorage timestamp for cross-reload comparison */
+    const ts = new Date().toISOString();
+    save("inkwell-data-ts", ts);
+    localDataVersion.current = ts;
+    /* Only push to cloud if we've successfully loaded from cloud first */
+    if(cloudSyncReady.current) {
+      saveToCloud(tasks,listsRef.current,settingsRef.current);
+    }
   },[tasks,ready]);
   useEffect(()=>{
     if(!ready) return;
     if(Date.now() - cloudLoadTimeRef.current < 2000) return;
     save(LISTS_KEY,lists);
-    saveToCloud(tasksRef.current,lists,settingsRef.current);
+    const ts = new Date().toISOString();
+    save("inkwell-data-ts", ts);
+    localDataVersion.current = ts;
+    if(cloudSyncReady.current) {
+      saveToCloud(tasksRef.current,lists,settingsRef.current);
+    }
   },[lists,ready]);
 
   /* ── Save settings changes to cloud ── */
@@ -2808,13 +2881,31 @@ export default function InkwellApp() {
     if(!ready) return;
     /* No cloudLoadTimeRef guard — settings changes are user-initiated.
        Re-saving same values after cloud load is harmless (identical data, debounced). */
-    saveToCloud(tasksRef.current,listsRef.current,{showViewCounts,showListCounts,darkMode,quickDates,kanbanColumns});
+    if(cloudSyncReady.current) {
+      saveToCloud(tasksRef.current,listsRef.current,{showViewCounts,showListCounts,darkMode,quickDates,kanbanColumns});
+    }
   },[showViewCounts,showListCounts,darkMode,quickDates,kanbanColumns]);
 
   /* ── Flush to cloud on tab hide AND page unload ── */
   useEffect(()=>{
-    const flushOnHide=()=>{if(document.hidden&&ready)saveToCloudNow(tasksRef.current,listsRef.current,settingsRef.current);};
-    const flushOnUnload=()=>{if(ready)flushToCloudKeepalive(tasksRef.current,listsRef.current,settingsRef.current);};
+    const flushOnHide=()=>{
+      if(document.hidden&&ready&&cloudSyncReady.current){
+        saveToCloudNow(tasksRef.current,listsRef.current,settingsRef.current);
+      }
+    };
+    const flushOnUnload=()=>{
+      if(!ready) return;
+      /* ── SYNCHRONOUS localStorage backup (instant, survives any crash/reload) ── */
+      try {
+        save(TASKS_KEY, tasksRef.current);
+        save(LISTS_KEY, listsRef.current);
+        save("inkwell-data-ts", new Date().toISOString());
+      } catch(e) { /* best effort */ }
+      /* ── ALSO send keepalive fetch if cloud sync is ready ── */
+      if(cloudSyncReady.current){
+        flushToCloudKeepalive(tasksRef.current,listsRef.current,settingsRef.current);
+      }
+    };
     document.addEventListener("visibilitychange",flushOnHide);
     window.addEventListener("beforeunload",flushOnUnload);
     return()=>{document.removeEventListener("visibilitychange",flushOnHide);window.removeEventListener("beforeunload",flushOnUnload);};
