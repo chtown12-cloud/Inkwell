@@ -135,6 +135,23 @@ const todayStr = () => { const d=new Date(); return localDateStr(d); };
 const tomorrowStr = () => { const d = new Date(); d.setDate(d.getDate() + 1); return localDateStr(d); };
 const nextMondayStr = () => { const d = new Date(); const day = d.getDay(); const diff = day === 0 ? 1 : day === 1 ? 7 : 8 - day; d.setDate(d.getDate() + diff); return localDateStr(d); };
 const dateOffset = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return localDateStr(d); };
+/* Advance a date string by a recurrence interval */
+const advanceRecurrenceDate = (dateStr, frequency, interval) => {
+  const d = dateStr ? new Date(dateStr + "T12:00:00") : new Date();
+  if (frequency === "daily") d.setDate(d.getDate() + interval);
+  else if (frequency === "weekly") d.setDate(d.getDate() + interval * 7);
+  else if (frequency === "monthly") d.setMonth(d.getMonth() + interval);
+  /* If the advanced date is in the past (was overdue), jump to next occurrence from today */
+  const today = new Date(); today.setHours(0,0,0,0);
+  if (d < today) {
+    const now = new Date();
+    if (frequency === "daily") now.setDate(now.getDate() + interval);
+    else if (frequency === "weekly") now.setDate(now.getDate() + interval * 7);
+    else if (frequency === "monthly") now.setMonth(now.getMonth() + interval);
+    return localDateStr(now);
+  }
+  return localDateStr(d);
+};
 const nextWeekday = (wd) => { const d = new Date(); const cur = d.getDay(); const diff = wd <= cur ? 7 - cur + wd : wd - cur; d.setDate(d.getDate() + diff); return localDateStr(d); };
 const WEEKDAYS=["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
 const resolveQuickDate = (offset) => {
@@ -664,6 +681,7 @@ const Icons = {
   menu:     <I size={22}><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></I>,
   subtask:  <I size={14}><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></I>,
   note:     <I size={14}><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></I>,
+  repeat:   <I size={14}><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 01-4 4H3"/></I>,
   sparkle:  <I size={16}><path d="M12 2L14.5 9.5 22 12 14.5 14.5 12 22 9.5 14.5 2 12 9.5 9.5z"/></I>,
   grip:     <I size={16}><circle cx="9" cy="5" r="1" fill="currentColor" stroke="none"/><circle cx="9" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="9" cy="19" r="1" fill="currentColor" stroke="none"/><circle cx="15" cy="5" r="1" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="15" cy="19" r="1" fill="currentColor" stroke="none"/></I>,
   duration: <I size={14}><path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.172a2 2 0 00-.586-1.414L12 12l-4.414 4.414A2 2 0 007 17.828V22"/><path d="M7 2v4.172a2 2 0 00.586 1.414L12 12l4.414-4.414A2 2 0 0017 6.172V2"/></I>,
@@ -1608,7 +1626,21 @@ const TaskDetail = ({task, onUpdate, onDelete, onClose, lists}) => {
       <div key={animKey} style={{flex:1,overflowY:"auto",padding:"18px 20px",animation:`${navDir==="in"?"drillIn":"drillOut"} 0.2s ease`}}>
         {/* Title + checkbox */}
         <div style={{display:"flex",alignItems:"flex-start",gap:12,marginBottom:20}}>
-          <div style={{paddingTop:4}}><Checkbox checked={current.completed} priority={current.priority||"none"} onChange={c=>updateCurrent({completed:c,completedAt:c?new Date().toISOString():null})}/></div>
+          <div style={{paddingTop:4}}><Checkbox checked={current.completed} priority={current.priority||"none"} onChange={c=>{
+            /* Handle recurrence for top-level tasks */
+            if(c && !isSubtask && current.recurrence) {
+              const r = current.recurrence;
+              const newCount = (r.completedCount||0)+1;
+              if(r.endAfter && newCount >= r.endAfter) {
+                updateCurrent({completed:true,completedAt:new Date().toISOString(),recurrence:{...r,completedCount:newCount}});
+              } else {
+                const nextDate = advanceRecurrenceDate(current.dueDate, r.frequency, r.interval||1);
+                updateCurrent({completed:false,completedAt:null,dueDate:nextDate,recurrence:{...r,completedCount:newCount}});
+              }
+              return;
+            }
+            updateCurrent({completed:c,completedAt:c?new Date().toISOString():null});
+          }}/></div>
           <textarea ref={el=>{if(el){el.style.height="auto";el.style.height=el.scrollHeight+"px";}}} value={title} onChange={e=>{setTitle(e.target.value);e.target.style.height="auto";e.target.style.height=e.target.scrollHeight+"px";}} rows={1} onBlur={e=>{if(title.trim())updateCurrent({title:title.trim()});e.target.style.borderColor="transparent";e.target.style.background="none";}} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();e.target.blur();}}}
             style={{flex:1,border:"1px solid transparent",borderRadius:8,background:"none",fontSize:18,fontFamily:"var(--font-display)",fontWeight:700,color:current.completed?"var(--muted)":"var(--ink)",textDecoration:current.completed?"line-through":"none",outline:"none",padding:"6px 8px",resize:"none",lineHeight:1.3,overflow:"hidden",transition:"border-color 0.15s, background 0.15s",cursor:"text"}}
             onFocus={e=>{e.target.style.borderColor=accentColor;e.target.style.background="var(--card)";}}
@@ -1618,6 +1650,82 @@ const TaskDetail = ({task, onUpdate, onDelete, onClose, lists}) => {
 
         {/* Due Date */}
         <Field label="Due Date"><input type="date" value={current.dueDate||""} onChange={e=>updateCurrent({dueDate:e.target.value||null})} style={fieldInput}/></Field>
+
+        {/* Repeats */}
+        {!isSubtask && (
+          <Field label="Repeats">
+            {!current.recurrence ? (
+              <button onClick={()=>updateCurrent({recurrence:{frequency:"daily",interval:1,endAfter:null,completedCount:0}})}
+                style={{...fieldInput,cursor:"pointer",color:"var(--muted)",textAlign:"left",display:"flex",alignItems:"center",gap:8}}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg>
+                Add recurrence…
+              </button>
+            ) : (
+              <div style={{background:"var(--card)",border:"1px solid var(--border)",borderRadius:10,padding:"12px 14px"}}>
+                {/* Frequency row: every [N] [unit] */}
+                <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:10,flexWrap:"wrap"}}>
+                  <span style={{fontSize:13,color:"var(--text)",fontWeight:500}}>Every</span>
+                  <input type="number" min="1" max="365" value={current.recurrence.interval||1}
+                    onChange={e=>{const v=Math.max(1,parseInt(e.target.value)||1);updateCurrent({recurrence:{...current.recurrence,interval:v}});}}
+                    style={{width:52,padding:"6px 8px",borderRadius:8,border:"1px solid var(--border)",fontSize:13,textAlign:"center",color:"var(--text)",background:"var(--bg)",fontFamily:"inherit",outline:"none"}}/>
+                  <select value={current.recurrence.frequency}
+                    onChange={e=>updateCurrent({recurrence:{...current.recurrence,frequency:e.target.value}})}
+                    style={{padding:"6px 10px",borderRadius:8,border:"1px solid var(--border)",fontSize:13,color:"var(--text)",background:"var(--bg)",fontFamily:"inherit",cursor:"pointer",outline:"none"}}>
+                    <option value="daily">{(current.recurrence.interval||1)===1?"day":"days"}</option>
+                    <option value="weekly">{(current.recurrence.interval||1)===1?"week":"weeks"}</option>
+                    <option value="monthly">{(current.recurrence.interval||1)===1?"month":"months"}</option>
+                  </select>
+                </div>
+
+                {/* End after row */}
+                <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:10,flexWrap:"wrap"}}>
+                  <label style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",fontSize:13,color:"var(--text)"}}>
+                    <input type="checkbox" checked={current.recurrence.endAfter!==null && current.recurrence.endAfter!==undefined}
+                      onChange={e=>{updateCurrent({recurrence:{...current.recurrence,endAfter:e.target.checked?5:null}});}}
+                      style={{width:15,height:15,accentColor:"var(--accent)",cursor:"pointer"}}/>
+                    End after
+                  </label>
+                  {current.recurrence.endAfter!==null && current.recurrence.endAfter!==undefined && (
+                    <>
+                      <input type="number" min="1" max="999" value={current.recurrence.endAfter}
+                        onChange={e=>{const v=Math.max(1,parseInt(e.target.value)||1);updateCurrent({recurrence:{...current.recurrence,endAfter:v}});}}
+                        style={{width:52,padding:"6px 8px",borderRadius:8,border:"1px solid var(--border)",fontSize:13,textAlign:"center",color:"var(--text)",background:"var(--bg)",fontFamily:"inherit",outline:"none"}}/>
+                      <span style={{fontSize:13,color:"var(--text)"}}>occurrence{current.recurrence.endAfter!==1?"s":""}</span>
+                    </>
+                  )}
+                </div>
+
+                {/* Progress indicator */}
+                {(current.recurrence.completedCount||0) > 0 && (
+                  <div style={{fontSize:12,color:"var(--muted)",marginBottom:8,display:"flex",alignItems:"center",gap:6}}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                    {current.recurrence.endAfter
+                      ? `${current.recurrence.completedCount} of ${current.recurrence.endAfter} completed`
+                      : `${current.recurrence.completedCount} completed`}
+                  </div>
+                )}
+
+                {/* Readable summary */}
+                <div style={{fontSize:12,color:"#7c3aed",fontWeight:500,marginBottom:8,display:"flex",alignItems:"center",gap:6}}>
+                  {Icons.repeat}
+                  {(() => {
+                    const r = current.recurrence;
+                    const n = r.interval || 1;
+                    const unit = r.frequency === "daily" ? (n===1?"day":"days") : r.frequency === "weekly" ? (n===1?"week":"weeks") : (n===1?"month":"months");
+                    return n === 1 ? `Every ${unit}` : `Every ${n} ${unit}`;
+                  })()}
+                  {current.recurrence.endAfter ? ` · ${current.recurrence.endAfter} times total` : " · forever"}
+                </div>
+
+                {/* Remove recurrence */}
+                <button onClick={()=>updateCurrent({recurrence:null})}
+                  style={{background:"none",border:"none",cursor:"pointer",color:"var(--danger)",fontSize:12,fontWeight:500,padding:0,fontFamily:"inherit"}}>
+                  Remove recurrence
+                </button>
+              </div>
+            )}
+          </Field>
+        )}
 
         {/* Duration */}
         <Field label="Duration (Start → End)">
@@ -1767,6 +1875,7 @@ Personal
             <div style={featureStyle}><div style={dotStyle}/><div><b>Add subtasks</b> — open a task's detail panel (click it), then use the subtask input at the bottom of the subtask list.</div></div>
             <div style={featureStyle}><div style={dotStyle}/><div><b>Nest deeper</b> — drag a subtask onto another subtask to create sub-sub-subtasks, or use the indent button in the detail panel.</div></div>
             <div style={featureStyle}><div style={dotStyle}/><div><b>Independent due dates</b> — give any subtask its own due date and it will appear independently in Today and Upcoming views while staying nested under its parent.</div></div>
+            <div style={featureStyle}><div style={dotStyle}/><div><b>Recurring tasks</b> — open a task's detail panel and toggle "Repeats" to set a recurrence (every N days/weeks/months). When you complete a recurring task, it automatically resets and advances to the next due date. Optionally set an end after N occurrences.</div></div>
             <div style={featureStyle}><div style={dotStyle}/><div><b>Notes, priority & tags</b> — every task and subtask supports rich metadata accessible from the detail panel.</div></div>
           </div>
         </HelpSection>
@@ -2150,6 +2259,7 @@ const KanbanCard = ({task, onSelect, onToggle, onDragBegin, animateState, cardDr
                 {task.priority !== "none" && <span style={{fontSize:10,fontWeight:700,color:pc}}>{PRIORITY[task.priority].label}</span>}
                 {(task.tags||[]).map(t => <span key={t} style={{fontSize:10,color:"var(--accent)"}}>#{t}</span>)}
                 {task.notes && <span style={{color:"var(--border)",display:"flex",transform:"scale(0.8)"}}>{Icons.note}</span>}
+                {task.recurrence&&<span style={{fontSize:10,display:"flex",alignItems:"center",gap:2,color:"#7c3aed",fontWeight:600}} title={task.recurrence.endAfter?`${task.recurrence.completedCount||0}/${task.recurrence.endAfter} done`:"Repeating"}>{Icons.repeat}{task.recurrence.endAfter?`${task.recurrence.completedCount||0}/${task.recurrence.endAfter}`:""}</span>}
                 {hasSubs && (
                   <button onClick={e=>{e.stopPropagation();setExpanded(!expanded);}}
                     style={{fontSize:10,color:done===total?"#16a34a":"var(--muted)",background:"none",border:"none",cursor:"pointer",padding:0,fontFamily:"inherit",display:"flex",alignItems:"center",gap:2}}>
@@ -2575,6 +2685,7 @@ const TaskRow = ({task,isActive,isSelected,onSelect,onToggle,onUpdateTask,onDrag
             {subTotal>0&&(<button onClick={e=>{e.stopPropagation();setSubsOpen(!subsOpen);}} style={{fontSize:12,display:"flex",alignItems:"center",gap:3,color:subDone===subTotal?"#16a34a":"var(--muted)",background:"none",border:"none",cursor:"pointer",padding:0,fontFamily:"inherit"}}>{Icons.subtask} {subDone}/{subTotal} <span style={{transform:subsOpen?"rotate(0)":"rotate(-90deg)",transition:"transform 0.15s",display:"flex"}}>{Icons.chevD}</span></button>)}
             {(task.tags||[]).map(t=><span key={t} style={{fontSize:11,color:"var(--accent)",fontWeight:500}}>#{t}</span>)}
             {task.notes&&<span style={{color:"var(--border)",display:"flex"}}>{Icons.note}</span>}
+            {task.recurrence&&<span style={{fontSize:11,display:"flex",alignItems:"center",gap:3,color:"#7c3aed",fontWeight:500}} title={task.recurrence.endAfter?`${task.recurrence.completedCount||0}/${task.recurrence.endAfter} done`:"Repeating"}>{Icons.repeat}{task.recurrence.endAfter?`${task.recurrence.completedCount||0}/${task.recurrence.endAfter}`:""}</span>}
             {!view.startsWith("list:")&&view!=="inbox"&&<span style={{fontSize:11,color:"var(--muted)",background:"var(--surface)",padding:"1px 7px",borderRadius:4}}>{task.list}</span>}
           </div>
         </div>
@@ -2804,7 +2915,7 @@ export default function InkwellApp() {
   const [dragListOver,setDragListOver]=useState(null);
   const [showViewCounts,setShowViewCounts]=useState(()=>load("inkwell-showViewCounts",true));
   const [showListCounts,setShowListCounts]=useState(()=>load("inkwell-showListCounts",true));
-  const BUILD_VERSION = "2026.03.02-v2";
+  const BUILD_VERSION = "2026.03.03-v1";
   const [darkMode,setDarkMode]=useState(()=>load("inkwell-darkMode",false));
   const defaultQuickDates=[{label:"Tomorrow",offset:"tomorrow"},{label:"Next Monday",offset:"nextMonday"}];
   const [quickDates,setQuickDates]=useState(()=>load("inkwell-quickDates",defaultQuickDates));
@@ -3248,14 +3359,23 @@ export default function InkwellApp() {
   const bulkDelete=()=>{addTombstones([...selectedIds]);setTasks(prev=>prev.filter(t=>!selectedIds.has(t.id)));flash(`Deleted ${selectedIds.size} tasks`);setSelectedIds(new Set());setSelectedTask(null);};
   const bulkMove=(listName)=>{setTasks(prev=>prev.map(t=>selectedIds.has(t.id)?{...t,list:listName}:t));flash(`Moved ${selectedIds.size} tasks to ${listName}`);setSelectedIds(new Set());};
   const bulkPriority=(p)=>{setTasks(prev=>prev.map(t=>selectedIds.has(t.id)?{...t,priority:p}:t));flash(`Set ${selectedIds.size} tasks to ${PRIORITY[p].label}`);setSelectedIds(new Set());};
-  const bulkComplete=()=>{setTasks(prev=>prev.map(t=>selectedIds.has(t.id)?{...t,completed:true,completedAt:new Date().toISOString()}:t));flash(`Completed ${selectedIds.size} tasks`);setSelectedIds(new Set());};
+  const bulkComplete=()=>{setTasks(prev=>prev.map(t=>{
+    if(!selectedIds.has(t.id))return t;
+    if(t.recurrence){
+      const r=t.recurrence;const newCount=(r.completedCount||0)+1;
+      if(r.endAfter&&newCount>=r.endAfter)return{...t,completed:true,completedAt:new Date().toISOString(),recurrence:{...r,completedCount:newCount}};
+      const nextDate=advanceRecurrenceDate(t.dueDate,r.frequency,r.interval||1);
+      return{...t,completed:false,completedAt:null,dueDate:nextDate,recurrence:{...r,completedCount:newCount}};
+    }
+    return{...t,completed:true,completedAt:new Date().toISOString()};
+  }));flash(`Completed ${selectedIds.size} tasks`);setSelectedIds(new Set());};
 
 
 
 
 
   const addTask=useCallback(data=>{
-    const task={id:uid(),title:data.title||"Untitled",completed:data.completed||false,dueDate:data.dueDate||todayStr(),startDate:data.startDate||null,endDate:data.endDate||null,priority:data.priority||"none",list:data.list||(view.startsWith("list:")?view.replace("list:",""):"Inbox"),subtasks:data.subtasks||[],notes:data.notes||"",tags:data.tags||[],createdAt:new Date().toISOString(),completedAt:data.completed?new Date().toISOString():null};
+    const task={id:uid(),title:data.title||"Untitled",completed:data.completed||false,dueDate:data.dueDate||todayStr(),startDate:data.startDate||null,endDate:data.endDate||null,priority:data.priority||"none",list:data.list||(view.startsWith("list:")?view.replace("list:",""):"Inbox"),subtasks:data.subtasks||[],notes:data.notes||"",tags:data.tags||[],recurrence:data.recurrence||null,createdAt:new Date().toISOString(),completedAt:data.completed?new Date().toISOString():null};
     setTasks(prev=>[task,...prev]);return task;
   },[view]);
 
@@ -3265,15 +3385,50 @@ export default function InkwellApp() {
     setTasks(prev=>prev.map(t=>{
       if(t.id!==id) return t;
       const nowComplete = !t.completed;
+
+      /* ── Recurring task logic ── */
+      if(nowComplete && t.recurrence) {
+        const r = t.recurrence;
+        const newCount = (r.completedCount || 0) + 1;
+
+        /* Check if this is the FINAL recurrence */
+        if(r.endAfter && newCount >= r.endAfter) {
+          /* All recurrences done — mark fully completed */
+          return {...t, completed:true, completedAt:new Date().toISOString(),
+            recurrence:{...r, completedCount:newCount}};
+        }
+
+        /* More recurrences remain — advance the due date and reset */
+        const nextDate = advanceRecurrenceDate(t.dueDate, r.frequency, r.interval || 1);
+        return {...t, completed:false, completedAt:null, dueDate:nextDate,
+          recurrence:{...r, completedCount:newCount}};
+      }
+
+      /* Normal (non-recurring) task */
       return {...t,completed:nowComplete,completedAt:nowComplete?new Date().toISOString():null};
     }));
     /* Trigger animation */
     setAnimatingTasks(prev=>{
       const task = tasks.find(t=>t.id===id);
+      if(task?.recurrence && !task?.completed) {
+        /* Recurring: always show "complete" animation (brief check then reset) */
+        return {...prev, [id]: "complete"};
+      }
       return {...prev, [id]: task?.completed ? "uncomplete" : "complete"};
     });
     setTimeout(()=>setAnimatingTasks(prev=>{const n={...prev};delete n[id];return n;}), 900);
-  },[tasks]);
+    /* Flash message for recurring tasks */
+    const task = tasks.find(t=>t.id===id);
+    if(task && !task.completed && task.recurrence) {
+      const r = task.recurrence;
+      const newCount = (r.completedCount||0)+1;
+      if(r.endAfter && newCount >= r.endAfter) {
+        flash("All recurrences completed ✓");
+      } else {
+        flash("Done! Next occurrence scheduled →");
+      }
+    }
+  },[tasks,flash]);
   const deleteTask=useCallback(id=>{addTombstone(id);setTasks(prev=>prev.filter(t=>t.id!==id));if(selectedTask?.id===id)setSelectedTask(null);},[selectedTask,addTombstone]);
 
   const renameList=useCallback((oldN,newN)=>{if(!newN.trim()||newN===oldN||lists.includes(newN))return;setLists(prev=>prev.map(l=>l===oldN?newN:l));setTasks(prev=>prev.map(t=>t.list===oldN?{...t,list:newN}:t));if(view===`list:${oldN}`)setView(`list:${newN}`);},[lists,view]);
