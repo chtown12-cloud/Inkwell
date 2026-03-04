@@ -284,7 +284,7 @@ const useTouchDrag = (onDrop, onDragStateChange, onSidebarShow) => {
       g.textContent = s.srcEl.dataset.dragLabel || "•";
       Object.assign(g.style, {
         position:"fixed", top:rect.top+"px", left:rect.left+"px", zIndex:"9999",
-        padding:"8px 14px", background:"var(--ink)", color:"white", borderRadius:"10px",
+        padding:"8px 14px", background:"#292524", color:"#fafaf9", borderRadius:"10px",
         fontSize:"13px", fontWeight:"600", fontFamily:"sans-serif",
         boxShadow:"0 8px 24px rgba(0,0,0,0.3)", pointerEvents:"none",
         whiteSpace:"nowrap", maxWidth:"200px", overflow:"hidden",
@@ -889,7 +889,7 @@ const useSubtaskTouchDrag = (containerRef, onReorder) => {
         g.textContent = row.dataset.subLabel||"•";
         Object.assign(g.style, {
           position:"fixed",top:rect.top+"px",left:rect.left+"px",zIndex:"9999",
-          padding:"8px 14px",background:"var(--ink)",color:"white",borderRadius:"10px",
+          padding:"8px 14px",background:"#292524",color:"#fafaf9",borderRadius:"10px",
           fontSize:"13px",fontWeight:"600",fontFamily:"sans-serif",
           boxShadow:"0 8px 24px rgba(0,0,0,0.3)",pointerEvents:"none",
           whiteSpace:"nowrap",maxWidth:"200px",overflow:"hidden",
@@ -2915,7 +2915,7 @@ export default function InkwellApp() {
   const [dragListOver,setDragListOver]=useState(null);
   const [showViewCounts,setShowViewCounts]=useState(()=>load("inkwell-showViewCounts",true));
   const [showListCounts,setShowListCounts]=useState(()=>load("inkwell-showListCounts",true));
-  const BUILD_VERSION = "2026.03.03-v1";
+  const BUILD_VERSION = "2026.03.03-v2";
   const [darkMode,setDarkMode]=useState(()=>load("inkwell-darkMode",false));
   const defaultQuickDates=[{label:"Tomorrow",offset:"tomorrow"},{label:"Next Monday",offset:"nextMonday"}];
   const [quickDates,setQuickDates]=useState(()=>load("inkwell-quickDates",defaultQuickDates));
@@ -3560,6 +3560,7 @@ export default function InkwellApp() {
         setTasks(prev => prev.map(t => ({...t, subtasks: deleteSubById(t.subtasks||[], dragId)})));
         flash("Subtask deleted");
       } else {
+        addTombstone(dragId);
         setTasks(prev => prev.filter(t => t.id !== dragId));
         if (selectedTask?.id === dragId) setSelectedTask(null);
         flash("Task deleted");
@@ -4165,7 +4166,7 @@ export default function InkwellApp() {
       </Overlay>)}
       {/* ═══ BULK ACTION BAR ═══ */}
       {selectedIds.size>1&&(
-        <div style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",background:"var(--ink)",color:"white",padding:"10px 16px",borderRadius:14,fontSize:13,fontWeight:600,boxShadow:"0 8px 24px rgba(0,0,0,0.25)",animation:"toastIn 0.3s ease",zIndex:1500,display:"flex",alignItems:"center",gap:10,whiteSpace:"nowrap"}}>
+        <div style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",background:"#292524",color:"#fafaf9",padding:"10px 16px",borderRadius:14,fontSize:13,fontWeight:600,boxShadow:"0 8px 24px rgba(0,0,0,0.25)",animation:"toastIn 0.3s ease",zIndex:1500,display:"flex",alignItems:"center",gap:10,whiteSpace:"nowrap"}}>
           <span style={{opacity:0.7}}>{selectedIds.size} selected</span>
           <div style={{width:1,height:20,background:"rgba(255,255,255,0.2)"}}/>
           <select onChange={e=>{if(e.target.value)bulkMove(e.target.value);e.target.value="";}} defaultValue="" style={{background:"rgba(255,255,255,0.15)",border:"none",color:"white",borderRadius:6,padding:"5px 8px",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
@@ -4182,14 +4183,14 @@ export default function InkwellApp() {
           <button onClick={()=>setSelectedIds(new Set())} style={{background:"none",border:"none",color:"rgba(255,255,255,0.6)",cursor:"pointer",padding:4,display:"flex"}}>{Icons.x}</button>
         </div>
       )}
-      {toast&&<div role="status" aria-live="polite" style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",background:"var(--ink)",color:"white",padding:"12px 24px",borderRadius:12,fontSize:14,fontWeight:600,boxShadow:"0 8px 24px rgba(0,0,0,0.2)",animation:"toastIn 0.3s ease",zIndex:2000,whiteSpace:"nowrap"}}>{toast}</div>}
-      {/* ── Trash drop zone (appears during any drag) ── */}
+      {toast&&<div role="status" aria-live="polite" style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",background:"#292524",color:"#fafaf9",padding:"12px 24px",borderRadius:12,fontSize:14,fontWeight:600,boxShadow:"0 8px 24px rgba(0,0,0,0.2)",animation:"toastIn 0.3s ease",zIndex:2000,whiteSpace:"nowrap"}}>{toast}</div>}
+      {/* Trash drop zone — appears during any drag */}
       {isDragging&&(
         <div data-drop-type="trash"
-          onDragOver={e=>{e.preventDefault();e.dataTransfer.dropEffect="move";e.currentTarget.style.transform="translateX(-50%) scale(1.15)";e.currentTarget.style.background="var(--danger)";e.currentTarget.style.color="white";e.currentTarget.style.borderColor="var(--danger)";}}
-          onDragLeave={e=>{e.currentTarget.style.transform="translateX(-50%) scale(1)";e.currentTarget.style.background="var(--danger-bg)";e.currentTarget.style.color="var(--danger)";e.currentTarget.style.borderColor="var(--danger-border)"}}
+          onDragOver={e=>{e.preventDefault();e.stopPropagation();e.dataTransfer.dropEffect="move";e.currentTarget.style.transform="translateX(-50%) scale(1.06)";e.currentTarget.style.background="var(--danger)";e.currentTarget.style.color="white";e.currentTarget.style.borderColor="var(--danger)";}}
+          onDragLeave={e=>{e.currentTarget.style.transform="translateX(-50%) scale(1)";e.currentTarget.style.background="var(--danger-bg)";e.currentTarget.style.color="var(--danger)";e.currentTarget.style.borderColor="var(--danger-border)";}}
           onDrop={e=>{
-            e.preventDefault();e.currentTarget.style.transform="translateX(-50%) scale(1)";e.currentTarget.style.background="var(--danger-bg)";e.currentTarget.style.color="var(--danger)";
+            e.preventDefault();e.stopPropagation();e.currentTarget.style.transform="translateX(-50%) scale(1)";e.currentTarget.style.background="var(--danger-bg)";e.currentTarget.style.color="var(--danger)";
             const tid=e.dataTransfer.getData("text/plain");const src=e.dataTransfer.getData("application/x-source");
             if(!tid)return;
             if(isSubSource(src)){
@@ -4203,8 +4204,9 @@ export default function InkwellApp() {
             }
             setIsDragging(false);setSelectedIds(new Set());
           }}
-          style={{position:"fixed",bottom:28,left:"50%",width:52,height:52,borderRadius:14,background:"var(--danger-bg)",border:"2px solid var(--danger-border)",display:"flex",alignItems:"center",justifyContent:"center",color:"var(--danger)",zIndex:1400,animation:"trashPulse 2s ease infinite",transition:"background 0.15s, color 0.15s, border-color 0.15s",cursor:"default",boxShadow:"0 4px 16px rgba(239,68,68,0.15)",transform:"translateX(-50%)"}}>
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+          style={{position:"fixed",bottom:20,left:"50%",padding:"12px 28px",borderRadius:14,background:"var(--danger-bg)",border:"2px solid var(--danger-border)",display:"flex",alignItems:"center",justifyContent:"center",gap:8,color:"var(--danger)",zIndex:1400,animation:"trashPulse 2s ease infinite",transition:"background 0.15s, color 0.15s, border-color 0.15s, transform 0.15s",cursor:"default",boxShadow:"0 4px 20px rgba(239,68,68,0.2)",transform:"translateX(-50%)",fontSize:13,fontWeight:600,whiteSpace:"nowrap"}}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+          Drop to delete
         </div>
       )}
     </div>
