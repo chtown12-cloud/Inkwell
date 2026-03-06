@@ -603,6 +603,8 @@ const newSubtask = (title) => ({
 
 /* Recursive subtask helpers */
 const countSubs = (subs) => { if(!subs?.length) return {total:0,done:0}; let t=0,d=0; for(const s of subs){t++;if(s.completed)d++;const c=countSubs(s.subtasks);t+=c.total;d+=c.done;} return{total:t,done:d}; };
+const hasOpenSubs = (subs) => { if(!subs?.length) return false; for(const s of subs){ if(!s.completed) return true; if(hasOpenSubs(s.subtasks)) return true; } return false; };
+const completeAllSubs = (subs) => { if(!subs?.length) return subs; return subs.map(s=>({...s, completed:true, completedAt:s.completed?s.completedAt:new Date().toISOString(), subtasks:completeAllSubs(s.subtasks)})); };
 const updateSubById = (subs, id, changes) => {
   if(!subs) return [];
   return subs.map(s => s.id===id ? {...s,...changes} : {...s, subtasks: updateSubById(s.subtasks, id, changes)});
@@ -1493,7 +1495,7 @@ const ScanResultsModal = ({results,onConfirm,onClose,lists}) => {
 /* ═══════════════════════════════════════════════════════════════════════
    TASK DETAIL PANEL — with subtask navigation (click into any subtask)
    ═══════════════════════════════════════════════════════════════════════ */
-const TaskDetail = ({task, onUpdate, onDelete, onClose, lists}) => {
+const TaskDetail = ({task, onUpdate, onDelete, onClose, onToggle, lists}) => {
   /* Navigation stack: view subtask details, then go back */
   const [subPath, setSubPath] = useState([]);
   const [newSub, setNewSub] = useState("");
@@ -1627,18 +1629,12 @@ const TaskDetail = ({task, onUpdate, onDelete, onClose, lists}) => {
         {/* Title + checkbox */}
         <div style={{display:"flex",alignItems:"flex-start",gap:12,marginBottom:20}}>
           <div style={{paddingTop:4}}><Checkbox checked={current.completed} priority={current.priority||"none"} onChange={c=>{
-            /* Handle recurrence for top-level tasks */
-            if(c && !isSubtask && current.recurrence) {
-              const r = current.recurrence;
-              const newCount = (r.completedCount||0)+1;
-              if(r.endAfter && newCount >= r.endAfter) {
-                updateCurrent({completed:true,completedAt:new Date().toISOString(),recurrence:{...r,completedCount:newCount}});
-              } else {
-                const nextDate = advanceRecurrenceDate(current.dueDate, r.frequency, r.interval||1);
-                updateCurrent({completed:false,completedAt:null,dueDate:nextDate,recurrence:{...r,completedCount:newCount}});
-              }
+            /* Top-level task completion — delegate to onToggle which handles the subtask confirmation modal */
+            if(!isSubtask && c) {
+              onToggle(task.id);
               return;
             }
+            /* Uncompleting top-level or any subtask toggle */
             updateCurrent({completed:c,completedAt:c?new Date().toISOString():null});
           }}/></div>
           <textarea ref={el=>{if(el){el.style.height="auto";el.style.height=el.scrollHeight+"px";}}} value={title} onChange={e=>{setTitle(e.target.value);e.target.style.height="auto";e.target.style.height=e.target.scrollHeight+"px";}} rows={1} onBlur={e=>{if(title.trim())updateCurrent({title:title.trim()});e.target.style.borderColor="transparent";e.target.style.background="none";}} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();e.target.blur();}}}
@@ -2889,6 +2885,7 @@ export default function InkwellApp() {
   const localDataVersion=useRef(null); /* ISO timestamp of last user-initiated data change */
   const [sidebar,setSidebar]=useState(true);
   const [toast,setToast]=useState(null);
+  const [pendingCompleteId,setPendingCompleteId]=useState(null); /* task id awaiting subtask-complete confirmation */
   const flash=msg=>{setToast(msg);setTimeout(()=>setToast(null),3000);};
   const [isMobile,setIsMobile]=useState(false);
   const [dragTask,setDragTask]=useState(null);
@@ -2921,7 +2918,10 @@ export default function InkwellApp() {
   const [dragListOver,setDragListOver]=useState(null);
   const [showViewCounts,setShowViewCounts]=useState(()=>load("inkwell-showViewCounts",true));
   const [showListCounts,setShowListCounts]=useState(()=>load("inkwell-showListCounts",true));
-  const BUILD_VERSION = "2026.03.03-v3";
+  const [confirmSubtaskComplete,setConfirmSubtaskComplete]=useState(()=>load("inkwell-confirmSubtaskComplete",true));
+  const confirmSubRef=useRef(confirmSubtaskComplete);
+  useEffect(()=>{confirmSubRef.current=confirmSubtaskComplete;},[confirmSubtaskComplete]);
+  const BUILD_VERSION = "2026.03.03-v4";
   const [darkMode,setDarkMode]=useState(()=>load("inkwell-darkMode",false));
   const defaultQuickDates=[{label:"Tomorrow",offset:"tomorrow"},{label:"Next Monday",offset:"nextMonday"}];
   const [quickDates,setQuickDates]=useState(()=>load("inkwell-quickDates",defaultQuickDates));
@@ -2968,6 +2968,7 @@ export default function InkwellApp() {
   }, []);
   useEffect(()=>{save("inkwell-showViewCounts",showViewCounts);},[showViewCounts]);
   useEffect(()=>{save("inkwell-showListCounts",showListCounts);},[showListCounts]);
+  useEffect(()=>{save("inkwell-confirmSubtaskComplete",confirmSubtaskComplete);},[confirmSubtaskComplete]);
   useEffect(()=>{save("inkwell-darkMode",darkMode);},[darkMode]);
   useEffect(()=>{save("inkwell-quickDates",quickDates);},[quickDates]);
   useEffect(()=>{save("inkwell-todayMode",todayMode);},[todayMode]);
@@ -2989,6 +2990,7 @@ export default function InkwellApp() {
     if (cloudData.settings) {
       if (cloudData.settings.showViewCounts !== undefined) setShowViewCounts(cloudData.settings.showViewCounts);
       if (cloudData.settings.showListCounts !== undefined) setShowListCounts(cloudData.settings.showListCounts);
+      if (cloudData.settings.confirmSubtaskComplete !== undefined) setConfirmSubtaskComplete(cloudData.settings.confirmSubtaskComplete);
       if (cloudData.settings.darkMode !== undefined) setDarkMode(cloudData.settings.darkMode);
       if (cloudData.settings.quickDates !== undefined) setQuickDates(cloudData.settings.quickDates);
       if (cloudData.settings.kanbanColumns !== undefined) {
@@ -3057,6 +3059,7 @@ export default function InkwellApp() {
             if (cloudData.settings) {
               if (cloudData.settings.showViewCounts !== undefined) setShowViewCounts(cloudData.settings.showViewCounts);
               if (cloudData.settings.showListCounts !== undefined) setShowListCounts(cloudData.settings.showListCounts);
+      if (cloudData.settings.confirmSubtaskComplete !== undefined) setConfirmSubtaskComplete(cloudData.settings.confirmSubtaskComplete);
               if (cloudData.settings.darkMode !== undefined) setDarkMode(cloudData.settings.darkMode);
               if (cloudData.settings.quickDates !== undefined) setQuickDates(cloudData.settings.quickDates);
               if (cloudData.settings.kanbanColumns !== undefined) {
@@ -3083,6 +3086,7 @@ export default function InkwellApp() {
             const localSettings = {
               showViewCounts: load("inkwell-showViewCounts", true),
               showListCounts: load("inkwell-showListCounts", true),
+              confirmSubtaskComplete: load("inkwell-confirmSubtaskComplete", true),
               darkMode: load("inkwell-darkMode", false),
               quickDates: load("inkwell-quickDates", defaultQuickDates),
               kanbanColumns: null,
@@ -3250,10 +3254,10 @@ export default function InkwellApp() {
 
   /* ── Refs for latest values (prevent stale closures in save effects) ── */
   const tasksRef=useRef(tasks);const listsRef=useRef(lists);
-  const settingsRef=useRef({showViewCounts,showListCounts,darkMode,quickDates,kanbanColumns});
+  const settingsRef=useRef({showViewCounts,showListCounts,confirmSubtaskComplete,darkMode,quickDates,kanbanColumns});
   useEffect(()=>{tasksRef.current=tasks;},[tasks]);
   useEffect(()=>{listsRef.current=lists;},[lists]);
-  useEffect(()=>{settingsRef.current={showViewCounts,showListCounts,darkMode,quickDates,kanbanColumns};},[showViewCounts,showListCounts,darkMode,quickDates,kanbanColumns]);
+  useEffect(()=>{settingsRef.current={showViewCounts,showListCounts,confirmSubtaskComplete,darkMode,quickDates,kanbanColumns};},[showViewCounts,showListCounts,confirmSubtaskComplete,darkMode,quickDates,kanbanColumns]);
 
   /* ── Save on every USER edit ── */
   useEffect(()=>{
@@ -3294,10 +3298,10 @@ export default function InkwellApp() {
   useEffect(()=>{
     if(!ready) return;
     if(cloudSyncReady.current && navigator.onLine) {
-      const settings = { ...({showViewCounts,showListCounts,darkMode,quickDates,kanbanColumns}), _tombstones: tombstonesRef.current };
+      const settings = { ...({showViewCounts,showListCounts,confirmSubtaskComplete,darkMode,quickDates,kanbanColumns}), _tombstones: tombstonesRef.current };
       saveToCloud(tasksRef.current,listsRef.current,settings);
     }
-  },[showViewCounts,showListCounts,darkMode,quickDates,kanbanColumns]);
+  },[showViewCounts,showListCounts,confirmSubtaskComplete,darkMode,quickDates,kanbanColumns]);
 
   /* ── Flush to cloud on tab hide AND page unload ── */
   useEffect(()=>{
@@ -3367,13 +3371,14 @@ export default function InkwellApp() {
   const bulkPriority=(p)=>{setTasks(prev=>prev.map(t=>selectedIds.has(t.id)?{...t,priority:p}:t));flash(`Set ${selectedIds.size} tasks to ${PRIORITY[p].label}`);setSelectedIds(new Set());};
   const bulkComplete=()=>{setTasks(prev=>prev.map(t=>{
     if(!selectedIds.has(t.id))return t;
+    const subs=completeAllSubs(t.subtasks);
     if(t.recurrence){
       const r=t.recurrence;const newCount=(r.completedCount||0)+1;
-      if(r.endAfter&&newCount>=r.endAfter)return{...t,completed:true,completedAt:new Date().toISOString(),recurrence:{...r,completedCount:newCount}};
+      if(r.endAfter&&newCount>=r.endAfter)return{...t,completed:true,completedAt:new Date().toISOString(),subtasks:subs,recurrence:{...r,completedCount:newCount}};
       const nextDate=advanceRecurrenceDate(t.dueDate,r.frequency,r.interval||1);
-      return{...t,completed:false,completedAt:null,dueDate:nextDate,recurrence:{...r,completedCount:newCount}};
+      return{...t,completed:false,completedAt:null,dueDate:nextDate,subtasks:subs,recurrence:{...r,completedCount:newCount}};
     }
-    return{...t,completed:true,completedAt:new Date().toISOString()};
+    return{...t,completed:true,completedAt:new Date().toISOString(),subtasks:subs};
   }));flash(`Completed ${selectedIds.size} tasks`);setSelectedIds(new Set());};
 
 
@@ -3387,54 +3392,77 @@ export default function InkwellApp() {
 
   const updateTask=useCallback(updated=>{setTasks(prev=>prev.map(t=>t.id===updated.id?updated:t));},[]);
   const [animatingTasks,setAnimatingTasks]=useState({}); /* {taskId: "complete"|"uncomplete"} */
-  const toggleTask=useCallback(id=>{
+
+  /* Helper: actually complete a task (and optionally all its subtasks) */
+  const doCompleteTask = useCallback((id, withSubs) => {
     setTasks(prev=>prev.map(t=>{
       if(t.id!==id) return t;
-      const nowComplete = !t.completed;
 
-      /* ── Recurring task logic ── */
-      if(nowComplete && t.recurrence) {
+      /* Recurring task logic */
+      if(t.recurrence) {
         const r = t.recurrence;
         const newCount = (r.completedCount || 0) + 1;
-
-        /* Check if this is the FINAL recurrence */
+        const subs = withSubs ? completeAllSubs(t.subtasks) : t.subtasks;
         if(r.endAfter && newCount >= r.endAfter) {
-          /* All recurrences done — mark fully completed */
-          return {...t, completed:true, completedAt:new Date().toISOString(),
-            recurrence:{...r, completedCount:newCount}};
+          return {...t, completed:true, completedAt:new Date().toISOString(), subtasks:subs, recurrence:{...r, completedCount:newCount}};
         }
-
-        /* More recurrences remain — advance the due date and reset */
         const nextDate = advanceRecurrenceDate(t.dueDate, r.frequency, r.interval || 1);
-        return {...t, completed:false, completedAt:null, dueDate:nextDate,
-          recurrence:{...r, completedCount:newCount}};
+        return {...t, completed:false, completedAt:null, dueDate:nextDate, subtasks:subs, recurrence:{...r, completedCount:newCount}};
       }
 
-      /* Normal (non-recurring) task */
-      return {...t,completed:nowComplete,completedAt:nowComplete?new Date().toISOString():null};
+      /* Normal task */
+      return {...t, completed:true, completedAt:new Date().toISOString(), subtasks:withSubs ? completeAllSubs(t.subtasks) : t.subtasks};
     }));
-    /* Trigger animation */
-    setAnimatingTasks(prev=>{
-      const task = tasks.find(t=>t.id===id);
-      if(task?.recurrence && !task?.completed) {
-        /* Recurring: always show "complete" animation (brief check then reset) */
-        return {...prev, [id]: "complete"};
-      }
-      return {...prev, [id]: task?.completed ? "uncomplete" : "complete"};
-    });
+    /* Animation */
+    setAnimatingTasks(prev=>({...prev, [id]: "complete"}));
     setTimeout(()=>setAnimatingTasks(prev=>{const n={...prev};delete n[id];return n;}), 900);
-    /* Flash message for recurring tasks */
+    /* Flash for recurring */
     const task = tasks.find(t=>t.id===id);
-    if(task && !task.completed && task.recurrence) {
+    if(task?.recurrence) {
       const r = task.recurrence;
       const newCount = (r.completedCount||0)+1;
-      if(r.endAfter && newCount >= r.endAfter) {
-        flash("All recurrences completed ✓");
-      } else {
-        flash("Done! Next occurrence scheduled →");
-      }
+      flash(r.endAfter && newCount >= r.endAfter ? "All recurrences completed ✓" : "Done! Next occurrence scheduled →");
     }
   },[tasks,flash]);
+
+  const toggleTask=useCallback(id=>{
+    const task = tasks.find(t=>t.id===id);
+    if(!task) return;
+
+    const nowComplete = !task.completed;
+
+    /* ── Uncompleting — always straightforward ── */
+    if(!nowComplete) {
+      setTasks(prev=>prev.map(t=>t.id!==id?t:{...t,completed:false,completedAt:null}));
+      setAnimatingTasks(prev=>({...prev, [id]: "uncomplete"}));
+      setTimeout(()=>setAnimatingTasks(prev=>{const n={...prev};delete n[id];return n;}), 900);
+      return;
+    }
+
+    /* ── Completing — check for open subtasks ── */
+    if(hasOpenSubs(task.subtasks)) {
+      if(confirmSubRef.current) {
+        /* Show confirmation modal */
+        setPendingCompleteId(id);
+        return;
+      }
+      /* Auto-complete all subtasks */
+      doCompleteTask(id, true);
+      return;
+    }
+
+    /* No open subtasks — complete normally */
+    doCompleteTask(id, false);
+  },[tasks,doCompleteTask]);
+
+  /* Modal handlers */
+  const confirmPendingComplete = useCallback(()=>{
+    if(pendingCompleteId) doCompleteTask(pendingCompleteId, true);
+    setPendingCompleteId(null);
+  },[pendingCompleteId,doCompleteTask]);
+  const cancelPendingComplete = useCallback(()=>{
+    setPendingCompleteId(null);
+  },[]);
   const deleteTask=useCallback(id=>{addTombstone(id);setTasks(prev=>prev.filter(t=>t.id!==id));if(selectedTask?.id===id)setSelectedTask(null);},[selectedTask,addTombstone]);
 
   const renameList=useCallback((oldN,newN)=>{if(!newN.trim()||newN===oldN||lists.includes(newN))return;setLists(prev=>prev.map(l=>l===oldN?newN:l));setTasks(prev=>prev.map(t=>t.list===oldN?{...t,list:newN}:t));if(view===`list:${oldN}`)setView(`list:${newN}`);},[lists,view]);
@@ -4081,9 +4109,9 @@ export default function InkwellApp() {
               )}
             </>)}
           </div>
-          {selectedTask&&!isMobile&&<TaskDetail task={selectedTask} onUpdate={updateTask} onDelete={deleteTask} onClose={()=>setSelectedTask(null)} lists={lists}/>}
+          {selectedTask&&!isMobile&&<TaskDetail task={selectedTask} onUpdate={updateTask} onDelete={deleteTask} onClose={()=>setSelectedTask(null)} onToggle={toggleTask} lists={lists}/>}
         </div>
-        {selectedTask&&isMobile&&(<div style={{position:"fixed",inset:0,background:"var(--overlay)",zIndex:100,display:"flex",justifyContent:"flex-end"}} onClick={()=>setSelectedTask(null)}><div onClick={e=>e.stopPropagation()} style={{width:"100%"}}><TaskDetail task={selectedTask} onUpdate={updateTask} onDelete={deleteTask} onClose={()=>setSelectedTask(null)} lists={lists}/></div></div>)}
+        {selectedTask&&isMobile&&(<div style={{position:"fixed",inset:0,background:"var(--overlay)",zIndex:100,display:"flex",justifyContent:"flex-end"}} onClick={()=>setSelectedTask(null)}><div onClick={e=>e.stopPropagation()} style={{width:"100%"}}><TaskDetail task={selectedTask} onUpdate={updateTask} onDelete={deleteTask} onClose={()=>setSelectedTask(null)} onToggle={toggleTask} lists={lists}/></div></div>)}
       </main>
 
       {showPhoto&&<PhotoModal onClose={()=>{setShowPhoto(false);setScanError(null);}} onProcess={handleScan} processing={processing} error={scanError}/>}
@@ -4099,6 +4127,10 @@ export default function InkwellApp() {
         <div style={{marginBottom:24}}>
           <div style={{fontSize:11,fontWeight:700,color:"var(--muted)",textTransform:"uppercase",letterSpacing:1,marginBottom:12}}>Appearance</div>
           <ToggleRow label="Dark Mode" sublabel="Switch to a dark colour scheme" checked={darkMode} onChange={setDarkMode}/>
+        </div>
+        <div style={{marginBottom:24}}>
+          <div style={{fontSize:11,fontWeight:700,color:"var(--muted)",textTransform:"uppercase",letterSpacing:1,marginBottom:12}}>Behavior</div>
+          <ToggleRow label="Confirm subtask completion" sublabel="Ask before completing a task with open subtasks. When off, subtasks are completed automatically." checked={confirmSubtaskComplete} onChange={setConfirmSubtaskComplete}/>
         </div>
         <div style={{marginBottom:24}}>
           <div style={{fontSize:11,fontWeight:700,color:"var(--muted)",textTransform:"uppercase",letterSpacing:1,marginBottom:12}}>Sidebar Display</div>
@@ -4189,6 +4221,34 @@ export default function InkwellApp() {
           <button onClick={()=>setSelectedIds(new Set())} style={{background:"none",border:"none",color:"rgba(255,255,255,0.6)",cursor:"pointer",padding:4,display:"flex"}}>{Icons.x}</button>
         </div>
       )}
+      {/* Subtask completion confirmation modal */}
+      {pendingCompleteId&&(()=>{
+        const pt=tasks.find(t=>t.id===pendingCompleteId);
+        if(!pt)return null;
+        const {total,done}=countSubs(pt.subtasks);
+        const open=total-done;
+        return (
+          <div style={{position:"fixed",inset:0,background:"var(--overlay)",zIndex:2500,display:"flex",alignItems:"center",justifyContent:"center",padding:16,animation:"fadeIn 0.15s ease"}}
+            onClick={cancelPendingComplete}>
+            <div onClick={e=>e.stopPropagation()} style={{background:"var(--card)",borderRadius:16,padding:"24px 28px",maxWidth:380,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,0.3)",animation:"toastIn 0.2s ease"}}>
+              <div style={{fontSize:16,fontWeight:700,color:"var(--ink)",marginBottom:8,fontFamily:"var(--font-display)"}}>Complete all subtasks?</div>
+              <div style={{fontSize:14,color:"var(--text)",lineHeight:1.5,marginBottom:20}}>
+                <b>{pt.title}</b> has {open} open subtask{open!==1?"s":""}. Completing this task will mark {open===1?"it":"all of them"} as done too.
+              </div>
+              <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+                <button onClick={cancelPendingComplete}
+                  style={{padding:"9px 18px",borderRadius:10,border:"1px solid var(--border)",background:"var(--surface)",color:"var(--text)",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit",transition:"background 0.15s"}}>
+                  Cancel
+                </button>
+                <button onClick={confirmPendingComplete}
+                  style={{padding:"9px 18px",borderRadius:10,border:"none",background:"var(--accent)",color:"white",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit",transition:"background 0.15s"}}>
+                  Complete all
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
       {toast&&<div role="status" aria-live="polite" style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",background:"#292524",color:"#fafaf9",padding:"12px 24px",borderRadius:12,fontSize:14,fontWeight:600,boxShadow:"0 8px 24px rgba(0,0,0,0.2)",animation:"toastIn 0.3s ease",zIndex:2000,whiteSpace:"nowrap"}}>{toast}</div>}
       {/* Trash drop zone — appears during any drag */}
       {isDragging&&(
