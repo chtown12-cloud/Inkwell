@@ -1764,8 +1764,9 @@ const TaskDetail = ({task, onUpdate, onDelete, onClose, lists}) => {
               </span>
             ))}
           </div>
-          <input value={newTag} onChange={e=>setNewTag(e.target.value)} placeholder="Add tag, press Enter..."
-            onKeyDown={e=>{if(e.key==="Enter"&&newTag.trim()){const tag=newTag.trim().replace(/^#/,"");if(!(current.tags||[]).includes(tag))updateCurrent({tags:[...(current.tags||[]),tag]});setNewTag("");}}}
+          <input value={newTag} onChange={e=>setNewTag(e.target.value)} placeholder="Add tag…"
+            enterKeyHint="done"
+            onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();if(newTag.trim()){const tag=newTag.trim().replace(/^#/,"");if(!(current.tags||[]).includes(tag))updateCurrent({tags:[...(current.tags||[]),tag]});setNewTag("");}}}}
             style={{...fieldInput,fontSize:13}}/>
         </Field>
 
@@ -1779,9 +1780,14 @@ const TaskDetail = ({task, onUpdate, onDelete, onClose, lists}) => {
                 onOpenSub={drillIn}/>
             )}
           </div>
-          <input value={newSub} onChange={e=>setNewSub(e.target.value)} placeholder="Add subtask, press Enter..."
-            onKeyDown={e=>{if(e.key==="Enter"&&newSub.trim()){updateCurrent({subtasks:[...(current.subtasks||[]),newSubtask(newSub.trim())]});setNewSub("");}}}
-            style={{...fieldInput,fontSize:13}}/>
+          <div style={{display:"flex",gap:6}}>
+            <input value={newSub} onChange={e=>setNewSub(e.target.value)} placeholder="Add subtask…"
+              enterKeyHint="done"
+              onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();if(newSub.trim()){updateCurrent({subtasks:[...(current.subtasks||[]),newSubtask(newSub.trim())]});setNewSub("");}}}}
+              style={{...fieldInput,fontSize:13,flex:1}}/>
+            {newSub.trim()&&<button onClick={()=>{updateCurrent({subtasks:[...(current.subtasks||[]),newSubtask(newSub.trim())]});setNewSub("");}}
+              style={{padding:"0 12px",borderRadius:10,border:"1px solid var(--accent)",background:"var(--accent-bg)",color:"var(--accent)",fontSize:18,fontWeight:700,cursor:"pointer",flexShrink:0,lineHeight:1,fontFamily:"inherit"}}>+</button>}
+          </div>
         </Field>
 
         {/* Notes */}
@@ -2915,7 +2921,7 @@ export default function InkwellApp() {
   const [dragListOver,setDragListOver]=useState(null);
   const [showViewCounts,setShowViewCounts]=useState(()=>load("inkwell-showViewCounts",true));
   const [showListCounts,setShowListCounts]=useState(()=>load("inkwell-showListCounts",true));
-  const BUILD_VERSION = "2026.03.03-v2";
+  const BUILD_VERSION = "2026.03.03-v3";
   const [darkMode,setDarkMode]=useState(()=>load("inkwell-darkMode",false));
   const defaultQuickDates=[{label:"Tomorrow",offset:"tomorrow"},{label:"Next Monday",offset:"nextMonday"}];
   const [quickDates,setQuickDates]=useState(()=>load("inkwell-quickDates",defaultQuickDates));
