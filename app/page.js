@@ -2828,6 +2828,123 @@ const LoginScreen = ({ onSignIn, onSignInPassword, error }) => {
   );
 };
 
+/* ═══════════════════════════════════════════════════════════════════════
+   THEME TRANSITION OVERLAY — snow or heat wave canvas animation
+   ═══════════════════════════════════════════════════════════════════════ */
+const ThemeTransition = ({type, onDone}) => {
+  const canvasRef = useRef(null);
+  const onDoneRef = useRef(onDone);
+  onDoneRef.current = onDone;
+  useEffect(()=>{
+    const canvas = canvasRef.current;
+    if(!canvas) return;
+    const ctx = canvas.getContext("2d");
+    const W = canvas.width = window.innerWidth;
+    const H = canvas.height = window.innerHeight;
+    let raf;
+    const start = Date.now();
+    const DURATION = 3500;
+
+    if(type === "snow") {
+      /* ── Snowfall ── */
+      const flakes = Array.from({length:80}, ()=>({
+        x: Math.random()*W,
+        y: Math.random()*-H,
+        r: 1.5 + Math.random()*4,
+        speed: 0.6 + Math.random()*1.8,
+        drift: (Math.random()-0.5)*0.8,
+        wobbleAmp: 10 + Math.random()*30,
+        wobbleSpeed: 0.5 + Math.random()*1.5,
+        opacity: 0.3 + Math.random()*0.7,
+      }));
+      const draw = () => {
+        const elapsed = Date.now()-start;
+        const progress = Math.min(elapsed/DURATION, 1);
+        /* Fade in first 0.3s, fade out last 0.8s */
+        const globalAlpha = progress < 0.08 ? progress/0.08 : progress > 0.75 ? (1-progress)/0.25 : 1;
+        ctx.clearRect(0,0,W,H);
+        for(const f of flakes) {
+          f.y += f.speed * 1.2;
+          f.x += f.drift + Math.sin(elapsed*0.001*f.wobbleSpeed)*0.3;
+          if(f.y > H+10) { f.y = -10; f.x = Math.random()*W; }
+          ctx.beginPath();
+          ctx.arc(f.x + Math.sin(elapsed*0.001*f.wobbleSpeed)*f.wobbleAmp*0.3, f.y, f.r, 0, Math.PI*2);
+          ctx.fillStyle = `rgba(255,255,255,${f.opacity * globalAlpha})`;
+          ctx.fill();
+          /* Subtle sparkle on larger flakes */
+          if(f.r > 3) {
+            ctx.beginPath();
+            ctx.arc(f.x + Math.sin(elapsed*0.001*f.wobbleSpeed)*f.wobbleAmp*0.3, f.y, f.r*0.4, 0, Math.PI*2);
+            ctx.fillStyle = `rgba(147,197,253,${0.5 * globalAlpha * Math.abs(Math.sin(elapsed*0.003+f.x))})`;
+            ctx.fill();
+          }
+        }
+        if(progress < 1) raf = requestAnimationFrame(draw);
+        else if(onDoneRef.current) onDoneRef.current();
+      };
+      draw();
+    } else {
+      /* ── Heat wave ── */
+      const waves = Array.from({length:24}, (_,i)=>({
+        y: H + Math.random()*50,
+        baseY: H * (0.3 + Math.random()*0.7),
+        amplitude: 4 + Math.random()*8,
+        frequency: 0.005 + Math.random()*0.008,
+        speed: 1.2 + Math.random()*2.5,
+        phase: Math.random()*Math.PI*2,
+        width: 1 + Math.random()*2.5,
+        opacity: 0.08 + Math.random()*0.15,
+        hue: 20 + Math.random()*30, /* amber-orange range */
+      }));
+      /* Rising shimmer particles */
+      const particles = Array.from({length:50}, ()=>({
+        x: Math.random()*W,
+        y: H + Math.random()*100,
+        speed: 0.5 + Math.random()*2,
+        size: 1 + Math.random()*3,
+        opacity: 0.15 + Math.random()*0.35,
+        drift: (Math.random()-0.5)*0.6,
+      }));
+      const draw = () => {
+        const elapsed = Date.now()-start;
+        const progress = Math.min(elapsed/DURATION, 1);
+        const globalAlpha = progress < 0.08 ? progress/0.08 : progress > 0.75 ? (1-progress)/0.25 : 1;
+        ctx.clearRect(0,0,W,H);
+        /* Wavy heat distortion lines */
+        for(const w of waves) {
+          w.y -= w.speed * 0.4;
+          if(w.y < -20) { w.y = H + 20; w.phase = Math.random()*Math.PI*2; }
+          ctx.beginPath();
+          ctx.lineWidth = w.width;
+          ctx.strokeStyle = `hsla(${w.hue},85%,55%,${w.opacity * globalAlpha})`;
+          for(let x=0; x<W; x+=3) {
+            const dy = Math.sin(x*w.frequency + elapsed*0.002 + w.phase)*w.amplitude;
+            if(x===0) ctx.moveTo(x, w.y+dy);
+            else ctx.lineTo(x, w.y+dy);
+          }
+          ctx.stroke();
+        }
+        /* Rising ember particles */
+        for(const p of particles) {
+          p.y -= p.speed;
+          p.x += p.drift + Math.sin(elapsed*0.002+p.x*0.01)*0.3;
+          if(p.y < -10) { p.y = H+10; p.x = Math.random()*W; }
+          const flicker = 0.5 + 0.5*Math.sin(elapsed*0.005+p.x);
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.size, 0, Math.PI*2);
+          ctx.fillStyle = `rgba(251,191,36,${p.opacity * globalAlpha * flicker})`;
+          ctx.fill();
+        }
+        if(progress < 1) raf = requestAnimationFrame(draw);
+        else if(onDoneRef.current) onDoneRef.current();
+      };
+      draw();
+    }
+    return ()=>cancelAnimationFrame(raf);
+  },[type]);
+  return <canvas ref={canvasRef} style={{position:"fixed",inset:0,zIndex:3000,pointerEvents:"none"}} />;
+};
+
 export default function InkwellApp() {
   const { user, authLoading, authError, signInWithEmail, signInWithPassword, signOut, loadFromCloud, saveToCloud, saveToCloudNow, flushToCloudKeepalive, hasSupabase } = useSupabaseSync();
   const [tasks,_setTasks]=useState([]);
@@ -2921,10 +3038,11 @@ export default function InkwellApp() {
   const [confirmSubtaskComplete,setConfirmSubtaskComplete]=useState(()=>load("inkwell-confirmSubtaskComplete",true));
   const confirmSubRef=useRef(confirmSubtaskComplete);
   useEffect(()=>{confirmSubRef.current=confirmSubtaskComplete;},[confirmSubtaskComplete]);
-  const BUILD_VERSION = "2026.03.03-v5";
+  const BUILD_VERSION = "2026.03.03-v6";
   const [darkMode,setDarkMode]=useState(()=>load("inkwell-darkMode",false));
   const [frostMode,setFrostMode]=useState(()=>load("inkwell-frostMode",false));
   useEffect(()=>{save("inkwell-frostMode",frostMode);},[frostMode]);
+  const [themeTransition,setThemeTransition]=useState(null); /* "snow" | "heat" | null */
   const defaultQuickDates=[{label:"Tomorrow",offset:"tomorrow"},{label:"Next Monday",offset:"nextMonday"}];
   const [quickDates,setQuickDates]=useState(()=>load("inkwell-quickDates",defaultQuickDates));
   const [todayMode,setTodayMode]=useState(()=>load("inkwell-todayMode","kanban")); /* "kanban" | "list" */
@@ -3861,7 +3979,7 @@ export default function InkwellApp() {
       <nav className="sidebar" aria-label="Navigation" style={{width:sidebar?264:0,...(isMobile?{position:"fixed",zIndex:100,height:"100dvh"}:{}),background:"var(--surface)",borderRight:"1px solid var(--border)",display:"flex",flexDirection:"column",transition:"width 0.25s ease",overflow:"hidden",flexShrink:0}}>
         <div style={{padding:"20px 16px 12px",flexShrink:0}}>
           <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20}}>
-            <div onClick={()=>setFrostMode(f=>!f)} className="logo-egg" style={{width:34,height:34,borderRadius:10,background:frostMode?"linear-gradient(135deg,#3b82f6,#38bdf8)":"linear-gradient(135deg,#d97706,#ea580c)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:17,fontWeight:800,color:"white",fontFamily:"var(--font-display)",cursor:"pointer",position:"relative",transition:"background 0.5s, box-shadow 0.3s",boxShadow:frostMode?"0 2px 12px rgba(59,130,246,0.3)":"none",overflow:"hidden"}}>I</div>
+            <div onClick={()=>{if(!themeTransition){setThemeTransition(frostMode?"heat":"snow");setFrostMode(f=>!f);setTimeout(()=>setThemeTransition(null),4000);}}} className="logo-egg" style={{width:34,height:34,borderRadius:10,background:frostMode?"linear-gradient(135deg,#3b82f6,#38bdf8)":"linear-gradient(135deg,#d97706,#ea580c)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:17,fontWeight:800,color:"white",fontFamily:"var(--font-display)",cursor:"pointer",position:"relative",transition:"background 0.5s, box-shadow 0.3s",boxShadow:frostMode?"0 2px 12px rgba(59,130,246,0.3)":"none",overflow:"hidden"}}>I</div>
             <span style={{fontSize:20,fontWeight:700,fontFamily:"var(--font-display)",color:"var(--ink)",whiteSpace:"nowrap"}}>Inkwell</span>
           </div>
           <button onClick={()=>{setShowPhoto(true);if(isMobile)setSidebar(false);}} style={{width:"100%",padding:"11px 14px",borderRadius:12,border:"2px dashed var(--border)",background:"var(--accent-bg)",color:"var(--accent)",fontSize:13,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:10,transition:"all 0.2s",marginBottom:16,whiteSpace:"nowrap",fontFamily:"inherit"}}>{Icons.camera} Scan Notebook Page</button>
@@ -4238,6 +4356,8 @@ export default function InkwellApp() {
           <button onClick={()=>setSelectedIds(new Set())} style={{background:"none",border:"none",color:"rgba(255,255,255,0.6)",cursor:"pointer",padding:4,display:"flex"}}>{Icons.x}</button>
         </div>
       )}
+      {/* Theme transition animation overlay */}
+      {themeTransition&&<ThemeTransition type={themeTransition} onDone={()=>setThemeTransition(null)}/>}
       {/* Subtask completion confirmation modal */}
       {pendingCompleteId&&(()=>{
         const pt=tasks.find(t=>t.id===pendingCompleteId);
