@@ -1,4 +1,4 @@
-const CACHE_NAME = 'inkwell-v12';
+const CACHE_NAME = 'inkwell-v13';
 const STATIC_ASSETS = [
   '/manifest.json',
   '/icon-192.png',

@@ -735,7 +735,7 @@ const Overlay = ({onClose,children,wide}) => (
   </div>
 );
 const Btn = ({children,variant="primary",...p}) => (
-  <button {...p} style={{flex:1,padding:"12px 16px",borderRadius:12,border:variant==="secondary"?"1px solid var(--border)":"none",background:variant==="secondary"?"var(--card)":"linear-gradient(135deg,#d97706,#ea580c)",color:variant==="secondary"?"var(--text)":"white",fontSize:14,fontWeight:600,cursor:p.disabled?"wait":"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8,fontFamily:"inherit",opacity:p.disabled?0.6:1,...(p.style||{})}}>{children}</button>
+  <button {...p} style={{flex:1,padding:"12px 16px",borderRadius:12,border:variant==="secondary"?"1px solid var(--border)":"none",background:variant==="secondary"?"var(--card)":"linear-gradient(135deg,var(--accent),var(--accent2))",color:variant==="secondary"?"var(--text)":"white",fontSize:14,fontWeight:600,cursor:p.disabled?"wait":"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8,fontFamily:"inherit",opacity:p.disabled?0.6:1,...(p.style||{})}}>{children}</button>
 );
 const IconBtn = ({children,...p}) => (<button {...p} style={{background:"none",border:"none",cursor:"pointer",color:"var(--muted)",padding:6,borderRadius:6,display:"flex",...(p.style||{})}}>{children}</button>);
 const Spinner = () => <div style={{width:16,height:16,border:"2px solid rgba(255,255,255,0.3)",borderTopColor:"white",borderRadius:"50%",animation:"spin 0.8s linear infinite"}}/>;
@@ -1123,7 +1123,7 @@ const PhotoModal = ({onClose,onProcess,processing,error}) => {
   return (
     <Overlay onClose={onClose}>
       <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20}}>
-        <div style={{width:40,height:40,borderRadius:12,background:"linear-gradient(135deg,#d97706,#ea580c)",display:"flex",alignItems:"center",justifyContent:"center",color:"white"}}>{Icons.camera}</div>
+        <div style={{width:40,height:40,borderRadius:12,background:"linear-gradient(135deg,var(--accent),var(--accent2))",display:"flex",alignItems:"center",justifyContent:"center",color:"white"}}>{Icons.camera}</div>
         <div><h2 style={{margin:0,fontSize:19,fontFamily:"var(--font-display)",color:"var(--ink)"}}>Scan Notebook Page</h2><p style={{margin:0,fontSize:13,color:"var(--muted)"}}>AI extracts and syncs your handwritten to-dos</p></div>
       </div>
       {!preview?(
@@ -1825,7 +1825,7 @@ const HelpGuideModal = ({onClose, initialSection}) => {
   return (
     <Overlay onClose={onClose}>
       <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:4}}>
-        <div style={{width:34,height:34,borderRadius:10,background:"linear-gradient(135deg,#d97706,#ea580c)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:17,fontWeight:800,color:"white",fontFamily:"var(--font-display)"}}>I</div>
+        <div style={{width:34,height:34,borderRadius:10,background:"linear-gradient(135deg,var(--accent),var(--accent2))",display:"flex",alignItems:"center",justifyContent:"center",fontSize:17,fontWeight:800,color:"white",fontFamily:"var(--font-display)"}}>I</div>
         <div>
           <h2 style={{margin:0,fontSize:19,fontFamily:"var(--font-display)"}}>Inkwell Guide</h2>
           <p style={{margin:0,fontSize:12,color:"var(--muted)"}}>Everything you can do with Inkwell</p>
@@ -2770,7 +2770,7 @@ const LoginScreen = ({ onSignIn, onSignInPassword, error }) => {
       </style>
       <div style={{maxWidth:380,width:"100%",textAlign:"center"}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:12,marginBottom:32}}>
-          <div style={{width:40,height:40,background:"linear-gradient(135deg,#d97706,#ea580c)",borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontFamily:"var(--font-display)",fontSize:20}}>I</div>
+          <div style={{width:40,height:40,background:"linear-gradient(135deg,var(--accent),var(--accent2))",borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontFamily:"var(--font-display)",fontSize:20}}>I</div>
           <h1 style={{fontFamily:"var(--font-display)",fontSize:32,fontWeight:700,color:"var(--ink)"}}>Inkwell</h1>
         </div>
         <p style={{color:"var(--muted)",fontSize:15,marginBottom:32}}>Sign in to sync your tasks across devices</p>
@@ -2798,12 +2798,12 @@ const LoginScreen = ({ onSignIn, onSignInPassword, error }) => {
 
             {mode === "magic" ? (
               <button onClick={handleMagicLink} disabled={loading}
-                style={{width:"100%",padding:"12px",borderRadius:10,border:"none",background:loading?"var(--muted)":"linear-gradient(135deg,#d97706,#ea580c)",color:"white",fontSize:15,fontWeight:600,cursor:loading?"wait":"pointer",fontFamily:"inherit",marginBottom:12}}>
+                style={{width:"100%",padding:"12px",borderRadius:10,border:"none",background:loading?"var(--muted)":"linear-gradient(135deg,var(--accent),var(--accent2))",color:"white",fontSize:15,fontWeight:600,cursor:loading?"wait":"pointer",fontFamily:"inherit",marginBottom:12}}>
                 {loading ? "Sending..." : "Send magic link ✨"}
               </button>
             ) : (
               <button onClick={handlePassword} disabled={loading}
-                style={{width:"100%",padding:"12px",borderRadius:10,border:"none",background:loading?"var(--muted)":"linear-gradient(135deg,#d97706,#ea580c)",color:"white",fontSize:15,fontWeight:600,cursor:loading?"wait":"pointer",fontFamily:"inherit",marginBottom:12}}>
+                style={{width:"100%",padding:"12px",borderRadius:10,border:"none",background:loading?"var(--muted)":"linear-gradient(135deg,var(--accent),var(--accent2))",color:"white",fontSize:15,fontWeight:600,cursor:loading?"wait":"pointer",fontFamily:"inherit",marginBottom:12}}>
                 {loading ? "..." : mode === "signup" ? "Create account" : "Sign in"}
               </button>
             )}
@@ -2921,8 +2921,10 @@ export default function InkwellApp() {
   const [confirmSubtaskComplete,setConfirmSubtaskComplete]=useState(()=>load("inkwell-confirmSubtaskComplete",true));
   const confirmSubRef=useRef(confirmSubtaskComplete);
   useEffect(()=>{confirmSubRef.current=confirmSubtaskComplete;},[confirmSubtaskComplete]);
-  const BUILD_VERSION = "2026.03.03-v4";
+  const BUILD_VERSION = "2026.03.03-v5";
   const [darkMode,setDarkMode]=useState(()=>load("inkwell-darkMode",false));
+  const [frostMode,setFrostMode]=useState(()=>load("inkwell-frostMode",false));
+  useEffect(()=>{save("inkwell-frostMode",frostMode);},[frostMode]);
   const defaultQuickDates=[{label:"Tomorrow",offset:"tomorrow"},{label:"Next Monday",offset:"nextMonday"}];
   const [quickDates,setQuickDates]=useState(()=>load("inkwell-quickDates",defaultQuickDates));
   const [todayMode,setTodayMode]=useState(()=>load("inkwell-todayMode","kanban")); /* "kanban" | "list" */
@@ -2991,6 +2993,7 @@ export default function InkwellApp() {
       if (cloudData.settings.showViewCounts !== undefined) setShowViewCounts(cloudData.settings.showViewCounts);
       if (cloudData.settings.showListCounts !== undefined) setShowListCounts(cloudData.settings.showListCounts);
       if (cloudData.settings.confirmSubtaskComplete !== undefined) setConfirmSubtaskComplete(cloudData.settings.confirmSubtaskComplete);
+      if (cloudData.settings.frostMode !== undefined) setFrostMode(cloudData.settings.frostMode);
       if (cloudData.settings.darkMode !== undefined) setDarkMode(cloudData.settings.darkMode);
       if (cloudData.settings.quickDates !== undefined) setQuickDates(cloudData.settings.quickDates);
       if (cloudData.settings.kanbanColumns !== undefined) {
@@ -3060,6 +3063,7 @@ export default function InkwellApp() {
               if (cloudData.settings.showViewCounts !== undefined) setShowViewCounts(cloudData.settings.showViewCounts);
               if (cloudData.settings.showListCounts !== undefined) setShowListCounts(cloudData.settings.showListCounts);
       if (cloudData.settings.confirmSubtaskComplete !== undefined) setConfirmSubtaskComplete(cloudData.settings.confirmSubtaskComplete);
+      if (cloudData.settings.frostMode !== undefined) setFrostMode(cloudData.settings.frostMode);
               if (cloudData.settings.darkMode !== undefined) setDarkMode(cloudData.settings.darkMode);
               if (cloudData.settings.quickDates !== undefined) setQuickDates(cloudData.settings.quickDates);
               if (cloudData.settings.kanbanColumns !== undefined) {
@@ -3088,6 +3092,7 @@ export default function InkwellApp() {
               showListCounts: load("inkwell-showListCounts", true),
               confirmSubtaskComplete: load("inkwell-confirmSubtaskComplete", true),
               darkMode: load("inkwell-darkMode", false),
+              frostMode: load("inkwell-frostMode", false),
               quickDates: load("inkwell-quickDates", defaultQuickDates),
               kanbanColumns: null,
               _tombstones: result.tombstones
@@ -3254,10 +3259,10 @@ export default function InkwellApp() {
 
   /* ── Refs for latest values (prevent stale closures in save effects) ── */
   const tasksRef=useRef(tasks);const listsRef=useRef(lists);
-  const settingsRef=useRef({showViewCounts,showListCounts,confirmSubtaskComplete,darkMode,quickDates,kanbanColumns});
+  const settingsRef=useRef({showViewCounts,showListCounts,confirmSubtaskComplete,darkMode,frostMode,quickDates,kanbanColumns});
   useEffect(()=>{tasksRef.current=tasks;},[tasks]);
   useEffect(()=>{listsRef.current=lists;},[lists]);
-  useEffect(()=>{settingsRef.current={showViewCounts,showListCounts,confirmSubtaskComplete,darkMode,quickDates,kanbanColumns};},[showViewCounts,showListCounts,confirmSubtaskComplete,darkMode,quickDates,kanbanColumns]);
+  useEffect(()=>{settingsRef.current={showViewCounts,showListCounts,confirmSubtaskComplete,darkMode,frostMode,quickDates,kanbanColumns};},[showViewCounts,showListCounts,confirmSubtaskComplete,darkMode,frostMode,quickDates,kanbanColumns]);
 
   /* ── Save on every USER edit ── */
   useEffect(()=>{
@@ -3298,10 +3303,10 @@ export default function InkwellApp() {
   useEffect(()=>{
     if(!ready) return;
     if(cloudSyncReady.current && navigator.onLine) {
-      const settings = { ...({showViewCounts,showListCounts,confirmSubtaskComplete,darkMode,quickDates,kanbanColumns}), _tombstones: tombstonesRef.current };
+      const settings = { ...({showViewCounts,showListCounts,confirmSubtaskComplete,darkMode,frostMode,quickDates,kanbanColumns}), _tombstones: tombstonesRef.current };
       saveToCloud(tasksRef.current,listsRef.current,settings);
     }
-  },[showViewCounts,showListCounts,confirmSubtaskComplete,darkMode,quickDates,kanbanColumns]);
+  },[showViewCounts,showListCounts,confirmSubtaskComplete,darkMode,frostMode,quickDates,kanbanColumns]);
 
   /* ── Flush to cloud on tab hide AND page unload ── */
   useEffect(()=>{
@@ -3771,17 +3776,29 @@ export default function InkwellApp() {
   if(!ready)return<div style={{height:"100dvh",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"var(--font-display)",fontSize:22,color:"var(--muted)"}}>Loading...</div>;
 
   return (
-    <div className={darkMode?"theme-dark":"theme-light"} style={{height:"100dvh",display:"flex",overflow:"hidden",background:"var(--bg)",color:"var(--ink)"}}>
+    <div className={frostMode?(darkMode?"theme-frost-dark":"theme-frost-light"):(darkMode?"theme-dark":"theme-light")} style={{height:"100dvh",display:"flex",overflow:"hidden",background:"var(--bg)",color:"var(--ink)"}}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700;800&family=Source+Sans+3:wght@300;400;500;600;700&display=swap');
         :root{--font-display:'Playfair Display',Georgia,serif;--font-body:'Source Sans 3',-apple-system,sans-serif;}
         .theme-light{--ink:#1c1917;--text:#44403c;--muted:#79736f;--bg:#fafaf9;--surface:#f5f5f4;--border:#e7e5e4;--border-light:#f5f5f4;--active-bg:#fffbeb;--accent:#d97706;--accent-dark:#b45309;--accent-bg:#fffbeb;--accent2:#ea580c;--card:#ffffff;--card-hover:#fafaf9;--overlay:rgba(15,23,42,0.45);--danger-bg:#fef2f2;--danger-border:#fecaca;--danger:#ef4444;--success-bg:rgba(34,197,94,0.15);--shadow:rgba(0,0,0,0.06);}
         .theme-dark{--ink:#f5f5f4;--text:#d6d3d1;--muted:#9a938f;--bg:#1c1917;--surface:#292524;--border:#3f3935;--border-light:#292524;--active-bg:#422006;--accent:#f59e0b;--accent-dark:#fbbf24;--accent-bg:#422006;--accent2:#f97316;--card:#292524;--card-hover:#1c1917;--overlay:rgba(0,0,0,0.6);--danger-bg:#450a0a;--danger-border:#7f1d1d;--danger:#f87171;--success-bg:rgba(34,197,94,0.12);--shadow:rgba(0,0,0,0.3);}
+        .theme-frost-light{--ink:#1e293b;--text:#334155;--muted:#7b8fa3;--bg:#f0f4f8;--surface:#e2eaf3;--border:#c8d6e5;--border-light:#dde7f0;--active-bg:#eff6ff;--accent:#3b82f6;--accent-dark:#2563eb;--accent-bg:#eff6ff;--accent2:#0ea5e9;--card:#ffffff;--card-hover:#f0f4f8;--overlay:rgba(15,30,55,0.45);--danger-bg:#fef2f2;--danger-border:#fecaca;--danger:#ef4444;--success-bg:rgba(34,197,94,0.15);--shadow:rgba(0,0,0,0.06);}
+        .theme-frost-dark{--ink:#e2eaf3;--text:#b0c4d8;--muted:#6b839b;--bg:#0c1220;--surface:#131d2e;--border:#1e2d42;--border-light:#182538;--active-bg:rgba(59,130,246,0.1);--accent:#60a5fa;--accent-dark:#93c5fd;--accent-bg:rgba(59,130,246,0.1);--accent2:#38bdf8;--card:#111b2b;--card-hover:#0c1220;--overlay:rgba(4,8,18,0.7);--danger-bg:rgba(239,68,68,0.08);--danger-border:#7f1d1d;--danger:#f87171;--success-bg:rgba(34,197,94,0.12);--shadow:rgba(0,0,0,0.3);}
         *{box-sizing:border-box;margin:0;padding:0;font-family:var(--font-body);}
         html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;color-scheme:${darkMode?"dark":"light"};}
         ::selection{background:rgba(217,119,6,0.15);}
         .list-row:hover .list-menu-btn{opacity:1!important;}
         @keyframes fadeIn{from{opacity:0;transform:scale(0.95)}to{opacity:1;transform:scale(1)}}
+        @keyframes shimmerIn{0%{opacity:0;transform:scale(0.3) rotate(-30deg);filter:blur(4px)}50%{opacity:1;transform:scale(1.2) rotate(10deg);filter:blur(0)}100%{opacity:1;transform:scale(1) rotate(0deg);filter:blur(0)}}
+        @keyframes frostGlow{0%,100%{filter:drop-shadow(0 0 3px rgba(96,165,250,0.4))}50%{filter:drop-shadow(0 0 8px rgba(96,165,250,0.7))}}
+        @keyframes sunGlow{0%,100%{filter:drop-shadow(0 0 3px rgba(251,191,36,0.4))}50%{filter:drop-shadow(0 0 8px rgba(251,191,36,0.7))}}
+        .logo-egg{overflow:hidden;}
+        .logo-egg::after{content:"";position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:16px;opacity:0;transition:opacity 0.15s;pointer-events:none;border-radius:10px;font-weight:400;font-family:system-ui;}
+        .theme-light .logo-egg::after,.theme-dark .logo-egg::after{content:"❄";background:linear-gradient(135deg,#3b82f6,#38bdf8);}
+        .theme-frost-light .logo-egg::after,.theme-frost-dark .logo-egg::after{content:"☀";background:linear-gradient(135deg,#d97706,#ea580c);}
+        .logo-egg:hover::after{opacity:1;animation:shimmerIn 0.4s ease forwards;}
+        .theme-light .logo-egg:hover::after,.theme-dark .logo-egg:hover::after{animation:shimmerIn 0.4s ease forwards, frostGlow 2s ease infinite 0.4s;}
+        .theme-frost-light .logo-egg:hover::after,.theme-frost-dark .logo-egg:hover::after{animation:shimmerIn 0.4s ease forwards, sunGlow 2s ease infinite 0.4s;}
         @keyframes fanOut{from{max-height:0;opacity:0;transform:translateY(-8px)}to{max-height:50px;opacity:1;transform:translateY(0)}}
         @keyframes taskComplete{
           0%{background:transparent;transform:translateX(0)}
@@ -3844,10 +3861,10 @@ export default function InkwellApp() {
       <nav className="sidebar" aria-label="Navigation" style={{width:sidebar?264:0,...(isMobile?{position:"fixed",zIndex:100,height:"100dvh"}:{}),background:"var(--surface)",borderRight:"1px solid var(--border)",display:"flex",flexDirection:"column",transition:"width 0.25s ease",overflow:"hidden",flexShrink:0}}>
         <div style={{padding:"20px 16px 12px",flexShrink:0}}>
           <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20}}>
-            <div style={{width:34,height:34,borderRadius:10,background:"linear-gradient(135deg,#d97706,#ea580c)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:17,fontWeight:800,color:"white",fontFamily:"var(--font-display)"}}>I</div>
+            <div onClick={()=>setFrostMode(f=>!f)} className="logo-egg" style={{width:34,height:34,borderRadius:10,background:frostMode?"linear-gradient(135deg,#3b82f6,#38bdf8)":"linear-gradient(135deg,#d97706,#ea580c)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:17,fontWeight:800,color:"white",fontFamily:"var(--font-display)",cursor:"pointer",position:"relative",transition:"background 0.5s, box-shadow 0.3s",boxShadow:frostMode?"0 2px 12px rgba(59,130,246,0.3)":"none",overflow:"hidden"}}>I</div>
             <span style={{fontSize:20,fontWeight:700,fontFamily:"var(--font-display)",color:"var(--ink)",whiteSpace:"nowrap"}}>Inkwell</span>
           </div>
-          <button onClick={()=>{setShowPhoto(true);if(isMobile)setSidebar(false);}} style={{width:"100%",padding:"11px 14px",borderRadius:12,border:"2px dashed #d6d3d1",background:"rgba(217,119,6,0.04)",color:"var(--accent)",fontSize:13,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:10,transition:"all 0.2s",marginBottom:16,whiteSpace:"nowrap",fontFamily:"inherit"}}>{Icons.camera} Scan Notebook Page</button>
+          <button onClick={()=>{setShowPhoto(true);if(isMobile)setSidebar(false);}} style={{width:"100%",padding:"11px 14px",borderRadius:12,border:"2px dashed var(--border)",background:"var(--accent-bg)",color:"var(--accent)",fontSize:13,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:10,transition:"all 0.2s",marginBottom:16,whiteSpace:"nowrap",fontFamily:"inherit"}}>{Icons.camera} Scan Notebook Page</button>
         </div>
         <div style={{flex:1,overflowY:"auto",padding:"0 8px"}}>
           <NavSection title="Views">
