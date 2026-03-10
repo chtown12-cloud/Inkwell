@@ -410,8 +410,8 @@ const useTouchDrag = (onDrop, onDragStateChange, onSidebarShow) => {
         clearHL();
         if (target) {
           target.dataset.dropBg = target.style.background || "";
-          target.style.outline = "2px solid #d97706";
-          target.style.background = "rgba(217,119,6,0.1)";
+          target.style.outline = "2px solid var(--accent)";
+          target.style.background = "var(--accent-a10)";
           target.style.borderRadius = "10px";
           s.lastTarget = target;
         }
@@ -723,7 +723,7 @@ const EditableText = ({value, onSave, onEditStart, style={}, tag:Tag="span"}) =>
     onClick={e=>e.stopPropagation()}
     onBlur={()=>{if(text.trim()&&text.trim()!==value)onSave(text.trim());setEditing(false);}}
     onKeyDown={e=>{if(e.key==="Enter")e.target.blur();if(e.key==="Escape"){setText(value);setEditing(false);}}}
-    style={{border:"none",outline:"none",background:"rgba(217,119,6,0.1)",borderRadius:4,padding:"2px 6px",fontFamily:"inherit",...style}} />;
+    style={{border:"none",outline:"none",background:"var(--accent-a10)",borderRadius:4,padding:"2px 6px",fontFamily:"inherit",...style}} />;
 };
 
 const Overlay = ({onClose,children,wide}) => (
@@ -767,9 +767,9 @@ const InlineDatePicker = ({value, overdue, onChange}) => {
 /* Depth styling for subtask hierarchy — warm amber→gold→honey gradient
    No reds (avoids urgency connotation). All pass WCAG AA contrast. */
 const DEPTH_STYLES = [
-  { border: "#b45309", bg: "rgba(217,119,6,0.06)",  prefix: "",     prefixColor: "#b45309" },  // depth 0: dark amber
-  { border: "#a16207", bg: "rgba(194,125,44,0.07)",  prefix: "↳ ",  prefixColor: "#a16207" },  // depth 1: golden
-  { border: "#a16207", bg: "rgba(202,138,4,0.06)",   prefix: "↳↳ ", prefixColor: "#92400e" },  // depth 2+: honey
+  { border: "var(--depth0)", bg: "var(--depth0-bg)",  prefix: "",     prefixColor: "var(--depth0)" },  // depth 0: dark amber
+  { border: "var(--depth1)", bg: "var(--depth1-bg)",  prefix: "↳ ",  prefixColor: "var(--depth1)" },  // depth 1: golden
+  { border: "var(--depth1)", bg: "var(--depth2-bg)",   prefix: "↳↳ ", prefixColor: "var(--depth2)" },  // depth 2+: honey
 ];
 const getDepthStyle = (d) => DEPTH_STYLES[Math.min(d, DEPTH_STYLES.length - 1)];
 
@@ -932,14 +932,14 @@ const useSubtaskTouchDrag = (containerRef, onReorder) => {
           s.lastZone = zone;
 
           if(zone==="nest") {
-            target.style.outline="2px dashed #b45309";
+            target.style.outline="2px dashed var(--depth0)";
             target.style.background="rgba(180,83,9,0.08)";
           } else {
             const indicator = document.createElement("div");
             indicator.dataset.zoneIndicator = "1";
             Object.assign(indicator.style, {
               position:"absolute", left:"0", right:"0", height:"2px",
-              background:"#b45309", borderRadius:"1px", zIndex:"5", pointerEvents:"none",
+              background:"var(--depth0)", borderRadius:"1px", zIndex:"5", pointerEvents:"none",
               [zone==="before"?"top":"bottom"]: "-1px"
             });
             if(getComputedStyle(target).position==="static") target.style.position="relative";
@@ -1064,7 +1064,7 @@ const SubtaskTree = ({subtasks, onAction, onOpenSub, onReorder, depth=0, compact
                   onClick={e=>e.stopPropagation()}
                   onBlur={()=>{if(editText.trim()&&editText.trim()!==sub.title)onAction("update",sub.id,{title:editText.trim()});setEditingId(null);}}
                   onKeyDown={e=>{if(e.key==="Enter")e.target.blur();if(e.key==="Escape"){setEditingId(null);}}}
-                  style={{flex:1,border:"none",outline:"none",background:"rgba(217,119,6,0.1)",borderRadius:4,padding:"2px 6px",fontFamily:"inherit",fontSize:compact?14:13,minWidth:0,color:"var(--text)"}}/>
+                  style={{flex:1,border:"none",outline:"none",background:"var(--accent-a10)",borderRadius:4,padding:"2px 6px",fontFamily:"inherit",fontSize:compact?14:13,minWidth:0,color:"var(--text)"}}/>
               ) : (
                 <span
                   onClick={e=>{e.stopPropagation();if(compact&&onOpenSub)onOpenSub(sub.id);}}
@@ -1320,7 +1320,7 @@ const ScanResultsModal = ({results,onConfirm,onClose,lists}) => {
         style={{paddingLeft:indentPx,borderBottom:isTask?"1px solid var(--border-light)":"none",
           borderLeft:item._depth>0?`3px solid ${getDepthStyle(item._depth).border}`:"none",
           opacity:item._selected?1:0.3,transition:"opacity 0.15s,padding 0.15s",position:"relative",
-          background:dt?.zone==="nest"?"rgba(217,119,6,0.06)":scanDepthBg,
+          background:dt?.zone==="nest"?"var(--accent-a06)":scanDepthBg,
           outline:dt?.zone==="nest"?"2px dashed var(--accent)":"none",borderRadius:dt?.zone==="nest"?8:item._depth>0?"0 4px 4px 0":0,
           marginLeft:item._depth>0?4:0}}>
         {dt?.zone==="before"&&<div style={{position:"absolute",top:-1,left:8,right:8,height:2,background:"var(--accent)",borderRadius:1,zIndex:5}}/>}
@@ -1363,7 +1363,7 @@ const ScanResultsModal = ({results,onConfirm,onClose,lists}) => {
                 placeholder="List name, Enter to save"
                 onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();commitNewList();}if(e.key==="Escape"){setNewInputIdx(null);setNewInputVal("");}}}
                 onBlur={()=>commitNewList()}
-                style={{fontSize:12,padding:"3px 8px",borderRadius:4,border:"1px solid var(--accent)",width:140,outline:"none",fontFamily:"inherit",background:"#fffbeb"}}/>
+                style={{fontSize:12,padding:"3px 8px",borderRadius:4,border:"1px solid var(--accent)",width:140,outline:"none",fontFamily:"inherit",background:"var(--accent-bg)"}}/>
             )}
             <input type="date" value={item.date||results.page_date||""} onChange={e=>updateItem(idx,{date:e.target.value||null})}
               style={{fontSize:12,padding:"2px 6px",borderRadius:4,border:"1px solid var(--border)",background:"var(--card)",color:"var(--text)",cursor:"pointer",fontFamily:"inherit"}}/>
@@ -1388,7 +1388,7 @@ const ScanResultsModal = ({results,onConfirm,onClose,lists}) => {
 
         {/* ── Section 1: Tasks to add ── */}
         <div onDragOver={isDragging?onSectionDragOver:undefined} onDrop={isDragging?e=>onSectionDrop(e,"add"):undefined}
-          style={{padding:"10px 12px",background:isDragging?"rgba(217,119,6,0.1)":"rgba(217,119,6,0.06)",borderRadius:10,marginBottom:2,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",transition:"background 0.15s"}}>
+          style={{padding:"10px 12px",background:isDragging?"var(--accent-a10)":"var(--accent-a06)",borderRadius:10,marginBottom:2,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",transition:"background 0.15s"}}>
           <span style={{fontSize:15}}>＋</span>
           <span style={{fontSize:14,fontWeight:700,color:"var(--accent)"}}>Tasks to add</span>
           <span style={{fontSize:12,color:"var(--accent)",fontWeight:600}}>{newTaskCount}</span>
@@ -1432,10 +1432,10 @@ const ScanResultsModal = ({results,onConfirm,onClose,lists}) => {
                       {r.category&&<span style={{fontSize:11,color:"var(--muted)"}}>{r.category}</span>}
                     </div>
                     {g.children.length>0&&(
-                      <div style={{marginTop:4,paddingLeft:8,borderLeft:"3px solid #b45309",borderRadius:"0 4px 4px 0",marginLeft:4}}>
+                      <div style={{marginTop:4,paddingLeft:8,borderLeft:"3px solid var(--depth0)",borderRadius:"0 4px 4px 0",marginLeft:4}}>
                         {g.children.map(c=>(
                           <div key={c.item._id} style={{fontSize:12,color:"var(--muted)",padding:"2px 0"}}>
-                            <span style={{color:"#b45309",fontWeight:700,fontSize:10,marginRight:4}}>↳</span>
+                            <span style={{color:"var(--depth0)",fontWeight:700,fontSize:10,marginRight:4}}>↳</span>
                             <span style={{textDecoration:c.item.completed?"line-through":"none"}}>{c.item.title}</span>
                           </div>
                         ))}
@@ -1523,7 +1523,7 @@ const TaskDetail = ({task, onUpdate, onDelete, onClose, onToggle, lists}) => {
   const depthLabels = ["Task", "Subtask", "Sub-subtask", "Sub-sub-subtask"];
   const depthLabel = depth < depthLabels.length ? depthLabels[depth] : `Depth ${depth}`;
   const ds = getDepthStyle(depth);
-  const depthColors = ["var(--accent)", "#a16207", "#92400e", "#78350f"];
+  const depthColors = ["var(--accent)", "var(--depth1)", "var(--depth2)", "var(--depth3)"];
   const accentColor = depthColors[Math.min(depth, depthColors.length - 1)];
 
   /* Update helpers — route changes through the correct path */
@@ -1837,7 +1837,7 @@ const HelpGuideModal = ({onClose, initialSection}) => {
         <HelpSection icon="✨" title="Getting Started" defaultOpen={initialSection==="welcome"}>
           <p style={{marginBottom:10}}>Inkwell is a task manager built for people who think on paper. Snap a photo of your notebook, and Inkwell turns your handwritten lists into organised digital tasks — complete with subtasks, due dates, and categories.</p>
           <p style={{marginBottom:10}}>But it's much more than a scanner. You can also type tasks directly, organise them into lists, drag to reorder and reschedule, track progress on a kanban board, and sync everything across devices.</p>
-          <div style={{padding:"10px 14px",background:"var(--accent-bg)",borderRadius:10,border:"1px solid rgba(217,119,6,0.15)",fontSize:12,color:"var(--accent-dark)",lineHeight:1.6}}>
+          <div style={{padding:"10px 14px",background:"var(--accent-bg)",borderRadius:10,border:"1px solid var(--accent-a15)",fontSize:12,color:"var(--accent-dark)",lineHeight:1.6}}>
             <b>Quick start:</b> Type a task in the bar at the top and press Enter, or tap <b>Scan Notebook Page</b> in the sidebar to photograph your notes.
           </div>
         </HelpSection>
@@ -1866,7 +1866,7 @@ Personal
 ☐ Book dentist appointment
 ☐ Research weekend trips
     - Compare prices`}</span>
-          <div style={{padding:"10px 14px",background:"var(--accent-bg)",borderRadius:10,border:"1px solid rgba(217,119,6,0.15)",fontSize:12,color:"var(--accent-dark)",lineHeight:1.6,marginTop:4}}>
+          <div style={{padding:"10px 14px",background:"var(--accent-bg)",borderRadius:10,border:"1px solid var(--accent-a15)",fontSize:12,color:"var(--accent-dark)",lineHeight:1.6,marginTop:4}}>
             <b>💡</b> After scanning, you can drag rows to reorder, use ← → to fix nesting, edit titles, and reassign lists — all before importing.
           </div>
         </HelpSection>
@@ -1892,7 +1892,7 @@ Personal
             <div style={featureStyle}><div style={dotStyle}/><div><b>Promote subtasks</b> — drag a subtask out of its parent to promote it to a standalone task. Drop it on a list or date zone.</div></div>
             <div style={featureStyle}><div style={dotStyle}/><div><b>Delete</b> — drag to the trash zone that appears at the bottom centre of the screen during any drag.</div></div>
           </div>
-          <div style={{padding:"10px 14px",background:"var(--accent-bg)",borderRadius:10,border:"1px solid rgba(217,119,6,0.15)",fontSize:12,color:"var(--accent-dark)",lineHeight:1.6}}>
+          <div style={{padding:"10px 14px",background:"var(--accent-bg)",borderRadius:10,border:"1px solid var(--accent-a15)",fontSize:12,color:"var(--accent-dark)",lineHeight:1.6}}>
             <b>💡</b> Circular nesting is handled automatically — if you drag a parent onto its own subtask, Inkwell promotes the subtask instead of creating a loop.
           </div>
         </HelpSection>
@@ -1962,7 +1962,7 @@ Personal
             <div style={featureStyle}><div style={dotStyle}/><div><b>Multi-device offline edits</b> — if you edit on your phone offline and your laptop offline, both sets of changes merge cleanly when each device reconnects. Tasks added on either device appear on both; tasks deleted on either device are properly removed via tombstone tracking.</div></div>
             <div style={featureStyle}><div style={dotStyle}/><div><b>Scanning requires internet</b> — the notebook scanner uses a cloud AI model, so it needs a connection. You'll see a clear message if you try to scan while offline.</div></div>
           </div>
-          <div style={{padding:"10px 14px",background:"var(--accent-bg)",borderRadius:10,border:"1px solid rgba(217,119,6,0.15)",fontSize:12,color:"var(--accent-dark)",lineHeight:1.6}}>
+          <div style={{padding:"10px 14px",background:"var(--accent-bg)",borderRadius:10,border:"1px solid var(--accent-a15)",fontSize:12,color:"var(--accent-dark)",lineHeight:1.6}}>
             <b>💡</b> Inkwell checks for unsynced changes every 30 seconds while online, so even if the initial reconnect attempt fails on flaky wifi, your data will sync shortly after.
           </div>
         </HelpSection>
@@ -2168,10 +2168,10 @@ const KanbanBoard = ({tasks, columns, onColumnsChange, onResetColumns, onSelect,
             onDragLeave={() => setHoverCol(null)}
             onDrop={e => onColDrop(e, col.dateStr)}
             style={{minWidth:220,maxWidth:280,flex:"1 0 220px",display:"flex",flexDirection:"column",
-              background:isHover?"rgba(217,119,6,0.08)":isToday?"rgba(217,119,6,0.04)":"var(--surface)",
-              borderRadius:14,border:isHover?"2px solid var(--accent)":`1px solid ${isToday?"rgba(217,119,6,0.3)":"var(--border)"}`,
+              background:isHover?"var(--accent-a08)":isToday?"var(--accent-a04)":"var(--surface)",
+              borderRadius:14,border:isHover?"2px solid var(--accent)":`1px solid ${isToday?"var(--accent-a30)":"var(--border)"}`,
               overflow:"hidden",transition:"border 0.15s, background 0.15s"}}>
-            <div style={{padding:"10px 14px 8px",borderBottom:`1px solid ${isToday?"rgba(217,119,6,0.2)":"var(--border)"}`}}>
+            <div style={{padding:"10px 14px 8px",borderBottom:`1px solid ${isToday?"var(--accent-a20)":"var(--border)"}`}}>
               {isEditing ? (
                 <div style={{display:"flex",flexDirection:"column",gap:6}} onClick={e=>e.stopPropagation()}>
                   <input autoFocus value={editName} onChange={e=>setEditName(e.target.value)}
@@ -2211,7 +2211,7 @@ const KanbanBoard = ({tasks, columns, onColumnsChange, onResetColumns, onSelect,
       {/* Add column */}
       <div style={{minWidth:100,flex:"0 0 100px",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:12}}>
         <div onClick={addCol} style={{width:"100%",flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",borderRadius:14,border:"2px dashed var(--border)",cursor:"pointer",transition:"border-color 0.15s,background 0.15s",background:"transparent",gap:4}}
-          onMouseEnter={e=>{e.currentTarget.style.borderColor="var(--accent)";e.currentTarget.style.background="rgba(217,119,6,0.04)";}}
+          onMouseEnter={e=>{e.currentTarget.style.borderColor="var(--accent)";e.currentTarget.style.background="var(--accent-a04)";}}
           onMouseLeave={e=>{e.currentTarget.style.borderColor="var(--border)";e.currentTarget.style.background="transparent";}}>
           <span style={{fontSize:22,color:"var(--muted)",lineHeight:1}}>+</span>
           <span style={{fontSize:11,color:"var(--muted)",fontWeight:600}}>Column</span>
@@ -2323,7 +2323,7 @@ const KanbanSubtaskList = ({subs, taskId, depth, parentDueDate, onToggleSub, onS
                 transition:"background 0.1s",fontSize:12}}
               onMouseEnter={e=>e.currentTarget.style.background="rgba(0,0,0,0.03)"}
               onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
-              {depth > 0 && <span style={{fontSize:9,color:"#b45309",flexShrink:0,fontWeight:700}}>↳</span>}
+              {depth > 0 && <span style={{fontSize:9,color:"var(--depth0)",flexShrink:0,fontWeight:700}}>↳</span>}
               <div onClick={e=>{e.stopPropagation();onToggleSub(taskId, sub.id);}} style={{flexShrink:0,cursor:"pointer"}}>
                 <Checkbox checked={sub.completed} priority={sub.priority} size={13}/>
               </div>
@@ -2573,7 +2573,7 @@ const CalendarView = ({tasks, onSelect, onUpdate}) => {
                       return (
                         <div key={col} data-drop-type={dStr?"date":undefined} data-drop-value={dStr||undefined}
                           onDragOver={e => dStr && onCellOver(e, dStr)} onDragLeave={onCellLeave} onDrop={e => dStr && onCellDrop(e, dStr)}
-                          style={{minHeight:56 + barsH,padding:4,overflow:"hidden",minWidth:0,background:isH?"rgba(217,119,6,0.12)":isT?"rgba(217,119,6,0.05)":"transparent",borderBottom:"1px solid var(--border-light)",borderRight:col < 6 ? "1px solid var(--border-light)":"none",transition:"background 0.1s"}}>
+                          style={{minHeight:56 + barsH,padding:4,overflow:"hidden",minWidth:0,background:isH?"var(--accent-a12)":isT?"var(--accent-a06)":"transparent",borderBottom:"1px solid var(--border-light)",borderRight:col < 6 ? "1px solid var(--border-light)":"none",transition:"background 0.1s"}}>
                           {dayN != null && (
                             <div style={{fontSize:13,fontWeight:isT?800:500,width:isT?26:"auto",height:isT?26:"auto",borderRadius:"50%",display:isT?"flex":"block",alignItems:"center",justifyContent:"center",background:isT?"var(--accent)":"none",color:isT?"white":dStr < td?"var(--muted)":"var(--text)",marginBottom:2}}>{dayN}</div>
                           )}
@@ -2665,7 +2665,7 @@ const TaskRow = ({task,isActive,isSelected,onSelect,onToggle,onUpdateTask,onDrag
       data-drag-id={task.id} data-drag-source="task" data-drag-label={task.title}
       data-drop-type="task" data-drop-value={task.id} data-drop-zone="nest"
       style={{marginBottom:2,borderRadius:12,position:"relative",touchAction:"none",
-        background:isSelected?"rgba(217,119,6,0.1)":dtZone==="nest"?"rgba(217,119,6,0.08)":isActive?"var(--active-bg)":"transparent",
+        background:isSelected?"var(--accent-a10)":dtZone==="nest"?"var(--accent-a08)":isActive?"var(--active-bg)":"transparent",
         outline:isSelected?"2px solid var(--accent)":dtZone==="nest"?"2px dashed var(--accent)":"none",
         animation:animateState==="complete"?"taskComplete 0.7s ease forwards":animateState==="uncomplete"?"taskUncomplete 0.6s ease forwards":"none",
         transition:"background 0.15s,opacity 0.3s,outline 0.1s",opacity:task.completed&&!animateState?0.45:animateState?undefined:1}}>
@@ -2776,7 +2776,7 @@ const LoginScreen = ({ onSignIn, onSignInPassword, error }) => {
         <p style={{color:"var(--muted)",fontSize:15,marginBottom:32}}>Sign in to sync your tasks across devices</p>
 
         {sent ? (
-          <div style={{padding:24,background:"var(--accent-bg)",borderRadius:14,border:"1px solid rgba(217,119,6,0.2)"}}>
+          <div style={{padding:24,background:"var(--accent-bg)",borderRadius:14,border:"1px solid var(--accent-a20)"}}>
             <div style={{fontSize:32,marginBottom:8}}>✉️</div>
             <p style={{fontWeight:600,color:"var(--ink)",marginBottom:8}}>Check your email</p>
             <p style={{color:"var(--muted)",fontSize:14}}>We sent a magic link to <strong>{email}</strong></p>
@@ -2986,6 +2986,7 @@ export default function InkwellApp() {
   const [isOnline,setIsOnline]=useState(typeof navigator!=="undefined"?navigator.onLine:true);
   const hasPendingSync=useRef(load(PENDING_SYNC_KEY, false));
   const [lists,setLists]=useState(DEFAULT_LISTS);
+  const [archivedLists,setArchivedLists]=useState(()=>load("inkwell-archivedLists",[]));
   const [view,setView]=useState("today");
   const [selectedTask,setSelectedTask]=useState(null);
   const [showPhoto,setShowPhoto]=useState(false);
@@ -3033,15 +3034,17 @@ export default function InkwellApp() {
   const [editingList,setEditingList]=useState(null);
   const [dragList,setDragList]=useState(null);
   const [dragListOver,setDragListOver]=useState(null);
+  const [archiveOpen,setArchiveOpen]=useState(false);
   const [showViewCounts,setShowViewCounts]=useState(()=>load("inkwell-showViewCounts",true));
   const [showListCounts,setShowListCounts]=useState(()=>load("inkwell-showListCounts",true));
   const [confirmSubtaskComplete,setConfirmSubtaskComplete]=useState(()=>load("inkwell-confirmSubtaskComplete",true));
   const confirmSubRef=useRef(confirmSubtaskComplete);
   useEffect(()=>{confirmSubRef.current=confirmSubtaskComplete;},[confirmSubtaskComplete]);
-  const BUILD_VERSION = "2026.03.03-v6";
+  const BUILD_VERSION = "2026.03.10-v1";
   const [darkMode,setDarkMode]=useState(()=>load("inkwell-darkMode",false));
   const [frostMode,setFrostMode]=useState(()=>load("inkwell-frostMode",false));
   useEffect(()=>{save("inkwell-frostMode",frostMode);},[frostMode]);
+  useEffect(()=>{save("inkwell-archivedLists",archivedLists);},[archivedLists]);
   const [themeTransition,setThemeTransition]=useState(null); /* "snow" | "heat" | null */
   const defaultQuickDates=[{label:"Tomorrow",offset:"tomorrow"},{label:"Next Monday",offset:"nextMonday"}];
   const [quickDates,setQuickDates]=useState(()=>load("inkwell-quickDates",defaultQuickDates));
@@ -3112,6 +3115,7 @@ export default function InkwellApp() {
       if (cloudData.settings.showListCounts !== undefined) setShowListCounts(cloudData.settings.showListCounts);
       if (cloudData.settings.confirmSubtaskComplete !== undefined) setConfirmSubtaskComplete(cloudData.settings.confirmSubtaskComplete);
       if (cloudData.settings.frostMode !== undefined) setFrostMode(cloudData.settings.frostMode);
+      if (cloudData.settings.archivedLists !== undefined) setArchivedLists(cloudData.settings.archivedLists);
       if (cloudData.settings.darkMode !== undefined) setDarkMode(cloudData.settings.darkMode);
       if (cloudData.settings.quickDates !== undefined) setQuickDates(cloudData.settings.quickDates);
       if (cloudData.settings.kanbanColumns !== undefined) {
@@ -3182,6 +3186,7 @@ export default function InkwellApp() {
               if (cloudData.settings.showListCounts !== undefined) setShowListCounts(cloudData.settings.showListCounts);
       if (cloudData.settings.confirmSubtaskComplete !== undefined) setConfirmSubtaskComplete(cloudData.settings.confirmSubtaskComplete);
       if (cloudData.settings.frostMode !== undefined) setFrostMode(cloudData.settings.frostMode);
+      if (cloudData.settings.archivedLists !== undefined) setArchivedLists(cloudData.settings.archivedLists);
               if (cloudData.settings.darkMode !== undefined) setDarkMode(cloudData.settings.darkMode);
               if (cloudData.settings.quickDates !== undefined) setQuickDates(cloudData.settings.quickDates);
               if (cloudData.settings.kanbanColumns !== undefined) {
@@ -3211,6 +3216,7 @@ export default function InkwellApp() {
               confirmSubtaskComplete: load("inkwell-confirmSubtaskComplete", true),
               darkMode: load("inkwell-darkMode", false),
               frostMode: load("inkwell-frostMode", false),
+              archivedLists: load("inkwell-archivedLists", []),
               quickDates: load("inkwell-quickDates", defaultQuickDates),
               kanbanColumns: null,
               _tombstones: result.tombstones
@@ -3377,10 +3383,10 @@ export default function InkwellApp() {
 
   /* ── Refs for latest values (prevent stale closures in save effects) ── */
   const tasksRef=useRef(tasks);const listsRef=useRef(lists);
-  const settingsRef=useRef({showViewCounts,showListCounts,confirmSubtaskComplete,darkMode,frostMode,quickDates,kanbanColumns});
+  const settingsRef=useRef({showViewCounts,showListCounts,confirmSubtaskComplete,darkMode,frostMode,archivedLists,quickDates,kanbanColumns});
   useEffect(()=>{tasksRef.current=tasks;},[tasks]);
   useEffect(()=>{listsRef.current=lists;},[lists]);
-  useEffect(()=>{settingsRef.current={showViewCounts,showListCounts,confirmSubtaskComplete,darkMode,frostMode,quickDates,kanbanColumns};},[showViewCounts,showListCounts,confirmSubtaskComplete,darkMode,frostMode,quickDates,kanbanColumns]);
+  useEffect(()=>{settingsRef.current={showViewCounts,showListCounts,confirmSubtaskComplete,darkMode,frostMode,archivedLists,quickDates,kanbanColumns};},[showViewCounts,showListCounts,confirmSubtaskComplete,darkMode,frostMode,archivedLists,quickDates,kanbanColumns]);
 
   /* ── Save on every USER edit ── */
   useEffect(()=>{
@@ -3421,10 +3427,10 @@ export default function InkwellApp() {
   useEffect(()=>{
     if(!ready) return;
     if(cloudSyncReady.current && navigator.onLine) {
-      const settings = { ...({showViewCounts,showListCounts,confirmSubtaskComplete,darkMode,frostMode,quickDates,kanbanColumns}), _tombstones: tombstonesRef.current };
+      const settings = { ...({showViewCounts,showListCounts,confirmSubtaskComplete,darkMode,frostMode,archivedLists,quickDates,kanbanColumns}), _tombstones: tombstonesRef.current };
       saveToCloud(tasksRef.current,listsRef.current,settings);
     }
-  },[showViewCounts,showListCounts,confirmSubtaskComplete,darkMode,frostMode,quickDates,kanbanColumns]);
+  },[showViewCounts,showListCounts,confirmSubtaskComplete,darkMode,frostMode,archivedLists,quickDates,kanbanColumns]);
 
   /* ── Flush to cloud on tab hide AND page unload ── */
   useEffect(()=>{
@@ -3590,6 +3596,8 @@ export default function InkwellApp() {
 
   const renameList=useCallback((oldN,newN)=>{if(!newN.trim()||newN===oldN||lists.includes(newN))return;setLists(prev=>prev.map(l=>l===oldN?newN:l));setTasks(prev=>prev.map(t=>t.list===oldN?{...t,list:newN}:t));if(view===`list:${oldN}`)setView(`list:${newN}`);},[lists,view]);
   const deleteList=useCallback((name)=>{if(name==="Inbox")return;const ct=tasks.filter(t=>t.list===name).length;if(ct>0&&!confirm(`"${name}" has ${ct} task${ct>1?"s":""}. They'll be moved to Inbox. Continue?`))return;setTasks(prev=>prev.map(t=>t.list===name?{...t,list:"Inbox"}:t));setLists(prev=>prev.filter(l=>l!==name));if(view===`list:${name}`)setView("all");flash(`Deleted list "${name}"`);},[tasks,view,flash]);
+  const archiveList=useCallback((name)=>{if(name==="Inbox")return;setLists(prev=>prev.filter(l=>l!==name));setArchivedLists(prev=>[...prev,name]);if(view===`list:${name}`)setView("all");flash(`Archived "${name}"`);},[view,flash]);
+  const restoreList=useCallback((name)=>{setArchivedLists(prev=>prev.filter(l=>l!==name));setLists(prev=>[...prev,name]);flash(`Restored "${name}"`);},[flash]);
   const bulkDate=(d)=>{setTasks(prev=>prev.map(t=>selectedIds.has(t.id)?{...t,dueDate:d}:t));flash(`Set ${selectedIds.size} tasks to ${formatDate(d)}`);setSelectedIds(new Set());};
 
   const onDragStart=(e,task,source="task")=>{setDragTask({...task,_source:source});setIsDragging(true);e.dataTransfer.effectAllowed="move";e.dataTransfer.setData("text/plain",task.id);e.dataTransfer.setData("application/x-source",source);};
@@ -3847,6 +3855,9 @@ export default function InkwellApp() {
   },[sortBy,filterPriority]);
 
   const filtered=useMemo(()=>{let f=tasks;
+    /* Hide tasks from archived lists (unless explicitly viewing that list) */
+    if(!view.startsWith("list:") || !archivedLists.includes(view.replace("list:","")))
+      f=f.filter(t=>!archivedLists.includes(t.list));
     if(search){const q=search.toLowerCase();f=f.filter(t=>t.title.toLowerCase().includes(q)||(t.notes||"").toLowerCase().includes(q)||(t.tags||[]).some(tg=>tg.toLowerCase().includes(q)));}
     else{switch(view){case"today":f=f.filter(t=>t.dueDate===todayStr()||(!t.dueDate&&t.createdAt?.startsWith(todayStr())));break;case"overdue":f=f.filter(t=>!t.completed&&t.dueDate&&t.dueDate<todayStr());if(sortBy==="default")f.sort((a,b)=>(a.dueDate||"").localeCompare(b.dueDate||""));break;case"upcoming":f=f.filter(t=>!t.completed&&t.dueDate&&t.dueDate>=todayStr());if(sortBy==="default")f.sort((a,b)=>(a.dueDate||"").localeCompare(b.dueDate||""));break;case"all":break;case"completed":return applySortFilter(f.filter(t=>t.completed));case"inbox":f=f.filter(t=>t.list==="Inbox");break;default:if(view.startsWith("list:"))f=f.filter(t=>t.list===view.replace("list:",""));}}
     const result=applySortFilter(f);
@@ -3863,16 +3874,16 @@ export default function InkwellApp() {
       result.splice(insertAt,0,...surfaced);
     }
     return result;
-  },[tasks,view,search,sortBy,filterPriority,applySortFilter]);
+  },[tasks,view,search,sortBy,filterPriority,applySortFilter,archivedLists]);
 
-  const overdueCount=useMemo(()=>tasks.filter(t=>!t.completed&&isOverdue(t.dueDate)).length,[tasks]);
+  const overdueCount=useMemo(()=>tasks.filter(t=>!t.completed&&isOverdue(t.dueDate)&&!archivedLists.includes(t.list)).length,[tasks,archivedLists]);
   /* Auto-redirect from overdue view when all tasks resolved */
   useEffect(()=>{if(view==="overdue"&&overdueCount===0)setView("today");},[view,overdueCount]);
   const todayCount=useMemo(()=>{
-    const direct=tasks.filter(t=>!t.completed&&t.dueDate===todayStr()).length;
-    const subs=collectDatedSubtasks(tasks).filter(ds=>ds.sub.dueDate===todayStr()&&ds.parentTask.dueDate!==todayStr()).length;
+    const direct=tasks.filter(t=>!t.completed&&t.dueDate===todayStr()&&!archivedLists.includes(t.list)).length;
+    const subs=collectDatedSubtasks(tasks).filter(ds=>ds.sub.dueDate===todayStr()&&ds.parentTask.dueDate!==todayStr()&&!archivedLists.includes(ds.parentTask.list)).length;
     return direct+subs;
-  },[tasks]);
+  },[tasks,archivedLists]);
 
   /* Keyboard shortcuts — must be after filtered/bulkDelete definitions */
   useEffect(()=>{const h=e=>{
@@ -3898,13 +3909,13 @@ export default function InkwellApp() {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700;800&family=Source+Sans+3:wght@300;400;500;600;700&display=swap');
         :root{--font-display:'Playfair Display',Georgia,serif;--font-body:'Source Sans 3',-apple-system,sans-serif;}
-        .theme-light{--ink:#1c1917;--text:#44403c;--muted:#79736f;--bg:#fafaf9;--surface:#f5f5f4;--border:#e7e5e4;--border-light:#f5f5f4;--active-bg:#fffbeb;--accent:#d97706;--accent-dark:#b45309;--accent-bg:#fffbeb;--accent2:#ea580c;--card:#ffffff;--card-hover:#fafaf9;--overlay:rgba(15,23,42,0.45);--danger-bg:#fef2f2;--danger-border:#fecaca;--danger:#ef4444;--success-bg:rgba(34,197,94,0.15);--shadow:rgba(0,0,0,0.06);}
-        .theme-dark{--ink:#f5f5f4;--text:#d6d3d1;--muted:#9a938f;--bg:#1c1917;--surface:#292524;--border:#3f3935;--border-light:#292524;--active-bg:#422006;--accent:#f59e0b;--accent-dark:#fbbf24;--accent-bg:#422006;--accent2:#f97316;--card:#292524;--card-hover:#1c1917;--overlay:rgba(0,0,0,0.6);--danger-bg:#450a0a;--danger-border:#7f1d1d;--danger:#f87171;--success-bg:rgba(34,197,94,0.12);--shadow:rgba(0,0,0,0.3);}
-        .theme-frost-light{--ink:#1e293b;--text:#334155;--muted:#7b8fa3;--bg:#f0f4f8;--surface:#e2eaf3;--border:#c8d6e5;--border-light:#dde7f0;--active-bg:#eff6ff;--accent:#3b82f6;--accent-dark:#2563eb;--accent-bg:#eff6ff;--accent2:#0ea5e9;--card:#ffffff;--card-hover:#f0f4f8;--overlay:rgba(15,30,55,0.45);--danger-bg:#fef2f2;--danger-border:#fecaca;--danger:#ef4444;--success-bg:rgba(34,197,94,0.15);--shadow:rgba(0,0,0,0.06);}
-        .theme-frost-dark{--ink:#e2eaf3;--text:#b0c4d8;--muted:#6b839b;--bg:#0c1220;--surface:#131d2e;--border:#1e2d42;--border-light:#182538;--active-bg:rgba(59,130,246,0.1);--accent:#60a5fa;--accent-dark:#93c5fd;--accent-bg:rgba(59,130,246,0.1);--accent2:#38bdf8;--card:#111b2b;--card-hover:#0c1220;--overlay:rgba(4,8,18,0.7);--danger-bg:rgba(239,68,68,0.08);--danger-border:#7f1d1d;--danger:#f87171;--success-bg:rgba(34,197,94,0.12);--shadow:rgba(0,0,0,0.3);}
+        .theme-light{--ink:#1c1917;--text:#44403c;--muted:#79736f;--bg:#fafaf9;--surface:#f5f5f4;--border:#e7e5e4;--border-light:#f5f5f4;--active-bg:#fffbeb;--accent:#d97706;--accent-dark:#b45309;--accent-bg:#fffbeb;--accent2:#ea580c;--card:#ffffff;--card-hover:#fafaf9;--overlay:rgba(15,23,42,0.45);--danger-bg:#fef2f2;--danger-border:#fecaca;--danger:#ef4444;--success-bg:rgba(34,197,94,0.15);--shadow:rgba(0,0,0,0.06);--accent-a04:var(--accent-a04);--accent-a06:var(--accent-a06);--accent-a08:var(--accent-a08);--accent-a10:var(--accent-a10);--accent-a12:var(--accent-a12);--accent-a15:var(--accent-a15);--accent-a18:var(--accent-a18);--accent-a20:var(--accent-a20);--accent-a30:var(--accent-a30);--depth0:#b45309;--depth1:#a16207;--depth2:#92400e;--depth3:#78350f;--depth0-bg:var(--accent-a06);--depth1-bg:rgba(194,125,44,0.07);--depth2-bg:rgba(202,138,4,0.06);--offline-bg:linear-gradient(90deg,#fef3c7,#fde68a);--offline-border:#f59e0b;--offline-text:#92400e;}
+        .theme-dark{--ink:#f5f5f4;--text:#d6d3d1;--muted:#9a938f;--bg:#1c1917;--surface:#292524;--border:#3f3935;--border-light:#292524;--active-bg:#422006;--accent:#f59e0b;--accent-dark:#fbbf24;--accent-bg:#422006;--accent2:#f97316;--card:#292524;--card-hover:#1c1917;--overlay:rgba(0,0,0,0.6);--danger-bg:#450a0a;--danger-border:#7f1d1d;--danger:#f87171;--success-bg:rgba(34,197,94,0.12);--shadow:rgba(0,0,0,0.3);--accent-a04:rgba(245,158,11,0.04);--accent-a06:rgba(245,158,11,0.06);--accent-a08:rgba(245,158,11,0.08);--accent-a10:rgba(245,158,11,0.1);--accent-a12:rgba(245,158,11,0.12);--accent-a15:rgba(245,158,11,0.15);--accent-a18:rgba(245,158,11,0.18);--accent-a20:rgba(245,158,11,0.2);--accent-a30:rgba(245,158,11,0.3);--depth0:#fbbf24;--depth1:#f59e0b;--depth2:#d97706;--depth3:#b45309;--depth0-bg:rgba(245,158,11,0.06);--depth1-bg:rgba(245,158,11,0.07);--depth2-bg:rgba(245,158,11,0.06);--offline-bg:linear-gradient(90deg,#422006,#78350f);--offline-border:#f59e0b;--offline-text:#fbbf24;}
+        .theme-frost-light{--ink:#1e293b;--text:#334155;--muted:#7b8fa3;--bg:#f0f4f8;--surface:#e2eaf3;--border:#c8d6e5;--border-light:#dde7f0;--active-bg:#eff6ff;--accent:#3b82f6;--accent-dark:#2563eb;--accent-bg:#eff6ff;--accent2:#0ea5e9;--card:#ffffff;--card-hover:#f0f4f8;--overlay:rgba(15,30,55,0.45);--danger-bg:#fef2f2;--danger-border:#fecaca;--danger:#ef4444;--success-bg:rgba(34,197,94,0.15);--shadow:rgba(0,0,0,0.06);--accent-a04:rgba(59,130,246,0.04);--accent-a06:rgba(59,130,246,0.06);--accent-a08:rgba(59,130,246,0.08);--accent-a10:rgba(59,130,246,0.1);--accent-a12:rgba(59,130,246,0.12);--accent-a15:rgba(59,130,246,0.15);--accent-a18:rgba(59,130,246,0.18);--accent-a20:rgba(59,130,246,0.2);--accent-a30:rgba(59,130,246,0.3);--depth0:#2563eb;--depth1:#1d4ed8;--depth2:#1e40af;--depth3:#1e3a8a;--depth0-bg:rgba(59,130,246,0.06);--depth1-bg:rgba(59,130,246,0.07);--depth2-bg:rgba(59,130,246,0.06);--offline-bg:linear-gradient(90deg,#dbeafe,#bfdbfe);--offline-border:#3b82f6;--offline-text:#1e40af;}
+        .theme-frost-dark{--ink:#e2eaf3;--text:#b0c4d8;--muted:#6b839b;--bg:#0c1220;--surface:#131d2e;--border:#1e2d42;--border-light:#182538;--active-bg:rgba(59,130,246,0.1);--accent:#60a5fa;--accent-dark:#93c5fd;--accent-bg:rgba(59,130,246,0.1);--accent2:#38bdf8;--card:#111b2b;--card-hover:#0c1220;--overlay:rgba(4,8,18,0.7);--danger-bg:rgba(239,68,68,0.08);--danger-border:#7f1d1d;--danger:#f87171;--success-bg:rgba(34,197,94,0.12);--shadow:rgba(0,0,0,0.3);--accent-a04:rgba(96,165,250,0.04);--accent-a06:rgba(96,165,250,0.06);--accent-a08:rgba(96,165,250,0.08);--accent-a10:rgba(96,165,250,0.1);--accent-a12:rgba(96,165,250,0.12);--accent-a15:rgba(96,165,250,0.15);--accent-a18:rgba(96,165,250,0.18);--accent-a20:rgba(96,165,250,0.2);--accent-a30:rgba(96,165,250,0.3);--depth0:#93c5fd;--depth1:#60a5fa;--depth2:#3b82f6;--depth3:#2563eb;--depth0-bg:rgba(96,165,250,0.06);--depth1-bg:rgba(96,165,250,0.07);--depth2-bg:rgba(96,165,250,0.06);--offline-bg:linear-gradient(90deg,#131d2e,#1e2d42);--offline-border:#60a5fa;--offline-text:#93c5fd;}
         *{box-sizing:border-box;margin:0;padding:0;font-family:var(--font-body);}
         html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;color-scheme:${darkMode?"dark":"light"};}
-        ::selection{background:rgba(217,119,6,0.15);}
+        ::selection{background:var(--accent-a15);}
         .list-row:hover .list-menu-btn{opacity:1!important;}
         @keyframes fadeIn{from{opacity:0;transform:scale(0.95)}to{opacity:1;transform:scale(1)}}
         @keyframes shimmerIn{0%{opacity:0;transform:scale(0.3) rotate(-30deg);filter:blur(4px)}50%{opacity:1;transform:scale(1.2) rotate(10deg);filter:blur(0)}100%{opacity:1;transform:scale(1) rotate(0deg);filter:blur(0)}}
@@ -3927,8 +3938,8 @@ export default function InkwellApp() {
         }
         @keyframes taskUncomplete{
           0%{opacity:0.45;transform:scale(0.98)}
-          15%{opacity:0.7;background:rgba(217,119,6,0.18);transform:scale(1.01)}
-          40%{background:rgba(217,119,6,0.12);transform:scale(1)}
+          15%{opacity:0.7;background:var(--accent-a18);transform:scale(1.01)}
+          40%{background:var(--accent-a12);transform:scale(1)}
           100%{opacity:1;background:transparent;transform:scale(1)}
         }
         @keyframes checkPop{
@@ -3948,7 +3959,7 @@ export default function InkwellApp() {
         }
         @keyframes cardUncomplete{
           0%{transform:scale(0.96);opacity:0.5}
-          30%{transform:scale(1.03);opacity:0.8;background:rgba(217,119,6,0.15)}
+          30%{transform:scale(1.03);opacity:0.8;background:var(--accent-a15)}
           60%{transform:scale(0.99);opacity:0.95}
           100%{transform:scale(1);opacity:1;background:transparent}
         }
@@ -3997,8 +4008,8 @@ export default function InkwellApp() {
               });
               const baseViews=[
                 {id:"upcoming",icon:Icons.upcoming,label:"Upcoming"},
-                {id:"all",icon:Icons.all,label:"All Tasks",count:tasks.filter(t=>!t.completed).length},
-                {id:"completed",icon:Icons.done,label:"Completed",count:tasks.filter(t=>t.completed).length},
+                {id:"all",icon:Icons.all,label:"All Tasks",count:tasks.filter(t=>!t.completed&&!archivedLists.includes(t.list)).length},
+                {id:"completed",icon:Icons.done,label:"Completed",count:tasks.filter(t=>t.completed&&!archivedLists.includes(t.list)).length},
                 {id:"calendar",icon:Icons.calendar,label:"Calendar"},
               ];
               return (<>
@@ -4063,7 +4074,7 @@ export default function InkwellApp() {
                           onClick={e=>e.stopPropagation()}
                           onKeyDown={e=>{if(e.key==="Enter"){const v=e.target.value.trim();if(v&&v!==l)renameList(l,v);setEditingList(null);}if(e.key==="Escape")setEditingList(null);}}
                           onBlur={e=>{const v=e.target.value.trim();if(v&&v!==l)renameList(l,v);setEditingList(null);}}
-                          style={{border:"none",outline:"none",background:"rgba(217,119,6,0.1)",borderRadius:4,padding:"2px 6px",fontSize:14,fontWeight:view===lv?600:500,width:"100%",fontFamily:"inherit"}}/>
+                          style={{border:"none",outline:"none",background:"var(--accent-a10)",borderRadius:4,padding:"2px 6px",fontSize:14,fontWeight:view===lv?600:500,width:"100%",fontFamily:"inherit"}}/>
                       ):(
                         <span onDoubleClick={e=>{if(l!=="Inbox"){e.stopPropagation();setEditingList(l);}}}
                           style={{fontSize:14,fontWeight:view===lv?600:500,color:view===lv?"var(--ink)":"var(--text)",cursor:l!=="Inbox"?"grab":"default"}}>{l}</span>
@@ -4081,6 +4092,8 @@ export default function InkwellApp() {
               <div style={{position:"fixed",left:listMenu.x,top:listMenu.y,background:"var(--card)",borderRadius:10,boxShadow:"0 4px 20px rgba(0,0,0,0.15)",border:"1px solid var(--border)",padding:4,zIndex:1000,minWidth:140,animation:"fadeIn 0.1s ease"}}>
                 <button onClick={()=>{setEditingList(listMenu.name);setListMenu(null);}} style={{width:"100%",padding:"8px 12px",border:"none",background:"none",cursor:"pointer",fontSize:13,fontWeight:500,color:"var(--text)",textAlign:"left",borderRadius:6,fontFamily:"inherit",display:"flex",alignItems:"center",gap:8}}
                   onMouseEnter={e=>e.currentTarget.style.background="var(--surface)"} onMouseLeave={e=>e.currentTarget.style.background="none"}>✏️ Rename</button>
+                <button onClick={()=>{archiveList(listMenu.name);setListMenu(null);}} style={{width:"100%",padding:"8px 12px",border:"none",background:"none",cursor:"pointer",fontSize:13,fontWeight:500,color:"var(--text)",textAlign:"left",borderRadius:6,fontFamily:"inherit",display:"flex",alignItems:"center",gap:8}}
+                  onMouseEnter={e=>e.currentTarget.style.background="var(--surface)"} onMouseLeave={e=>e.currentTarget.style.background="none"}>📦 Archive</button>
                 <button onClick={()=>{deleteList(listMenu.name);setListMenu(null);}} style={{width:"100%",padding:"8px 12px",border:"none",background:"none",cursor:"pointer",fontSize:13,fontWeight:500,color:"var(--danger)",textAlign:"left",borderRadius:6,fontFamily:"inherit",display:"flex",alignItems:"center",gap:8}}
                   onMouseEnter={e=>e.currentTarget.style.background="var(--danger-bg)"} onMouseLeave={e=>e.currentTarget.style.background="none"}>🗑 Delete list</button>
               </div>
@@ -4089,6 +4102,43 @@ export default function InkwellApp() {
               onKeyDown={e=>{if(e.key==="Enter"&&newList.trim()&&!lists.includes(newList.trim())){setLists(p=>[...p,newList.trim()]);setNewList("");setShowNewList(false);}if(e.key==="Escape"){setShowNewList(false);setNewList("");}}}
               onBlur={()=>{setShowNewList(false);setNewList("");}} placeholder="List name..." style={{width:"100%",padding:"8px 10px",borderRadius:8,border:"1px solid var(--accent)",fontSize:13,outline:"none",background:"var(--card)",fontFamily:"inherit"}}/></div>)}
           </NavSection>
+          {/* ── Archive section (drag lists here or expand to restore) ── */}
+          {(archivedLists.length>0||dragList)&&(
+            <div style={{marginBottom:8,padding:"0 4px"}}>
+              <div
+                onDragOver={e=>{if(dragList){e.preventDefault();e.dataTransfer.dropEffect="move";e.currentTarget.style.background="var(--accent-a10)";e.currentTarget.style.borderColor="var(--accent)";}}}
+                onDragLeave={e=>{e.currentTarget.style.background="";e.currentTarget.style.borderColor="var(--border)";}}
+                onDrop={e=>{e.preventDefault();e.currentTarget.style.background="";e.currentTarget.style.borderColor="var(--border)";
+                  if(dragList&&dragList!=="Inbox"){archiveList(dragList);setDragList(null);setDragListOver(null);}
+                }}
+                onClick={()=>{if(archivedLists.length>0)setArchiveOpen(!archiveOpen);}}
+                style={{display:"flex",alignItems:"center",gap:6,padding:"6px 10px",borderRadius:8,border:`1px dashed ${dragList?"var(--accent)":"var(--border)"}`,cursor:archivedLists.length>0?"pointer":"default",transition:"all 0.15s",background:dragList?"var(--accent-a06)":"transparent"}}>
+                <span style={{fontSize:13,opacity:0.6}}>📦</span>
+                <span style={{flex:1,fontSize:11,fontWeight:700,color:"var(--muted)",textTransform:"uppercase",letterSpacing:0.8}}>Archive{archivedLists.length>0?` (${archivedLists.length})`:""}</span>
+                {archivedLists.length>0&&<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{transition:"transform 0.2s",transform:archiveOpen?"rotate(180deg)":"rotate(0)"}}><polyline points="6 9 12 15 18 9"/></svg>}
+              </div>
+              {archiveOpen&&archivedLists.length>0&&(
+                <div style={{padding:"4px 0 0",animation:"fanOut 0.2s ease"}}>
+                  {archivedLists.map(al=>{
+                    const ct=tasks.filter(t=>t.list===al).length;
+                    return (
+                      <div key={al} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",borderRadius:8,fontSize:13,color:"var(--muted)",transition:"background 0.1s"}}
+                        onMouseEnter={e=>e.currentTarget.style.background="var(--surface)"} onMouseLeave={e=>e.currentTarget.style.background=""}>
+                        <span style={{width:8,height:8,borderRadius:"50%",background:"var(--border)",flexShrink:0,opacity:0.5}}/>
+                        <span style={{flex:1,fontWeight:500}}>{al}</span>
+                        {ct>0&&<span style={{fontSize:11,color:"var(--muted)",opacity:0.6}}>{ct}</span>}
+                        <button onClick={e=>{e.stopPropagation();restoreList(al);}} title="Restore"
+                          style={{background:"none",border:"none",cursor:"pointer",color:"var(--accent)",fontSize:11,fontWeight:600,padding:"2px 6px",borderRadius:4,fontFamily:"inherit",transition:"background 0.15s"}}
+                          onMouseEnter={e=>e.currentTarget.style.background="var(--accent-a10)"} onMouseLeave={e=>e.currentTarget.style.background=""}>
+                          Restore
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
         </div>
         {overdueCount>0&&view!=="overdue"&&<button onClick={()=>selectView("overdue")} style={{margin:"0 8px 8px",padding:"10px 14px",borderRadius:10,background:"var(--danger-bg)",border:"1px solid var(--danger-border)",fontSize:13,color:"var(--danger)",fontWeight:600,flexShrink:0,cursor:"pointer",width:"calc(100% - 16px)",textAlign:"left",fontFamily:"inherit",transition:"background 0.15s"}}
           onMouseEnter={e=>e.currentTarget.style.background="var(--danger-border)"} onMouseLeave={e=>e.currentTarget.style.background="var(--danger-bg)"}>⚠ {overdueCount} overdue — view →</button>}
@@ -4124,7 +4174,7 @@ export default function InkwellApp() {
       <main style={{flex:1,display:"flex",flexDirection:"column",minWidth:0}}>
         {/* Offline banner */}
         {!isOnline && hasSupabase && user && (
-          <div style={{padding:"8px 16px",background:"linear-gradient(90deg,#fef3c7,#fde68a)",borderBottom:"1px solid #f59e0b",display:"flex",alignItems:"center",justifyContent:"center",gap:8,flexShrink:0,fontSize:13,color:"#92400e",fontWeight:500}}>
+          <div style={{padding:"8px 16px",background:"var(--offline-bg)",borderBottom:"1px solid var(--offline-border)",display:"flex",alignItems:"center",justifyContent:"center",gap:8,flexShrink:0,fontSize:13,color:"var(--offline-text)",fontWeight:500}}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 1l22 22"/><path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"/><path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"/><path d="M10.71 5.05A16 16 0 0 1 22.56 9"/><path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
             <span>You're offline — your edits are saved locally and will sync when you reconnect</span>
           </div>
@@ -4218,7 +4268,7 @@ export default function InkwellApp() {
                   <button onClick={()=>setTodayMode("list")} style={{padding:"5px 12px",borderRadius:6,border:"none",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:todayMode==="list"?"var(--card)":"transparent",color:todayMode==="list"?"var(--ink)":"var(--muted)",boxShadow:todayMode==="list"?"0 1px 3px rgba(0,0,0,0.08)":"none",transition:"all 0.15s"}}>List</button>
                 </div>
               )}
-              {filtered.length===0?(<div style={{textAlign:"center",padding:"50px 20px",color:view==="overdue"?"var(--danger)":"var(--muted)"}}><div style={{fontSize:44,marginBottom:14,opacity:0.4}}>{view==="completed"?"🎉":view==="today"?"☀️":view==="overdue"?"🎉":search?"🔍":"📋"}</div><div style={{fontSize:16,fontWeight:600,marginBottom:4}}>{view==="completed"?"No completed tasks yet":view==="overdue"?"All caught up!":search?"No matching tasks":"All clear!"}</div><div style={{fontSize:14}}>{view==="overdue"?"No overdue tasks — nice work!":(<>Add a task above or scan a notebook page. <span onClick={()=>setShowTips("welcome")} style={{color:"var(--accent)",cursor:"pointer",fontWeight:600,textDecoration:"underline",textDecorationColor:"rgba(217,119,6,0.3)",textUnderlineOffset:2}}>See what Inkwell can do →</span></>)}</div></div>):(
+              {filtered.length===0?(<div style={{textAlign:"center",padding:"50px 20px",color:view==="overdue"?"var(--danger)":"var(--muted)"}}><div style={{fontSize:44,marginBottom:14,opacity:0.4}}>{view==="completed"?"🎉":view==="today"?"☀️":view==="overdue"?"🎉":search?"🔍":"📋"}</div><div style={{fontSize:16,fontWeight:600,marginBottom:4}}>{view==="completed"?"No completed tasks yet":view==="overdue"?"All caught up!":search?"No matching tasks":"All clear!"}</div><div style={{fontSize:14}}>{view==="overdue"?"No overdue tasks — nice work!":(<>Add a task above or scan a notebook page. <span onClick={()=>setShowTips("welcome")} style={{color:"var(--accent)",cursor:"pointer",fontWeight:600,textDecoration:"underline",textDecorationColor:"var(--accent-a30)",textUnderlineOffset:2}}>See what Inkwell can do →</span></>)}</div></div>):(
                 <div role="list" aria-label="Tasks" style={view==="overdue"?{background:"var(--danger-bg)",borderRadius:14,border:"1px solid var(--danger-border)",padding:"8px 10px"}:undefined}>
                   {filtered.map((task,i)=>{const prev=i>0?filtered[i-1]:null;const showSep=task.completed&&!task._surfacedSub&&prev&&!prev.completed;
                     /* Date group headers for overdue view */
