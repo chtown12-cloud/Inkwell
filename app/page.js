@@ -2831,7 +2831,7 @@ const LoginScreen = ({ onSignIn, onSignInPassword, error }) => {
 /* ═══════════════════════════════════════════════════════════════════════
    THEME TRANSITION OVERLAY — snow or heat wave canvas animation
    ═══════════════════════════════════════════════════════════════════════ */
-const ThemeTransition = ({type, onDone}) => {
+const ThemeTransition = ({type, isLight, onDone}) => {
   const canvasRef = useRef(null);
   const onDoneRef = useRef(onDone);
   onDoneRef.current = onDone;
@@ -2847,7 +2847,7 @@ const ThemeTransition = ({type, onDone}) => {
 
     if(type === "snow") {
       /* ── Snowfall ── */
-      const flakes = Array.from({length:80}, ()=>({
+      const flakes = Array.from({length:90}, ()=>({
         x: Math.random()*W,
         y: Math.random()*-H,
         r: 1.5 + Math.random()*4,
@@ -2855,7 +2855,7 @@ const ThemeTransition = ({type, onDone}) => {
         drift: (Math.random()-0.5)*0.8,
         wobbleAmp: 10 + Math.random()*30,
         wobbleSpeed: 0.5 + Math.random()*1.5,
-        opacity: 0.3 + Math.random()*0.7,
+        opacity: 0.4 + Math.random()*0.6,
       }));
       const draw = () => {
         const elapsed = Date.now()-start;
@@ -2864,19 +2864,38 @@ const ThemeTransition = ({type, onDone}) => {
         const globalAlpha = progress < 0.08 ? progress/0.08 : progress > 0.75 ? (1-progress)/0.25 : 1;
         ctx.clearRect(0,0,W,H);
         for(const f of flakes) {
+          const wobbleX = f.x + Math.sin(elapsed*0.001*f.wobbleSpeed)*f.wobbleAmp*0.3;
           f.y += f.speed * 1.2;
           f.x += f.drift + Math.sin(elapsed*0.001*f.wobbleSpeed)*0.3;
           if(f.y > H+10) { f.y = -10; f.x = Math.random()*W; }
-          ctx.beginPath();
-          ctx.arc(f.x + Math.sin(elapsed*0.001*f.wobbleSpeed)*f.wobbleAmp*0.3, f.y, f.r, 0, Math.PI*2);
-          ctx.fillStyle = `rgba(255,255,255,${f.opacity * globalAlpha})`;
-          ctx.fill();
-          /* Subtle sparkle on larger flakes */
-          if(f.r > 3) {
+          if(isLight) {
+            /* Light mode: blue-tinted flakes with darker outlines for visibility */
             ctx.beginPath();
-            ctx.arc(f.x + Math.sin(elapsed*0.001*f.wobbleSpeed)*f.wobbleAmp*0.3, f.y, f.r*0.4, 0, Math.PI*2);
-            ctx.fillStyle = `rgba(147,197,253,${0.5 * globalAlpha * Math.abs(Math.sin(elapsed*0.003+f.x))})`;
+            ctx.arc(wobbleX, f.y, f.r, 0, Math.PI*2);
+            ctx.fillStyle = `rgba(219,234,254,${f.opacity * globalAlpha})`;
             ctx.fill();
+            ctx.lineWidth = 1.2;
+            ctx.strokeStyle = `rgba(37,99,235,${0.85 * f.opacity * globalAlpha})`;
+            ctx.stroke();
+            /* Inner shimmer for larger flakes */
+            if(f.r > 3) {
+              ctx.beginPath();
+              ctx.arc(wobbleX, f.y, f.r*0.5, 0, Math.PI*2);
+              ctx.fillStyle = `rgba(59,130,246,${0.6 * globalAlpha * Math.abs(Math.sin(elapsed*0.003+f.x))})`;
+              ctx.fill();
+            }
+          } else {
+            /* Dark mode: white flakes with blue sparkle */
+            ctx.beginPath();
+            ctx.arc(wobbleX, f.y, f.r, 0, Math.PI*2);
+            ctx.fillStyle = `rgba(255,255,255,${f.opacity * globalAlpha})`;
+            ctx.fill();
+            if(f.r > 3) {
+              ctx.beginPath();
+              ctx.arc(wobbleX, f.y, f.r*0.4, 0, Math.PI*2);
+              ctx.fillStyle = `rgba(147,197,253,${0.5 * globalAlpha * Math.abs(Math.sin(elapsed*0.003+f.x))})`;
+              ctx.fill();
+            }
           }
         }
         if(progress < 1) raf = requestAnimationFrame(draw);
@@ -3040,7 +3059,7 @@ export default function InkwellApp() {
   const [confirmSubtaskComplete,setConfirmSubtaskComplete]=useState(()=>load("inkwell-confirmSubtaskComplete",true));
   const confirmSubRef=useRef(confirmSubtaskComplete);
   useEffect(()=>{confirmSubRef.current=confirmSubtaskComplete;},[confirmSubtaskComplete]);
-  const BUILD_VERSION = "2026.03.10-v1";
+  const BUILD_VERSION = "2026.04.14-v1";
   const [darkMode,setDarkMode]=useState(()=>load("inkwell-darkMode",false));
   const [frostMode,setFrostMode]=useState(()=>load("inkwell-frostMode",false));
   useEffect(()=>{save("inkwell-frostMode",frostMode);},[frostMode]);
@@ -3061,9 +3080,31 @@ export default function InkwellApp() {
     return fresh.length > 0 ? fresh : null;
   });
   useEffect(() => { if (kanbanColumns) save("inkwell-kanbanCols", kanbanColumns); else localStorage.removeItem("inkwell-kanbanCols"); }, [kanbanColumns]);
+  /* Live "today" tracker — updates when tab regains focus, on day rollover, or once per minute as safety */
+  const [currentDateStr, setCurrentDateStr] = useState(()=>todayStr());
+  useEffect(() => {
+    const check = () => {
+      const now = todayStr();
+      setCurrentDateStr(prev => prev === now ? prev : now);
+    };
+    const onVis = () => { if (!document.hidden) check(); };
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("focus", check);
+    /* Safety interval: every 60s check for day rollover */
+    const iv = setInterval(check, 60000);
+    return () => {
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("focus", check);
+      clearInterval(iv);
+    };
+  }, []);
   const activeKanbanCols = useMemo(() => {
-    if (kanbanColumns && kanbanColumns.length > 0) return kanbanColumns;
-    /* Default: today + next 3 days */
+    if (kanbanColumns && kanbanColumns.length > 0) {
+      /* Filter out past columns every render — uses currentDateStr so re-runs on day rollover */
+      const fresh = kanbanColumns.filter(c => !c.dateStr || c.dateStr >= currentDateStr);
+      if (fresh.length > 0) return fresh;
+    }
+    /* Default: today + next 3 days — rebuilds when currentDateStr changes */
     const cols = [];
     for (let i = 0; i < 4; i++) {
       const d = new Date(); d.setDate(d.getDate() + i);
@@ -3072,9 +3113,9 @@ export default function InkwellApp() {
       cols.push({ id: `default-${i}`, name: label, dateStr: ds });
     }
     return cols;
-  }, [kanbanColumns]);
+  }, [kanbanColumns, currentDateStr]);
   const resetKanbanCols = useCallback(() => { setKanbanColumns(null); }, []);
-  /* Auto-prune stale columns when tab regains focus (handles overnight) — only removes past columns */
+  /* Auto-prune stale columns when tab regains focus (handles overnight) — persists the cleanup */
   useEffect(() => {
     const check = () => {
       if (document.hidden) return;
@@ -3874,16 +3915,16 @@ export default function InkwellApp() {
       result.splice(insertAt,0,...surfaced);
     }
     return result;
-  },[tasks,view,search,sortBy,filterPriority,applySortFilter,archivedLists]);
+  },[tasks,view,search,sortBy,filterPriority,applySortFilter,archivedLists,currentDateStr]);
 
-  const overdueCount=useMemo(()=>tasks.filter(t=>!t.completed&&isOverdue(t.dueDate)&&!archivedLists.includes(t.list)).length,[tasks,archivedLists]);
+  const overdueCount=useMemo(()=>tasks.filter(t=>!t.completed&&isOverdue(t.dueDate)&&!archivedLists.includes(t.list)).length,[tasks,archivedLists,currentDateStr]);
   /* Auto-redirect from overdue view when all tasks resolved */
   useEffect(()=>{if(view==="overdue"&&overdueCount===0)setView("today");},[view,overdueCount]);
   const todayCount=useMemo(()=>{
     const direct=tasks.filter(t=>!t.completed&&t.dueDate===todayStr()&&!archivedLists.includes(t.list)).length;
     const subs=collectDatedSubtasks(tasks).filter(ds=>ds.sub.dueDate===todayStr()&&ds.parentTask.dueDate!==todayStr()&&!archivedLists.includes(ds.parentTask.list)).length;
     return direct+subs;
-  },[tasks,archivedLists]);
+  },[tasks,archivedLists,currentDateStr]);
 
   /* Keyboard shortcuts — must be after filtered/bulkDelete definitions */
   useEffect(()=>{const h=e=>{
@@ -4407,7 +4448,7 @@ export default function InkwellApp() {
         </div>
       )}
       {/* Theme transition animation overlay */}
-      {themeTransition&&<ThemeTransition type={themeTransition} onDone={()=>setThemeTransition(null)}/>}
+      {themeTransition&&<ThemeTransition type={themeTransition} isLight={!darkMode} onDone={()=>setThemeTransition(null)}/>}
       {/* Subtask completion confirmation modal */}
       {pendingCompleteId&&(()=>{
         const pt=tasks.find(t=>t.id===pendingCompleteId);
