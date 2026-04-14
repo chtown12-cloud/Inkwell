@@ -2839,128 +2839,287 @@ const ThemeTransition = ({type, isLight, onDone}) => {
     const canvas = canvasRef.current;
     if(!canvas) return;
     const ctx = canvas.getContext("2d");
-    const W = canvas.width = window.innerWidth;
-    const H = canvas.height = window.innerHeight;
+    /* HiDPI support for crisp rendering on retina */
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const W = window.innerWidth;
+    const H = window.innerHeight;
+    canvas.width = W * dpr;
+    canvas.height = H * dpr;
+    canvas.style.width = W + "px";
+    canvas.style.height = H + "px";
+    ctx.scale(dpr, dpr);
+
     let raf;
-    const start = Date.now();
-    const DURATION = 3500;
+    let finished = false;
+    const start = performance.now();
+    const DURATION = 5000; /* 5 seconds — substantial but not overwhelming */
+
+    /* Handle resize mid-animation */
+    const onResize = () => {
+      const nw = window.innerWidth, nh = window.innerHeight;
+      canvas.width = nw * dpr; canvas.height = nh * dpr;
+      canvas.style.width = nw + "px"; canvas.style.height = nh + "px";
+      ctx.scale(dpr, dpr);
+    };
+    window.addEventListener("resize", onResize);
+
+    const finish = () => {
+      if(finished) return;
+      finished = true;
+      if(onDoneRef.current) onDoneRef.current();
+    };
 
     if(type === "snow") {
-      /* ── Snowfall ── */
-      const flakes = Array.from({length:90}, ()=>({
-        x: Math.random()*W,
-        y: Math.random()*-H,
-        r: 1.5 + Math.random()*4,
-        speed: 0.6 + Math.random()*1.8,
-        drift: (Math.random()-0.5)*0.8,
-        wobbleAmp: 10 + Math.random()*30,
-        wobbleSpeed: 0.5 + Math.random()*1.5,
-        opacity: 0.4 + Math.random()*0.6,
-      }));
-      const draw = () => {
-        const elapsed = Date.now()-start;
+      /* ── Layered snowfall: 3 depth layers with parallax ── */
+      const makeFlakes = (count, sizeRange, speedRange, opacityRange) =>
+        Array.from({length:count}, ()=>({
+          x: Math.random()*W,
+          y: Math.random()*H*-1.2,
+          r: sizeRange[0] + Math.random()*(sizeRange[1]-sizeRange[0]),
+          speed: speedRange[0] + Math.random()*(speedRange[1]-speedRange[0]),
+          drift: (Math.random()-0.5)*0.6,
+          wobbleAmp: 15 + Math.random()*35,
+          wobbleSpeed: 0.4 + Math.random()*1.2,
+          opacity: opacityRange[0] + Math.random()*(opacityRange[1]-opacityRange[0]),
+          rotation: Math.random()*Math.PI*2,
+          rotSpeed: (Math.random()-0.5)*0.04,
+          star: Math.random() < 0.3, /* 30% chance of being a 6-point star flake */
+        }));
+
+      const far = makeFlakes(80, [0.8, 2.2], [25, 50], [0.3, 0.55]);   /* Background layer: small, slow */
+      const mid = makeFlakes(70, [2, 4], [50, 90], [0.55, 0.8]);        /* Mid layer */
+      const near = makeFlakes(50, [3.5, 7], [90, 150], [0.75, 1]);      /* Foreground: big, fast */
+      const allLayers = [far, mid, near];
+
+      /* Draw a 6-point star snowflake */
+      const drawStar = (cx, cy, r, rot, fillStyle, strokeStyle) => {
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(rot);
+        ctx.beginPath();
+        for(let i=0; i<6; i++) {
+          ctx.moveTo(0, 0);
+          const angle = (Math.PI/3)*i;
+          ctx.lineTo(Math.cos(angle)*r, Math.sin(angle)*r);
+        }
+        ctx.lineWidth = r*0.35;
+        ctx.lineCap = "round";
+        ctx.strokeStyle = fillStyle;
+        ctx.stroke();
+        if(strokeStyle) {
+          ctx.lineWidth = r*0.15;
+          ctx.strokeStyle = strokeStyle;
+          ctx.stroke();
+        }
+        ctx.restore();
+      };
+
+      let lastTime = start;
+      const draw = (now) => {
+        const elapsed = now - start;
+        const dt = Math.min((now - lastTime)/1000, 0.05); /* dt in seconds, cap at 50ms */
+        lastTime = now;
         const progress = Math.min(elapsed/DURATION, 1);
-        /* Fade in first 0.3s, fade out last 0.8s */
-        const globalAlpha = progress < 0.08 ? progress/0.08 : progress > 0.75 ? (1-progress)/0.25 : 1;
+        /* Smooth fade curve: ease in 0-15%, full 15-70%, ease out 70-100% */
+        let globalAlpha;
+        if(progress < 0.15) globalAlpha = progress/0.15;
+        else if(progress > 0.7) globalAlpha = Math.max(0, 1 - (progress-0.7)/0.3);
+        else globalAlpha = 1;
+        /* Smooth ease */
+        globalAlpha = globalAlpha * globalAlpha * (3 - 2*globalAlpha);
+
         ctx.clearRect(0,0,W,H);
-        for(const f of flakes) {
-          const wobbleX = f.x + Math.sin(elapsed*0.001*f.wobbleSpeed)*f.wobbleAmp*0.3;
-          f.y += f.speed * 1.2;
-          f.x += f.drift + Math.sin(elapsed*0.001*f.wobbleSpeed)*0.3;
-          if(f.y > H+10) { f.y = -10; f.x = Math.random()*W; }
-          if(isLight) {
-            /* Light mode: blue-tinted flakes with darker outlines for visibility */
-            ctx.beginPath();
-            ctx.arc(wobbleX, f.y, f.r, 0, Math.PI*2);
-            ctx.fillStyle = `rgba(219,234,254,${f.opacity * globalAlpha})`;
-            ctx.fill();
-            ctx.lineWidth = 1.2;
-            ctx.strokeStyle = `rgba(37,99,235,${0.85 * f.opacity * globalAlpha})`;
-            ctx.stroke();
-            /* Inner shimmer for larger flakes */
-            if(f.r > 3) {
-              ctx.beginPath();
-              ctx.arc(wobbleX, f.y, f.r*0.5, 0, Math.PI*2);
-              ctx.fillStyle = `rgba(59,130,246,${0.6 * globalAlpha * Math.abs(Math.sin(elapsed*0.003+f.x))})`;
-              ctx.fill();
-            }
-          } else {
-            /* Dark mode: white flakes with blue sparkle */
-            ctx.beginPath();
-            ctx.arc(wobbleX, f.y, f.r, 0, Math.PI*2);
-            ctx.fillStyle = `rgba(255,255,255,${f.opacity * globalAlpha})`;
-            ctx.fill();
-            if(f.r > 3) {
-              ctx.beginPath();
-              ctx.arc(wobbleX, f.y, f.r*0.4, 0, Math.PI*2);
-              ctx.fillStyle = `rgba(147,197,253,${0.5 * globalAlpha * Math.abs(Math.sin(elapsed*0.003+f.x))})`;
-              ctx.fill();
+
+        for(let layer=0; layer<allLayers.length; layer++) {
+          const flakes = allLayers[layer];
+          const depthScale = 0.6 + layer*0.2; /* far=0.6, mid=0.8, near=1.0 */
+          for(const f of flakes) {
+            f.y += f.speed * dt;
+            f.x += f.drift + Math.sin(elapsed*0.001*f.wobbleSpeed)*0.4;
+            f.rotation += f.rotSpeed;
+            if(f.y > H+20) { f.y = -20; f.x = Math.random()*W; }
+            const wobbleX = f.x + Math.sin(elapsed*0.001*f.wobbleSpeed)*f.wobbleAmp*0.3;
+            const alpha = f.opacity * globalAlpha;
+
+            if(isLight) {
+              /* ── Light mode: blue-tinted flakes with darker outlines ── */
+              const baseFill = `rgba(191,219,254,${alpha})`;
+              const outline = `rgba(30,64,175,${alpha * 0.9})`;
+              if(f.star && f.r > 2.5) {
+                drawStar(wobbleX, f.y, f.r*1.3, f.rotation, outline, null);
+                drawStar(wobbleX, f.y, f.r*1.1, f.rotation, baseFill, null);
+              } else {
+                ctx.beginPath();
+                ctx.arc(wobbleX, f.y, f.r, 0, Math.PI*2);
+                ctx.fillStyle = baseFill;
+                ctx.fill();
+                ctx.lineWidth = Math.max(0.8, f.r*0.25);
+                ctx.strokeStyle = outline;
+                ctx.stroke();
+                if(f.r > 3) {
+                  ctx.beginPath();
+                  ctx.arc(wobbleX, f.y, f.r*0.45, 0, Math.PI*2);
+                  ctx.fillStyle = `rgba(59,130,246,${alpha * (0.5 + 0.5*Math.abs(Math.sin(elapsed*0.003+f.x)))})`;
+                  ctx.fill();
+                }
+              }
+            } else {
+              /* ── Dark mode: bright white flakes with blue shimmer ── */
+              const baseFill = `rgba(255,255,255,${alpha})`;
+              if(f.star && f.r > 2.5) {
+                drawStar(wobbleX, f.y, f.r*1.4, f.rotation, baseFill, `rgba(191,219,254,${alpha*0.6})`);
+              } else {
+                /* Soft glow around flake */
+                const gradient = ctx.createRadialGradient(wobbleX, f.y, 0, wobbleX, f.y, f.r*2.5);
+                gradient.addColorStop(0, `rgba(255,255,255,${alpha * 0.6})`);
+                gradient.addColorStop(0.4, `rgba(191,219,254,${alpha * 0.2})`);
+                gradient.addColorStop(1, `rgba(59,130,246,0)`);
+                ctx.fillStyle = gradient;
+                ctx.beginPath();
+                ctx.arc(wobbleX, f.y, f.r*2.5, 0, Math.PI*2);
+                ctx.fill();
+                /* Solid core */
+                ctx.beginPath();
+                ctx.arc(wobbleX, f.y, f.r, 0, Math.PI*2);
+                ctx.fillStyle = baseFill;
+                ctx.fill();
+                if(f.r > 3) {
+                  ctx.beginPath();
+                  ctx.arc(wobbleX, f.y, f.r*0.4, 0, Math.PI*2);
+                  ctx.fillStyle = `rgba(147,197,253,${alpha * (0.5 + 0.5*Math.abs(Math.sin(elapsed*0.003+f.x)))})`;
+                  ctx.fill();
+                }
+              }
             }
           }
         }
-        if(progress < 1) raf = requestAnimationFrame(draw);
-        else if(onDoneRef.current) onDoneRef.current();
+
+        if(elapsed < DURATION) raf = requestAnimationFrame(draw);
+        else { ctx.clearRect(0,0,W,H); finish(); }
       };
-      draw();
+      raf = requestAnimationFrame(draw);
+
     } else {
-      /* ── Heat wave ── */
-      const waves = Array.from({length:24}, (_,i)=>({
-        y: H + Math.random()*50,
-        baseY: H * (0.3 + Math.random()*0.7),
-        amplitude: 4 + Math.random()*8,
-        frequency: 0.005 + Math.random()*0.008,
-        speed: 1.2 + Math.random()*2.5,
-        phase: Math.random()*Math.PI*2,
-        width: 1 + Math.random()*2.5,
-        opacity: 0.08 + Math.random()*0.15,
-        hue: 20 + Math.random()*30, /* amber-orange range */
-      }));
-      /* Rising shimmer particles */
-      const particles = Array.from({length:50}, ()=>({
-        x: Math.random()*W,
+      /* ── Heat wave: layered distortion + rising embers + shimmer ── */
+      const waves = Array.from({length:40}, ()=>({
         y: H + Math.random()*100,
-        speed: 0.5 + Math.random()*2,
-        size: 1 + Math.random()*3,
-        opacity: 0.15 + Math.random()*0.35,
-        drift: (Math.random()-0.5)*0.6,
+        amplitude: 5 + Math.random()*14,
+        frequency: 0.004 + Math.random()*0.01,
+        speed: 30 + Math.random()*60,
+        phase: Math.random()*Math.PI*2,
+        width: 1 + Math.random()*3,
+        opacity: 0.1 + Math.random()*0.2,
+        hue: 15 + Math.random()*35, /* amber-orange-red range */
       }));
-      const draw = () => {
-        const elapsed = Date.now()-start;
+      /* Background warmth glow */
+      const glowParticles = Array.from({length:30}, ()=>({
+        x: Math.random()*W,
+        y: Math.random()*H,
+        radius: 80 + Math.random()*160,
+        speed: (Math.random()-0.5)*15,
+        ySpeed: -10 - Math.random()*20,
+        opacity: 0.04 + Math.random()*0.08,
+        hue: 20 + Math.random()*25,
+      }));
+      /* Rising ember particles */
+      const embers = Array.from({length:120}, ()=>({
+        x: Math.random()*W,
+        y: H + Math.random()*H,
+        speed: 30 + Math.random()*80,
+        size: 0.8 + Math.random()*3.5,
+        opacity: 0.25 + Math.random()*0.5,
+        drift: (Math.random()-0.5)*15,
+        hue: 25 + Math.random()*25,
+        flickerSpeed: 3 + Math.random()*6,
+      }));
+
+      let lastTime = start;
+      const draw = (now) => {
+        const elapsed = now - start;
+        const dt = Math.min((now - lastTime)/1000, 0.05);
+        lastTime = now;
         const progress = Math.min(elapsed/DURATION, 1);
-        const globalAlpha = progress < 0.08 ? progress/0.08 : progress > 0.75 ? (1-progress)/0.25 : 1;
+        let globalAlpha;
+        if(progress < 0.15) globalAlpha = progress/0.15;
+        else if(progress > 0.7) globalAlpha = Math.max(0, 1 - (progress-0.7)/0.3);
+        else globalAlpha = 1;
+        globalAlpha = globalAlpha * globalAlpha * (3 - 2*globalAlpha);
+
         ctx.clearRect(0,0,W,H);
+
+        /* Warm background glow — big soft radial gradients */
+        for(const g of glowParticles) {
+          g.x += g.speed * dt;
+          g.y += g.ySpeed * dt;
+          if(g.y < -g.radius) { g.y = H + g.radius; g.x = Math.random()*W; }
+          if(g.x < -g.radius) g.x = W + g.radius;
+          if(g.x > W + g.radius) g.x = -g.radius;
+          const gradient = ctx.createRadialGradient(g.x, g.y, 0, g.x, g.y, g.radius);
+          const a = g.opacity * globalAlpha;
+          gradient.addColorStop(0, `hsla(${g.hue},90%,${isLight?60:55}%,${a})`);
+          gradient.addColorStop(0.5, `hsla(${g.hue},90%,${isLight?65:50}%,${a*0.4})`);
+          gradient.addColorStop(1, `hsla(${g.hue},90%,50%,0)`);
+          ctx.fillStyle = gradient;
+          ctx.beginPath();
+          ctx.arc(g.x, g.y, g.radius, 0, Math.PI*2);
+          ctx.fill();
+        }
+
         /* Wavy heat distortion lines */
         for(const w of waves) {
-          w.y -= w.speed * 0.4;
-          if(w.y < -20) { w.y = H + 20; w.phase = Math.random()*Math.PI*2; }
+          w.y -= w.speed * dt;
+          if(w.y < -30) { w.y = H + 30; w.phase = Math.random()*Math.PI*2; }
           ctx.beginPath();
           ctx.lineWidth = w.width;
-          ctx.strokeStyle = `hsla(${w.hue},85%,55%,${w.opacity * globalAlpha})`;
-          for(let x=0; x<W; x+=3) {
-            const dy = Math.sin(x*w.frequency + elapsed*0.002 + w.phase)*w.amplitude;
+          const lightness = isLight ? 50 : 60;
+          ctx.strokeStyle = `hsla(${w.hue},90%,${lightness}%,${w.opacity * globalAlpha})`;
+          ctx.lineCap = "round";
+          for(let x=0; x<W; x+=4) {
+            const dy = Math.sin(x*w.frequency + elapsed*0.0025 + w.phase)*w.amplitude;
             if(x===0) ctx.moveTo(x, w.y+dy);
             else ctx.lineTo(x, w.y+dy);
           }
           ctx.stroke();
         }
-        /* Rising ember particles */
-        for(const p of particles) {
-          p.y -= p.speed;
-          p.x += p.drift + Math.sin(elapsed*0.002+p.x*0.01)*0.3;
-          if(p.y < -10) { p.y = H+10; p.x = Math.random()*W; }
-          const flicker = 0.5 + 0.5*Math.sin(elapsed*0.005+p.x);
+
+        /* Rising embers with flicker and glow */
+        for(const p of embers) {
+          p.y -= p.speed * dt;
+          p.x += (p.drift + Math.sin(elapsed*0.002+p.x*0.01)*8) * dt;
+          if(p.y < -20) { p.y = H+20; p.x = Math.random()*W; }
+          const flicker = 0.5 + 0.5*Math.sin(elapsed*0.001*p.flickerSpeed + p.x);
+          const alpha = p.opacity * globalAlpha * flicker;
+          /* Glow halo */
+          const halo = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size*4);
+          halo.addColorStop(0, `hsla(${p.hue},95%,60%,${alpha * 0.8})`);
+          halo.addColorStop(0.5, `hsla(${p.hue},95%,55%,${alpha * 0.3})`);
+          halo.addColorStop(1, `hsla(${p.hue},95%,50%,0)`);
+          ctx.fillStyle = halo;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.size*4, 0, Math.PI*2);
+          ctx.fill();
+          /* Solid core */
           ctx.beginPath();
           ctx.arc(p.x, p.y, p.size, 0, Math.PI*2);
-          ctx.fillStyle = `rgba(251,191,36,${p.opacity * globalAlpha * flicker})`;
+          ctx.fillStyle = `hsla(${p.hue},100%,${isLight?55:70}%,${alpha})`;
           ctx.fill();
         }
-        if(progress < 1) raf = requestAnimationFrame(draw);
-        else if(onDoneRef.current) onDoneRef.current();
+
+        if(elapsed < DURATION) raf = requestAnimationFrame(draw);
+        else { ctx.clearRect(0,0,W,H); finish(); }
       };
-      draw();
+      raf = requestAnimationFrame(draw);
     }
-    return ()=>cancelAnimationFrame(raf);
-  },[type]);
+
+    /* Absolute safety: if raf fails entirely, ensure cleanup */
+    const safety = setTimeout(finish, DURATION + 500);
+
+    return ()=>{
+      cancelAnimationFrame(raf);
+      clearTimeout(safety);
+      window.removeEventListener("resize", onResize);
+    };
+  },[type,isLight]);
   return <canvas ref={canvasRef} style={{position:"fixed",inset:0,zIndex:3000,pointerEvents:"none"}} />;
 };
 
@@ -3059,7 +3218,7 @@ export default function InkwellApp() {
   const [confirmSubtaskComplete,setConfirmSubtaskComplete]=useState(()=>load("inkwell-confirmSubtaskComplete",true));
   const confirmSubRef=useRef(confirmSubtaskComplete);
   useEffect(()=>{confirmSubRef.current=confirmSubtaskComplete;},[confirmSubtaskComplete]);
-  const BUILD_VERSION = "2026.04.14-v1";
+  const BUILD_VERSION = "2026.04.14-v2";
   const [darkMode,setDarkMode]=useState(()=>load("inkwell-darkMode",false));
   const [frostMode,setFrostMode]=useState(()=>load("inkwell-frostMode",false));
   useEffect(()=>{save("inkwell-frostMode",frostMode);},[frostMode]);
@@ -4031,7 +4190,7 @@ export default function InkwellApp() {
       <nav className="sidebar" aria-label="Navigation" style={{width:sidebar?264:0,...(isMobile?{position:"fixed",zIndex:100,height:"100dvh"}:{}),background:"var(--surface)",borderRight:"1px solid var(--border)",display:"flex",flexDirection:"column",transition:"width 0.25s ease",overflow:"hidden",flexShrink:0}}>
         <div style={{padding:"20px 16px 12px",flexShrink:0}}>
           <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20}}>
-            <div onClick={()=>{if(!themeTransition){setThemeTransition(frostMode?"heat":"snow");setFrostMode(f=>!f);setTimeout(()=>setThemeTransition(null),4000);}}} className="logo-egg" style={{width:34,height:34,borderRadius:10,background:frostMode?"linear-gradient(135deg,#3b82f6,#38bdf8)":"linear-gradient(135deg,#d97706,#ea580c)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:17,fontWeight:800,color:"white",fontFamily:"var(--font-display)",cursor:"pointer",position:"relative",transition:"background 0.5s, box-shadow 0.3s",boxShadow:frostMode?"0 2px 12px rgba(59,130,246,0.3)":"none",overflow:"hidden"}}>I</div>
+            <div onClick={()=>{if(!themeTransition){setThemeTransition(frostMode?"heat":"snow");setFrostMode(f=>!f);setTimeout(()=>setThemeTransition(null),5600);}}} className="logo-egg" style={{width:34,height:34,borderRadius:10,background:frostMode?"linear-gradient(135deg,#3b82f6,#38bdf8)":"linear-gradient(135deg,#d97706,#ea580c)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:17,fontWeight:800,color:"white",fontFamily:"var(--font-display)",cursor:"pointer",position:"relative",transition:"background 0.5s, box-shadow 0.3s",boxShadow:frostMode?"0 2px 12px rgba(59,130,246,0.3)":"none",overflow:"hidden"}}>I</div>
             <span style={{fontSize:20,fontWeight:700,fontFamily:"var(--font-display)",color:"var(--ink)",whiteSpace:"nowrap"}}>Inkwell</span>
           </div>
           <button onClick={()=>{setShowPhoto(true);if(isMobile)setSidebar(false);}} style={{width:"100%",padding:"11px 14px",borderRadius:12,border:"2px dashed var(--border)",background:"var(--accent-bg)",color:"var(--accent)",fontSize:13,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:10,transition:"all 0.2s",marginBottom:16,whiteSpace:"nowrap",fontFamily:"inherit"}}>{Icons.camera} Scan Notebook Page</button>
