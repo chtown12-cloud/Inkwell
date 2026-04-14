@@ -593,6 +593,20 @@ const mergeLists = (localLists, cloudLists) => {
 
 /* ═══ END MERGE UTILITIES ═══ */
 const getListColor = (name, lists) => LIST_PALETTE[lists.indexOf(name) % LIST_PALETTE.length];
+/* Convert hex color to rgba with alpha — e.g. hexTint("#3b82f6", 0.08) → "rgba(59,130,246,0.08)" */
+const hexTint = (hex, alpha) => {
+  if(!hex || !hex.startsWith("#")) return `rgba(120,120,120,${alpha})`;
+  const h = hex.slice(1);
+  const r = parseInt(h.slice(0,2), 16);
+  const g = parseInt(h.slice(2,4), 16);
+  const b = parseInt(h.slice(4,6), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+};
+/* Returns the list color only if it's a "real" categorized list — Inbox stays neutral */
+const listAccentColor = (listName, lists) => {
+  if(!listName || listName === "Inbox") return null;
+  return getListColor(listName, lists);
+};
 
 /* Default subtask with all properties (mirrors parent task shape) */
 const newSubtask = (title) => ({
@@ -774,14 +788,17 @@ const DEPTH_STYLES = [
 const getDepthStyle = (d) => DEPTH_STYLES[Math.min(d, DEPTH_STYLES.length - 1)];
 
 /* Subtasks in TaskRow — draggable to promote to task */
-const DraggableSubtaskTree = ({subtasks, onAction, onDragStart, onDragEnd, depth=0}) => {
+const DraggableSubtaskTree = ({subtasks, onAction, onDragStart, onDragEnd, depth=0, listColor=null}) => {
   const [openIds, setOpenIds] = useState({});
   const toggle = id => setOpenIds(p=>({...p,[id]:!p[id]}));
   if(!subtasks?.length) return null;
   const ds = getDepthStyle(depth);
+  /* When a list color is provided, override the depth styling with the list color + faint tint */
+  const borderCol = listColor || ds.border;
+  const bgCol = listColor ? hexTint(listColor, 0.05 + depth*0.015) : ds.bg;
   return (
-    <div style={{marginLeft: depth > 0 ? 10 : 0, borderLeft: `3px solid ${ds.border}`,
-      background: ds.bg, borderRadius: "0 6px 6px 0", paddingLeft: 8}}>
+    <div style={{marginLeft: depth > 0 ? 10 : 0, borderLeft: `3px solid ${borderCol}`,
+      background: bgCol, borderRadius: "0 6px 6px 0", paddingLeft: 8}}>
       {subtasks.map(sub => {
         const childCount = countSubs(sub.subtasks);
         const hasChildren = (sub.subtasks||[]).length > 0;
@@ -792,7 +809,7 @@ const DraggableSubtaskTree = ({subtasks, onAction, onDragStart, onDragEnd, depth
               data-drag-id={sub.id} data-drag-source="subtask" data-drag-label={sub.title}
               style={{display:"flex",alignItems:"center",gap:8,padding:"4px 4px",fontSize:13,cursor:"grab",touchAction:"none"}}>
               <span style={{color:"var(--border)",flexShrink:0,cursor:"grab"}}>{Icons.grip}</span>
-              {depth > 0 && <span style={{fontSize:9,color:ds.prefixColor,flexShrink:0,fontWeight:700}}>{ds.prefix.trim()}</span>}
+              {depth > 0 && <span style={{fontSize:9,color:listColor||ds.prefixColor,flexShrink:0,fontWeight:700}}>{ds.prefix.trim()}</span>}
               <Checkbox checked={sub.completed} size={15} onChange={c=>onAction("update",sub.id,{completed:c,completedAt:c?new Date().toISOString():null})}/>
               <span style={{flex:1,color:sub.completed?"var(--muted)":"var(--text)",textDecoration:sub.completed?"line-through":"none",minWidth:0,fontSize:13}}>{sub.title}</span>
               {sub.dueDate&&<span style={{fontSize:10,color:isOverdue(sub.dueDate)?"var(--danger)":"var(--muted)",fontWeight:500,flexShrink:0}}>{formatDate(sub.dueDate)}</span>}
@@ -804,7 +821,7 @@ const DraggableSubtaskTree = ({subtasks, onAction, onDragStart, onDragEnd, depth
               )}
             </div>
             {hasChildren && isOpen && (
-              <DraggableSubtaskTree subtasks={sub.subtasks} onAction={onAction} onDragStart={onDragStart} onDragEnd={onDragEnd} depth={depth+1}/>
+              <DraggableSubtaskTree subtasks={sub.subtasks} onAction={onAction} onDragStart={onDragStart} onDragEnd={onDragEnd} depth={depth+1} listColor={listColor}/>
             )}
           </div>
         );
@@ -979,7 +996,7 @@ const useSubtaskTouchDrag = (containerRef, onReorder) => {
    RECURSIVE SUBTASK TREE (infinite nesting, editable titles, clickable)
    Visual depth cues + drag to reorder/nest (desktop + mobile)
    ═══════════════════════════════════════════════════════════════════════ */
-const SubtaskTree = ({subtasks, onAction, onOpenSub, onReorder, depth=0, compact=false}) => {
+const SubtaskTree = ({subtasks, onAction, onOpenSub, onReorder, depth=0, compact=false, listColor=null}) => {
   const [openIds, setOpenIds] = useState({});
   const [addingTo, setAddingTo] = useState(null);
   const [addText, setAddText] = useState("");
@@ -990,6 +1007,8 @@ const SubtaskTree = ({subtasks, onAction, onOpenSub, onReorder, depth=0, compact
   const toggle = id => setOpenIds(p=>({...p,[id]:!p[id]}));
   if(!subtasks?.length && !compact) return null;
   const ds = getDepthStyle(depth);
+  const borderCol = listColor || ds.border;
+  const bgCol = listColor ? hexTint(listColor, 0.05 + depth*0.015) : ds.bg;
 
   useEffect(()=>{if(editingId&&editRef.current){editRef.current.focus();editRef.current.select();}},[editingId]);
 
@@ -1030,8 +1049,8 @@ const SubtaskTree = ({subtasks, onAction, onOpenSub, onReorder, depth=0, compact
   };
 
   return (
-    <div style={{marginLeft: depth > 0 ? 12 : 0, borderLeft: `3px solid ${ds.border}`,
-      background: ds.bg, borderRadius: "0 8px 8px 0", paddingLeft: 10}}>
+    <div style={{marginLeft: depth > 0 ? 12 : 0, borderLeft: `3px solid ${borderCol}`,
+      background: bgCol, borderRadius: "0 8px 8px 0", paddingLeft: 10}}>
       {(subtasks||[]).map(sub => {
         const childCount = countSubs(sub.subtasks);
         const hasChildren = (sub.subtasks||[]).length > 0;
@@ -1101,7 +1120,7 @@ const SubtaskTree = ({subtasks, onAction, onOpenSub, onReorder, depth=0, compact
               </div>
             )}
             {hasChildren && isOpen && (
-              <SubtaskTree subtasks={sub.subtasks} onAction={onAction} onOpenSub={onOpenSub} onReorder={onReorder} depth={depth+1} compact={compact}/>
+              <SubtaskTree subtasks={sub.subtasks} onAction={onAction} onOpenSub={onOpenSub} onReorder={onReorder} depth={depth+1} compact={compact} listColor={listColor}/>
             )}
           </div>
         );
@@ -1524,6 +1543,7 @@ const TaskDetail = ({task, onUpdate, onDelete, onClose, onToggle, lists}) => {
   const depthLabel = depth < depthLabels.length ? depthLabels[depth] : `Depth ${depth}`;
   const ds = getDepthStyle(depth);
   const depthColors = ["var(--accent)", "var(--depth1)", "var(--depth2)", "var(--depth3)"];
+  const taskListColor = listAccentColor(task.list, lists);
   const accentColor = depthColors[Math.min(depth, depthColors.length - 1)];
 
   /* Update helpers — route changes through the correct path */
@@ -1586,6 +1606,8 @@ const TaskDetail = ({task, onUpdate, onDelete, onClose, onToggle, lists}) => {
       <div style={{borderBottom:"1px solid var(--border)"}}>
         {/* Colored depth indicator strip */}
         <div style={{height:3,background:accentColor,transition:"background 0.3s"}}/>
+        {/* List color stripe (only when task has a categorized list) */}
+        {taskListColor&&<div style={{height:2,background:taskListColor,transition:"background 0.3s"}}/>}
 
         <div style={{padding:"10px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",minHeight:44}}>
           <div style={{display:"flex",alignItems:"center",gap:8,flex:1,minWidth:0}}>
@@ -1773,7 +1795,8 @@ const TaskDetail = ({task, onUpdate, onDelete, onClose, onToggle, lists}) => {
               <SubtaskTree subtasks={current.subtasks} compact={true}
                 onAction={handleSubAction}
                 onReorder={handleSubReorder}
-                onOpenSub={drillIn}/>
+                onOpenSub={drillIn}
+                listColor={taskListColor}/>
             )}
           </div>
           <div style={{display:"flex",gap:6}}>
@@ -1997,7 +2020,7 @@ const collectDatedSubtasks = (tasks) => {
   return results;
 };
 
-const KanbanBoard = ({tasks, columns, onColumnsChange, onResetColumns, onSelect, onUpdate, onToggle, onUpdateSubtask, onSubUpdate, flash, setIsDragging, animatingTasks, onReorder, sortBy="default", filterPriority="all"}) => {
+const KanbanBoard = ({tasks, columns, onColumnsChange, onResetColumns, onSelect, onUpdate, onToggle, onUpdateSubtask, onSubUpdate, flash, setIsDragging, animatingTasks, onReorder, sortBy="default", filterPriority="all", lists=[]}) => {
   const [hoverCol, setHoverCol] = useState(null);
   const [editingCol, setEditingCol] = useState(null);
   const [editName, setEditName] = useState("");
@@ -2148,7 +2171,7 @@ const KanbanBoard = ({tasks, columns, onColumnsChange, onResetColumns, onSelect,
             {overdueTasks.map(t => (
               <KanbanCard key={t.id} task={t} onSelect={onSelect} onToggle={onToggle} onDragBegin={setIsDragging} animateState={animatingTasks?.[t.id]}
                 cardDrop={cardDrop} onCardDragOver={onCardDragOver} onCardDrop={onCardDrop} onCardDragLeave={onCardDragLeave}
-                onUpdateSubtask={onUpdateSubtask} onSubUpdate={onSubUpdate} setIsDragging={setIsDragging}/>
+                onUpdateSubtask={onUpdateSubtask} onSubUpdate={onSubUpdate} setIsDragging={setIsDragging} lists={lists}/>
             ))}
           </div>
         </div>
@@ -2198,11 +2221,11 @@ const KanbanBoard = ({tasks, columns, onColumnsChange, onResetColumns, onSelect,
               {colTasks.map(t => (
                 <KanbanCard key={t.id} task={t} onSelect={onSelect} onToggle={onToggle} onDragBegin={setIsDragging} animateState={animatingTasks?.[t.id]}
                   cardDrop={cardDrop} onCardDragOver={onCardDragOver} onCardDrop={onCardDrop} onCardDragLeave={onCardDragLeave}
-                  onUpdateSubtask={onUpdateSubtask} onSubUpdate={onSubUpdate} setIsDragging={setIsDragging}/>
+                  onUpdateSubtask={onUpdateSubtask} onSubUpdate={onSubUpdate} setIsDragging={setIsDragging} lists={lists}/>
               ))}
               {colSubs.length > 0 && colTasks.length > 0 && <div style={{borderTop:"1px dashed var(--border)",margin:"6px 0"}} />}
               {colSubs.map(ds => (
-                <SubtaskKanbanCard key={ds.sub.id} subInfo={ds} onSelect={onSelect} onToggleSub={onUpdateSubtask} onDragBegin={setIsDragging} />
+                <SubtaskKanbanCard key={ds.sub.id} subInfo={ds} onSelect={onSelect} onToggleSub={onUpdateSubtask} onDragBegin={setIsDragging} lists={lists}/>
               ))}
             </div>
           </div>
@@ -2226,8 +2249,10 @@ const KanbanBoard = ({tasks, columns, onColumnsChange, onResetColumns, onSelect,
   );
 };
 
-const KanbanCard = ({task, onSelect, onToggle, onDragBegin, animateState, cardDrop, onCardDragOver, onCardDrop, onCardDragLeave, onUpdateSubtask, onSubUpdate, setIsDragging: setDragging}) => {
+const KanbanCard = ({task, onSelect, onToggle, onDragBegin, animateState, cardDrop, onCardDragOver, onCardDrop, onCardDragLeave, onUpdateSubtask, onSubUpdate, setIsDragging: setDragging, lists}) => {
   const pc = PRIORITY[task.priority || "none"].color;
+  const listColor = listAccentColor(task.list, lists);
+  const borderColor = listColor || pc; /* Prefer list color; fall back to priority for Inbox */
   const dz = cardDrop?.id === task.id ? cardDrop : null;
   const subs = task.subtasks || [];
   const hasSubs = subs.length > 0;
@@ -2241,9 +2266,9 @@ const KanbanCard = ({task, onSelect, onToggle, onDragBegin, animateState, cardDr
       onDragLeave={onCardDragLeave}
       style={{position:"relative",marginBottom:6}}>
       {dz?.zone === "before" && <div style={{position:"absolute",top:-3,left:4,right:4,height:2,background:"var(--accent)",borderRadius:1,zIndex:5}}/>}
-      <div style={{background:"var(--card)",borderRadius:10,borderLeft:`3px solid ${pc}`,boxShadow:"0 1px 3px var(--shadow)",
+      <div style={{background:"var(--card)",borderRadius:10,borderLeft:`3px solid ${borderColor}`,boxShadow:"0 1px 3px var(--shadow)",
         animation:animateState==="complete"?"cardComplete 0.6s ease forwards":animateState==="uncomplete"?"cardUncomplete 0.5s ease forwards":"none",
-        transition:"box-shadow 0.15s,transform 0.15s",overflow:"hidden"}}>
+        transition:"box-shadow 0.15s,transform 0.15s,border-color 0.2s",overflow:"hidden"}}>
         {/* ── Main card row (draggable) ── */}
         <div draggable
           data-drag-id={task.id} data-drag-source="task" data-drag-label={task.title}
@@ -2269,18 +2294,19 @@ const KanbanCard = ({task, onSelect, onToggle, onDragBegin, animateState, cardDr
                     <span style={{transform:expanded?"rotate(0)":"rotate(-90deg)",transition:"transform 0.15s",display:"inline-flex",marginLeft:1}}>{Icons.chevD}</span>
                   </button>
                 )}
-                <span style={{fontSize:10,color:"var(--muted)",background:"var(--surface)",padding:"1px 5px",borderRadius:3}}>{task.list}</span>
+                <span style={{fontSize:10,fontWeight:500,color:listColor||"var(--muted)",background:listColor?hexTint(listColor,0.12):"var(--surface)",padding:"1px 5px",borderRadius:3}}>{task.list}</span>
               </div>
             </div>
           </div>
         </div>
         {/* ── Expanded subtask list ── */}
         {hasSubs && expanded && (
-          <div style={{borderTop:"1px solid var(--border-light)",padding:"4px 8px 6px",background:"var(--surface)"}}>
+          <div style={{borderTop:"1px solid var(--border-light)",padding:"4px 8px 6px",background:listColor?hexTint(listColor,0.04):"var(--surface)"}}>
             <KanbanSubtaskList subs={subs} taskId={task.id} depth={0}
               parentDueDate={task.dueDate}
               onToggleSub={onUpdateSubtask} onSubUpdate={onSubUpdate}
-              onDragBegin={setDragging} onSelect={() => onSelect(task)}/>
+              onDragBegin={setDragging} onSelect={() => onSelect(task)}
+              listColor={listColor}/>
           </div>
         )}
       </div>
@@ -2291,7 +2317,7 @@ const KanbanCard = ({task, onSelect, onToggle, onDragBegin, animateState, cardDr
 
 /* Recursive subtask list inside kanban cards — collapsible, draggable at any depth.
    Subtasks that have been moved to other dates (surfaced as standalone cards) are hidden here. */
-const KanbanSubtaskList = ({subs, taskId, depth, parentDueDate, onToggleSub, onSubUpdate, onDragBegin, onSelect}) => {
+const KanbanSubtaskList = ({subs, taskId, depth, parentDueDate, onToggleSub, onSubUpdate, onDragBegin, onSelect, listColor=null}) => {
   const [openIds, setOpenIds] = useState({});
   const toggle = id => setOpenIds(p => ({...p, [id]: !p[id]}));
   if (!subs?.length) return null;
@@ -2301,7 +2327,13 @@ const KanbanSubtaskList = ({subs, taskId, depth, parentDueDate, onToggleSub, onS
   const movedCount = subs.length - visible.length;
 
   return (
-    <div style={{marginLeft: depth > 0 ? 10 : 0}}>
+    <div style={{
+      marginLeft: depth > 0 ? 10 : 0,
+      borderLeft: listColor ? `2px solid ${listColor}` : (depth > 0 ? `2px solid var(--depth${Math.min(depth,3)})` : "none"),
+      background: listColor ? hexTint(listColor, 0.04 + depth*0.012) : "transparent",
+      paddingLeft: listColor || depth > 0 ? 6 : 0,
+      borderRadius: (listColor || depth > 0) ? "0 6px 6px 0" : 0,
+    }}>
       {visible.map(sub => {
         const hasCh = (sub.subtasks || []).length > 0;
         const isOpen = openIds[sub.id] !== false;
@@ -2323,7 +2355,7 @@ const KanbanSubtaskList = ({subs, taskId, depth, parentDueDate, onToggleSub, onS
                 transition:"background 0.1s",fontSize:12}}
               onMouseEnter={e=>e.currentTarget.style.background="rgba(0,0,0,0.03)"}
               onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
-              {depth > 0 && <span style={{fontSize:9,color:"var(--depth0)",flexShrink:0,fontWeight:700}}>↳</span>}
+              {depth > 0 && <span style={{fontSize:9,color:listColor||"var(--depth0)",flexShrink:0,fontWeight:700}}>↳</span>}
               <div onClick={e=>{e.stopPropagation();onToggleSub(taskId, sub.id);}} style={{flexShrink:0,cursor:"pointer"}}>
                 <Checkbox checked={sub.completed} priority={sub.priority} size={13}/>
               </div>
@@ -2345,7 +2377,8 @@ const KanbanSubtaskList = ({subs, taskId, depth, parentDueDate, onToggleSub, onS
               <KanbanSubtaskList subs={sub.subtasks} taskId={taskId} depth={depth+1}
                 parentDueDate={parentDueDate}
                 onToggleSub={onToggleSub} onSubUpdate={onSubUpdate}
-                onDragBegin={onDragBegin} onSelect={onSelect}/>
+                onDragBegin={onDragBegin} onSelect={onSelect}
+                listColor={listColor}/>
             )}
           </div>
         );
@@ -2360,10 +2393,12 @@ const KanbanSubtaskList = ({subs, taskId, depth, parentDueDate, onToggleSub, onS
 };
 
 /* Surfaced subtask card — shows a subtask on the kanban with parent breadcrumb, draggable */
-const SubtaskKanbanCard = ({subInfo, onSelect, onToggleSub, onDragBegin}) => {
+const SubtaskKanbanCard = ({subInfo, onSelect, onToggleSub, onDragBegin, lists}) => {
   const {sub, parentTask, breadcrumb} = subInfo;
   const parentLabel = breadcrumb.length > 1 ? breadcrumb.slice(0, -1).join(" › ") : parentTask.title;
   const pc = PRIORITY[sub.priority || "none"].color;
+  const listColor = listAccentColor(parentTask.list, lists);
+  const borderColor = listColor || pc;
   const hasCh = (sub.subtasks || []).length > 0;
   const chCount = hasCh ? countSubs(sub.subtasks) : null;
   return (
@@ -2379,7 +2414,7 @@ const SubtaskKanbanCard = ({subInfo, onSelect, onToggleSub, onDragBegin}) => {
       onClick={() => onSelect(parentTask)}
       style={{padding:"10px 12px",background:"var(--card)",borderRadius:10,marginBottom:6,cursor:"grab",touchAction:"none",
         boxShadow:"0 1px 3px var(--shadow)",
-        border:"1px dashed var(--accent)",borderLeft:`3px solid ${pc}`,transition:"box-shadow 0.15s"}}>
+        border:"1px dashed var(--accent)",borderLeft:`3px solid ${borderColor}`,transition:"box-shadow 0.15s,border-color 0.2s"}}>
       <div style={{display:"flex",alignItems:"flex-start",gap:8}}>
         <div style={{paddingTop:1}}>
           <Checkbox checked={sub.completed} priority={sub.priority} size={16}
@@ -2392,7 +2427,7 @@ const SubtaskKanbanCard = ({subInfo, onSelect, onToggleSub, onDragBegin}) => {
               ↳ {parentLabel}
             </span>
             {hasCh && <span style={{fontSize:10,color:"var(--muted)"}}>{Icons.subtask} {chCount.done}/{chCount.total}</span>}
-            <span style={{fontSize:10,color:"var(--muted)",background:"var(--surface)",padding:"1px 5px",borderRadius:3}}>{parentTask.list}</span>
+            <span style={{fontSize:10,fontWeight:500,color:listColor||"var(--muted)",background:listColor?hexTint(listColor,0.12):"var(--surface)",padding:"1px 5px",borderRadius:3}}>{parentTask.list}</span>
           </div>
         </div>
       </div>
@@ -2643,6 +2678,7 @@ const TaskRow = ({task,isActive,isSelected,onSelect,onToggle,onUpdateTask,onDrag
   const hasDuration=task.startDate&&task.endDate;
   const isDT=dropTarget?.id===task.id;
   const dtZone=isDT?dropTarget.zone:null;
+  const listColor = listAccentColor(task.list, lists);
 
   const handleSubAction = (action, targetId, data) => {
     let newSubs;
@@ -2667,8 +2703,9 @@ const TaskRow = ({task,isActive,isSelected,onSelect,onToggle,onUpdateTask,onDrag
       style={{marginBottom:2,borderRadius:12,position:"relative",touchAction:"none",
         background:isSelected?"var(--accent-a10)":dtZone==="nest"?"var(--accent-a08)":isActive?"var(--active-bg)":"transparent",
         outline:isSelected?"2px solid var(--accent)":dtZone==="nest"?"2px dashed var(--accent)":"none",
+        borderLeft:listColor?`3px solid ${listColor}`:"3px solid transparent",
         animation:animateState==="complete"?"taskComplete 0.7s ease forwards":animateState==="uncomplete"?"taskUncomplete 0.6s ease forwards":"none",
-        transition:"background 0.15s,opacity 0.3s,outline 0.1s",opacity:task.completed&&!animateState?0.45:animateState?undefined:1}}>
+        transition:"background 0.15s,opacity 0.3s,outline 0.1s,border-color 0.2s",opacity:task.completed&&!animateState?0.45:animateState?undefined:1}}>
       {/* Drop indicator lines */}
       {dtZone==="before"&&<div style={{position:"absolute",top:-1,left:12,right:12,height:2,background:"var(--accent)",borderRadius:1,zIndex:5}}/>}
       {dtZone==="after"&&<div style={{position:"absolute",bottom:-1,left:12,right:12,height:2,background:"var(--accent)",borderRadius:1,zIndex:5}}/>}
@@ -2688,14 +2725,14 @@ const TaskRow = ({task,isActive,isSelected,onSelect,onToggle,onUpdateTask,onDrag
             {(task.tags||[]).map(t=><span key={t} style={{fontSize:11,color:"var(--accent)",fontWeight:500}}>#{t}</span>)}
             {task.notes&&<span style={{color:"var(--border)",display:"flex"}}>{Icons.note}</span>}
             {task.recurrence&&<span style={{fontSize:11,display:"flex",alignItems:"center",gap:3,color:"#7c3aed",fontWeight:500}} title={task.recurrence.endAfter?`${task.recurrence.completedCount||0}/${task.recurrence.endAfter} done`:"Repeating"}>{Icons.repeat}{task.recurrence.endAfter?`${task.recurrence.completedCount||0}/${task.recurrence.endAfter}`:""}</span>}
-            {!view.startsWith("list:")&&view!=="inbox"&&<span style={{fontSize:11,color:"var(--muted)",background:"var(--surface)",padding:"1px 7px",borderRadius:4}}>{task.list}</span>}
+            {!view.startsWith("list:")&&view!=="inbox"&&<span style={{fontSize:11,fontWeight:500,color:listColor||"var(--muted)",background:listColor?hexTint(listColor,0.12):"var(--surface)",padding:"1px 7px",borderRadius:4}}>{task.list}</span>}
           </div>
         </div>
       </div>
       {/* Expanded subtasks — each one is draggable to promote */}
       {subsOpen&&subTotal>0&&(
         <div style={{paddingLeft:52,paddingBottom:8,paddingRight:12}}>
-          <DraggableSubtaskTree subtasks={task.subtasks} onAction={handleSubAction} onDragStart={onDragStart} onDragEnd={onDragEnd} parentTask={task}/>
+          <DraggableSubtaskTree subtasks={task.subtasks} onAction={handleSubAction} onDragStart={onDragStart} onDragEnd={onDragEnd} parentTask={task} listColor={listColor}/>
         </div>
       )}
     </div>
@@ -3218,7 +3255,7 @@ export default function InkwellApp() {
   const [confirmSubtaskComplete,setConfirmSubtaskComplete]=useState(()=>load("inkwell-confirmSubtaskComplete",true));
   const confirmSubRef=useRef(confirmSubtaskComplete);
   useEffect(()=>{confirmSubRef.current=confirmSubtaskComplete;},[confirmSubtaskComplete]);
-  const BUILD_VERSION = "2026.04.14-v2";
+  const BUILD_VERSION = "2026.04.14-v3";
   const [darkMode,setDarkMode]=useState(()=>load("inkwell-darkMode",false));
   const [frostMode,setFrostMode]=useState(()=>load("inkwell-frostMode",false));
   useEffect(()=>{save("inkwell-frostMode",frostMode);},[frostMode]);
@@ -4447,7 +4484,7 @@ export default function InkwellApp() {
                 <button onClick={()=>setTodayMode("kanban")} style={{padding:"5px 12px",borderRadius:6,border:"none",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:todayMode==="kanban"?"var(--card)":"transparent",color:todayMode==="kanban"?"var(--ink)":"var(--muted)",boxShadow:todayMode==="kanban"?"0 1px 3px rgba(0,0,0,0.08)":"none",transition:"all 0.15s"}}>Board</button>
                 <button onClick={()=>setTodayMode("list")} style={{padding:"5px 12px",borderRadius:6,border:"none",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:todayMode==="list"?"var(--card)":"transparent",color:todayMode==="list"?"var(--ink)":"var(--muted)",boxShadow:todayMode==="list"?"0 1px 3px rgba(0,0,0,0.08)":"none",transition:"all 0.15s"}}>List</button>
               </div>
-              <div style={{flex:1,minHeight:0}}><KanbanBoard key={`kb-${sortBy}-${filterPriority}`} tasks={tasks} columns={activeKanbanCols} onColumnsChange={setKanbanColumns} onResetColumns={kanbanColumns?resetKanbanCols:null} onSelect={t=>setSelectedTask(t)} onUpdate={updateTask} onToggle={toggleTask} onReorder={setTasks} onUpdateSubtask={(taskId,subId)=>{setTasks(prev=>prev.map(t=>t.id!==taskId?t:{...t,subtasks:updateSubById(t.subtasks,subId,{completed:!findSubById(t.subtasks,subId)?.completed,completedAt:!findSubById(t.subtasks,subId)?.completed?new Date().toISOString():null})}));}} onSubUpdate={(subId,changes)=>{setTasks(prev=>prev.map(t=>{const found=findSubById(t.subtasks,subId);if(!found)return t;return{...t,subtasks:updateSubById(t.subtasks,subId,changes)};}));}} flash={flash} setIsDragging={setIsDragging} animatingTasks={animatingTasks} sortBy={sortBy} filterPriority={filterPriority}/></div>
+              <div style={{flex:1,minHeight:0}}><KanbanBoard key={`kb-${sortBy}-${filterPriority}`} tasks={tasks} columns={activeKanbanCols} onColumnsChange={setKanbanColumns} onResetColumns={kanbanColumns?resetKanbanCols:null} onSelect={t=>setSelectedTask(t)} onUpdate={updateTask} onToggle={toggleTask} onReorder={setTasks} onUpdateSubtask={(taskId,subId)=>{setTasks(prev=>prev.map(t=>t.id!==taskId?t:{...t,subtasks:updateSubById(t.subtasks,subId,{completed:!findSubById(t.subtasks,subId)?.completed,completedAt:!findSubById(t.subtasks,subId)?.completed?new Date().toISOString():null})}));}} onSubUpdate={(subId,changes)=>{setTasks(prev=>prev.map(t=>{const found=findSubById(t.subtasks,subId);if(!found)return t;return{...t,subtasks:updateSubById(t.subtasks,subId,changes)};}));}} flash={flash} setIsDragging={setIsDragging} animatingTasks={animatingTasks} sortBy={sortBy} filterPriority={filterPriority} lists={lists}/></div>
             </div>):(<>
               {view!=="completed"&&view!=="overdue"&&(<div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",background:"var(--card)",borderRadius:14,border:"1px solid var(--border)",marginBottom:view==="today"?10:16,boxShadow:"0 1px 3px var(--shadow)"}}>
                 <span style={{color:"var(--accent)",flexShrink:0}}>{Icons.plus}</span>
