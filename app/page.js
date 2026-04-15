@@ -1932,7 +1932,7 @@ Personal
         <HelpSection icon="🗂️" title="Kanban Board" defaultOpen={initialSection==="kanban"}>
           <p style={{marginBottom:10}}>Switch the Today view to Board mode for a visual kanban layout. Tasks are grouped into columns by list, and you can drag cards between columns.</p>
           <div style={{marginBottom:12}}>
-            <div style={featureStyle}><div style={dotStyle}/><div><b>Toggle view</b> — use the Board / List switch at the top of the Today view.</div></div>
+            <div style={featureStyle}><div style={dotStyle}/><div><b>Toggle view</b> — use the Board / List switch on Today, Inbox, or any list to see tasks as a kanban board or a flat list.</div></div>
             <div style={featureStyle}><div style={dotStyle}/><div><b>Drag between columns</b> — move cards across columns to reassign them to different lists.</div></div>
             <div style={featureStyle}><div style={dotStyle}/><div><b>Reorder within columns</b> — drag cards up and down to set your own priority order.</div></div>
             <div style={featureStyle}><div style={dotStyle}/><div><b>Expand subtasks</b> — click the subtask count badge on any card to expand and manage subtasks inline, with cross-column drag support.</div></div>
@@ -2020,12 +2020,21 @@ const collectDatedSubtasks = (tasks) => {
   return results;
 };
 
-const KanbanBoard = ({tasks, columns, onColumnsChange, onResetColumns, onSelect, onUpdate, onToggle, onUpdateSubtask, onSubUpdate, flash, setIsDragging, animatingTasks, onReorder, sortBy="default", filterPriority="all", lists=[]}) => {
+const KanbanBoard = ({tasks, columns, onColumnsChange, onResetColumns, onSelect, onUpdate, onToggle, onUpdateSubtask, onSubUpdate, flash, setIsDragging, animatingTasks, onReorder, sortBy="default", filterPriority="all", lists=[], scopeListName=null, todayListFilter=null}) => {
   const [hoverCol, setHoverCol] = useState(null);
   const [editingCol, setEditingCol] = useState(null);
   const [editName, setEditName] = useState("");
   const [editDate, setEditDate] = useState("");
   const [cardDrop, setCardDrop] = useState(null); /* {id, zone:"before"|"after"} */
+
+  /* Scope filter: when viewing a specific list's board, only show that list's tasks.
+     When viewing Today with a multi-select filter, only show those lists' tasks. */
+  const scopedTasks = useMemo(() => {
+    let t = tasks;
+    if (scopeListName) t = t.filter(x => x.list === scopeListName);
+    else if (todayListFilter && todayListFilter.size > 0) t = t.filter(x => todayListFilter.has(x.list));
+    return t;
+  }, [tasks, scopeListName, todayListFilter]);
 
   const KANBAN_PO={high:0,medium:1,low:2,none:3};
   const kanbanSortAndFilter=(arr)=>{
@@ -2039,18 +2048,28 @@ const KanbanBoard = ({tasks, columns, onColumnsChange, onResetColumns, onSelect,
     });
   };
 
-  const overdueTasks = kanbanSortAndFilter(tasks.filter(t => !t.completed && t.dueDate && t.dueDate < todayStr()));
+  const overdueTasks = kanbanSortAndFilter(scopedTasks.filter(t => !t.completed && t.dueDate && t.dueDate < todayStr()));
 
-  /* Collect subtasks with own due dates */
-  const datedSubs = useMemo(() => collectDatedSubtasks(tasks), [tasks]);
+  /* Collect subtasks with own due dates — also scope-filtered via parent task */
+  const datedSubs = useMemo(() => {
+    const all = collectDatedSubtasks(tasks);
+    if (scopeListName) return all.filter(ds => ds.parentTask.list === scopeListName);
+    if (todayListFilter && todayListFilter.size > 0) return all.filter(ds => todayListFilter.has(ds.parentTask.list));
+    return all;
+  }, [tasks, scopeListName, todayListFilter]);
 
   /* Compute column data — NOT memoized, recomputes every render to guarantee sort freshness */
   const byDate = {};
   columns.forEach(c => {
-    const directTasks = kanbanSortAndFilter(tasks.filter(t => !t.completed && t.dueDate === c.dateStr));
+    const directTasks = kanbanSortAndFilter(scopedTasks.filter(t => !t.completed && t.dueDate === c.dateStr));
     const surfaced = datedSubs.filter(ds => ds.sub.dueDate === c.dateStr);
     byDate[c.dateStr] = { tasks: directTasks, subtasks: surfaced };
   });
+
+  /* "No Date" bucket — only shown in list scope, for that list's undated tasks */
+  const noDateTasks = scopeListName
+    ? kanbanSortAndFilter(scopedTasks.filter(t => !t.completed && !t.dueDate))
+    : [];
 
   const onColDragOver = (e, ds) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; setHoverCol(ds); };
   const onColDrop = (e, ds) => {
@@ -2231,6 +2250,33 @@ const KanbanBoard = ({tasks, columns, onColumnsChange, onResetColumns, onSelect,
           </div>
         );
       })}
+      {/* No Date column — only in list scope, captures undated tasks for that list */}
+      {scopeListName && (
+        <div
+          data-drop-type="date" data-drop-value=""
+          onDragOver={e => onColDragOver(e, "__nodate__")}
+          onDragLeave={() => setHoverCol(null)}
+          onDrop={e => onColDrop(e, null)}
+          style={{minWidth:220,maxWidth:280,flex:"1 0 220px",display:"flex",flexDirection:"column",
+            background:hoverCol==="__nodate__"?"var(--accent-a08)":"var(--surface)",
+            borderRadius:14,border:hoverCol==="__nodate__"?"2px solid var(--accent)":"1px dashed var(--border)",
+            overflow:"hidden",transition:"border 0.15s, background 0.15s"}}>
+          <div style={{padding:"10px 14px 8px",borderBottom:"1px solid var(--border)"}}>
+            <div style={{fontSize:14,fontWeight:700,color:"var(--muted)"}}>No Date</div>
+            <div style={{fontSize:12,color:"var(--muted)",marginTop:2}}>Unscheduled · {noDateTasks.length} task{noDateTasks.length!==1?"s":""}</div>
+          </div>
+          <div style={{flex:1,overflowY:"auto",padding:8,minHeight:100}}>
+            {noDateTasks.length===0 && (
+              <div style={{textAlign:"center",padding:"24px 8px",color:"var(--muted)",fontSize:12,fontStyle:"italic"}}>Drop tasks here to unschedule</div>
+            )}
+            {noDateTasks.map(t => (
+              <KanbanCard key={t.id} task={t} onSelect={onSelect} onToggle={onToggle} onDragBegin={setIsDragging} animateState={animatingTasks?.[t.id]}
+                cardDrop={cardDrop} onCardDragOver={onCardDragOver} onCardDrop={onCardDrop} onCardDragLeave={onCardDragLeave}
+                onUpdateSubtask={onUpdateSubtask} onSubUpdate={onSubUpdate} setIsDragging={setIsDragging} lists={lists}/>
+            ))}
+          </div>
+        </div>
+      )}
       {/* Add column */}
       <div style={{minWidth:100,flex:"0 0 100px",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:12}}>
         <div onClick={addCol} style={{width:"100%",flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",borderRadius:14,border:"2px dashed var(--border)",cursor:"pointer",transition:"border-color 0.15s,background 0.15s",background:"transparent",gap:4}}
@@ -3255,7 +3301,7 @@ export default function InkwellApp() {
   const [confirmSubtaskComplete,setConfirmSubtaskComplete]=useState(()=>load("inkwell-confirmSubtaskComplete",true));
   const confirmSubRef=useRef(confirmSubtaskComplete);
   useEffect(()=>{confirmSubRef.current=confirmSubtaskComplete;},[confirmSubtaskComplete]);
-  const BUILD_VERSION = "2026.04.14-v3";
+  const BUILD_VERSION = "2026.04.14-v4";
   const [darkMode,setDarkMode]=useState(()=>load("inkwell-darkMode",false));
   const [frostMode,setFrostMode]=useState(()=>load("inkwell-frostMode",false));
   useEffect(()=>{save("inkwell-frostMode",frostMode);},[frostMode]);
@@ -3263,7 +3309,9 @@ export default function InkwellApp() {
   const [themeTransition,setThemeTransition]=useState(null); /* "snow" | "heat" | null */
   const defaultQuickDates=[{label:"Tomorrow",offset:"tomorrow"},{label:"Next Monday",offset:"nextMonday"}];
   const [quickDates,setQuickDates]=useState(()=>load("inkwell-quickDates",defaultQuickDates));
-  const [todayMode,setTodayMode]=useState(()=>load("inkwell-todayMode","kanban")); /* "kanban" | "list" */
+  const [viewMode,setViewMode]=useState(()=>load("inkwell-todayMode","kanban")); /* "kanban" | "list" — applies to today/inbox/list views */
+  const [todayListFilter,setTodayListFilter]=useState(()=>new Set(load("inkwell-todayListFilter",[])));
+  const [showTodayFilter,setShowTodayFilter]=useState(false);
   const [sortBy,setSortBy]=useState("default"); /* default|priority|alpha|date|created */
   const [filterPriority,setFilterPriority]=useState("all"); /* all|high|medium|low */
   const [showSortMenu,setShowSortMenu]=useState(false);
@@ -3331,7 +3379,8 @@ export default function InkwellApp() {
   useEffect(()=>{save("inkwell-confirmSubtaskComplete",confirmSubtaskComplete);},[confirmSubtaskComplete]);
   useEffect(()=>{save("inkwell-darkMode",darkMode);},[darkMode]);
   useEffect(()=>{save("inkwell-quickDates",quickDates);},[quickDates]);
-  useEffect(()=>{save("inkwell-todayMode",todayMode);},[todayMode]);
+  useEffect(()=>{save("inkwell-todayMode",viewMode);},[viewMode]);
+  useEffect(()=>{save("inkwell-todayListFilter",[...todayListFilter]);},[todayListFilter]);
 
   /* ── CLOUD-FIRST SYNC ──
      When logged in: cloud is always the source of truth.
@@ -4097,12 +4146,15 @@ export default function InkwellApp() {
       f=f.filter(t=>!archivedLists.includes(t.list));
     if(search){const q=search.toLowerCase();f=f.filter(t=>t.title.toLowerCase().includes(q)||(t.notes||"").toLowerCase().includes(q)||(t.tags||[]).some(tg=>tg.toLowerCase().includes(q)));}
     else{switch(view){case"today":f=f.filter(t=>t.dueDate===todayStr()||(!t.dueDate&&t.createdAt?.startsWith(todayStr())));break;case"overdue":f=f.filter(t=>!t.completed&&t.dueDate&&t.dueDate<todayStr());if(sortBy==="default")f.sort((a,b)=>(a.dueDate||"").localeCompare(b.dueDate||""));break;case"upcoming":f=f.filter(t=>!t.completed&&t.dueDate&&t.dueDate>=todayStr());if(sortBy==="default")f.sort((a,b)=>(a.dueDate||"").localeCompare(b.dueDate||""));break;case"all":break;case"completed":return applySortFilter(f.filter(t=>t.completed));case"inbox":f=f.filter(t=>t.list==="Inbox");break;default:if(view.startsWith("list:"))f=f.filter(t=>t.list===view.replace("list:",""));}}
+    /* Today view: apply list multi-select filter if active */
+    if(view==="today" && todayListFilter.size > 0){f=f.filter(t=>todayListFilter.has(t.list));}
     const result=applySortFilter(f);
     /* Surface subtasks with their own due dates in Today/Upcoming views */
     if(view==="today"||view==="upcoming"){
       const dated=collectDatedSubtasks(tasks);
       const surfaced=dated.filter(ds=>{
         if(ds.parentTask.dueDate===ds.sub.dueDate) return false;
+        if(view==="today" && todayListFilter.size > 0 && !todayListFilter.has(ds.parentTask.list)) return false;
         if(view==="today") return ds.sub.dueDate===todayStr();
         return ds.sub.dueDate&&ds.sub.dueDate>=todayStr();
       }).map(ds=>({...ds.sub, _surfacedSub:true, _parentTask:ds.parentTask, _breadcrumb:ds.breadcrumb, list:ds.parentTask.list}));
@@ -4111,7 +4163,7 @@ export default function InkwellApp() {
       result.splice(insertAt,0,...surfaced);
     }
     return result;
-  },[tasks,view,search,sortBy,filterPriority,applySortFilter,archivedLists,currentDateStr]);
+  },[tasks,view,search,sortBy,filterPriority,applySortFilter,archivedLists,currentDateStr,todayListFilter]);
 
   const overdueCount=useMemo(()=>tasks.filter(t=>!t.completed&&isOverdue(t.dueDate)&&!archivedLists.includes(t.list)).length,[tasks,archivedLists,currentDateStr]);
   /* Auto-redirect from overdue view when all tasks resolved */
@@ -4475,18 +4527,69 @@ export default function InkwellApp() {
 
         <div style={{flex:1,display:"flex",overflow:"hidden"}}>
           <div className="main-scroll" style={{flex:1,overflowY:"auto",padding:isMobile?"16px":"20px 24px"}}>
-            {view==="calendar"?(<CalendarView tasks={tasks} onSelect={t=>setSelectedTask(t)} onUpdate={updateTask}/>):(view==="today"&&todayMode==="kanban")?(<div style={{display:"flex",flexDirection:"column",height:"100%"}}>
+            {(() => {
+              /* Compute whether current view supports kanban board mode */
+              const boardEligible = view==="today" || view==="inbox" || view.startsWith("list:");
+              const currentListName = view==="inbox" ? "Inbox" : view.startsWith("list:") ? view.replace("list:","") : null;
+              /* Shared toolbar: Board/List toggle (if eligible) + Today filter button (if on Today) */
+              const renderViewToolbar = () => boardEligible && (
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14,flexShrink:0,flexWrap:"wrap"}}>
+                  <div style={{display:"flex",background:"var(--surface)",borderRadius:8,padding:2,width:"fit-content"}}>
+                    <button onClick={()=>setViewMode("kanban")} style={{padding:"5px 12px",borderRadius:6,border:"none",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:viewMode==="kanban"?"var(--card)":"transparent",color:viewMode==="kanban"?"var(--ink)":"var(--muted)",boxShadow:viewMode==="kanban"?"0 1px 3px rgba(0,0,0,0.08)":"none",transition:"all 0.15s"}}>Board</button>
+                    <button onClick={()=>setViewMode("list")} style={{padding:"5px 12px",borderRadius:6,border:"none",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:viewMode==="list"?"var(--card)":"transparent",color:viewMode==="list"?"var(--ink)":"var(--muted)",boxShadow:viewMode==="list"?"0 1px 3px rgba(0,0,0,0.08)":"none",transition:"all 0.15s"}}>List</button>
+                  </div>
+                  {view==="today" && (
+                    <div style={{position:"relative"}}>
+                      <button onClick={()=>setShowTodayFilter(s=>!s)}
+                        style={{display:"flex",alignItems:"center",gap:6,padding:"6px 10px",borderRadius:8,border:`1px solid ${todayListFilter.size>0?"var(--accent)":"var(--border)"}`,background:todayListFilter.size>0?"var(--accent-a10)":"var(--card)",fontSize:12,fontWeight:600,color:todayListFilter.size>0?"var(--accent)":"var(--text)",cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}}
+                        title="Filter by list">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+                        {todayListFilter.size>0 ? `${todayListFilter.size} list${todayListFilter.size!==1?"s":""}` : "Filter"}
+                        {todayListFilter.size>0 && <span onClick={e=>{e.stopPropagation();setTodayListFilter(new Set());}} style={{fontSize:14,lineHeight:1,opacity:0.7,marginLeft:2,cursor:"pointer"}} title="Clear filter">×</span>}
+                      </button>
+                      {showTodayFilter && (<>
+                        <div style={{position:"fixed",inset:0,zIndex:999}} onClick={()=>setShowTodayFilter(false)}/>
+                        <div style={{position:"absolute",top:"calc(100% + 4px)",left:0,background:"var(--card)",borderRadius:10,boxShadow:"0 4px 20px rgba(0,0,0,0.15)",border:"1px solid var(--border)",padding:6,zIndex:1000,minWidth:200,maxHeight:340,overflowY:"auto",animation:"fadeIn 0.12s ease"}}>
+                          <div style={{fontSize:11,fontWeight:700,color:"var(--muted)",textTransform:"uppercase",letterSpacing:0.8,padding:"6px 10px 4px"}}>Show tasks from</div>
+                          {["Inbox",...lists.filter(l=>l!=="Inbox")].map(l=>{
+                            const color = listAccentColor(l, lists);
+                            const checked = todayListFilter.has(l);
+                            return (
+                              <div key={l} onClick={()=>{setTodayListFilter(prev=>{const n=new Set(prev);if(n.has(l))n.delete(l);else n.add(l);return n;});}}
+                                style={{display:"flex",alignItems:"center",gap:9,padding:"7px 10px",borderRadius:6,cursor:"pointer",fontSize:13,color:"var(--text)",transition:"background 0.1s"}}
+                                onMouseEnter={e=>e.currentTarget.style.background="var(--surface)"} onMouseLeave={e=>e.currentTarget.style.background=""}>
+                                <div style={{width:14,height:14,borderRadius:3,border:`1.5px solid ${checked?"var(--accent)":"var(--border)"}`,background:checked?"var(--accent)":"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,transition:"all 0.12s"}}>
+                                  {checked && <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
+                                </div>
+                                <span style={{width:8,height:8,borderRadius:"50%",background:color||"var(--border)",flexShrink:0,opacity:color?1:0.4}}/>
+                                <span style={{flex:1,fontWeight:checked?600:500}}>{l}</span>
+                              </div>
+                            );
+                          })}
+                          {todayListFilter.size>0 && (
+                            <div style={{borderTop:"1px solid var(--border-light)",marginTop:4,paddingTop:4}}>
+                              <button onClick={()=>{setTodayListFilter(new Set());setShowTodayFilter(false);}}
+                                style={{width:"100%",padding:"7px 10px",border:"none",background:"none",cursor:"pointer",fontSize:12,fontWeight:600,color:"var(--muted)",textAlign:"left",borderRadius:6,fontFamily:"inherit"}}
+                                onMouseEnter={e=>e.currentTarget.style.background="var(--surface)"} onMouseLeave={e=>e.currentTarget.style.background="none"}>Clear filter</button>
+                            </div>
+                          )}
+                        </div>
+                      </>)}
+                    </div>
+                  )}
+                </div>
+              );
+              const inKanbanMode = boardEligible && viewMode==="kanban";
+
+              return view==="calendar"?(<CalendarView tasks={tasks} onSelect={t=>setSelectedTask(t)} onUpdate={updateTask}/>):inKanbanMode?(<div style={{display:"flex",flexDirection:"column",height:"100%"}}>
               <div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",background:"var(--card)",borderRadius:14,border:"1px solid var(--border)",marginBottom:10,boxShadow:"0 1px 3px var(--shadow)",flexShrink:0}}>
                 <span style={{color:"var(--accent)",flexShrink:0}}>{Icons.plus}</span>
                 <input id="quick-add" value={newTitle} onChange={e=>setNewTitle(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&newTitle.trim()){const t=addTask({title:newTitle.trim()});setNewTitle("");flash(`✓ Added "${t.title}"`);}}} placeholder="Add a task... (Enter) · defaults to today" style={{flex:1,border:"none",outline:"none",fontSize:15,color:"var(--ink)",background:"none",fontFamily:"inherit",minWidth:0}}/>
               </div>
-              <div style={{display:"flex",background:"var(--surface)",borderRadius:8,padding:2,marginBottom:14,width:"fit-content",flexShrink:0}}>
-                <button onClick={()=>setTodayMode("kanban")} style={{padding:"5px 12px",borderRadius:6,border:"none",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:todayMode==="kanban"?"var(--card)":"transparent",color:todayMode==="kanban"?"var(--ink)":"var(--muted)",boxShadow:todayMode==="kanban"?"0 1px 3px rgba(0,0,0,0.08)":"none",transition:"all 0.15s"}}>Board</button>
-                <button onClick={()=>setTodayMode("list")} style={{padding:"5px 12px",borderRadius:6,border:"none",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:todayMode==="list"?"var(--card)":"transparent",color:todayMode==="list"?"var(--ink)":"var(--muted)",boxShadow:todayMode==="list"?"0 1px 3px rgba(0,0,0,0.08)":"none",transition:"all 0.15s"}}>List</button>
-              </div>
-              <div style={{flex:1,minHeight:0}}><KanbanBoard key={`kb-${sortBy}-${filterPriority}`} tasks={tasks} columns={activeKanbanCols} onColumnsChange={setKanbanColumns} onResetColumns={kanbanColumns?resetKanbanCols:null} onSelect={t=>setSelectedTask(t)} onUpdate={updateTask} onToggle={toggleTask} onReorder={setTasks} onUpdateSubtask={(taskId,subId)=>{setTasks(prev=>prev.map(t=>t.id!==taskId?t:{...t,subtasks:updateSubById(t.subtasks,subId,{completed:!findSubById(t.subtasks,subId)?.completed,completedAt:!findSubById(t.subtasks,subId)?.completed?new Date().toISOString():null})}));}} onSubUpdate={(subId,changes)=>{setTasks(prev=>prev.map(t=>{const found=findSubById(t.subtasks,subId);if(!found)return t;return{...t,subtasks:updateSubById(t.subtasks,subId,changes)};}));}} flash={flash} setIsDragging={setIsDragging} animatingTasks={animatingTasks} sortBy={sortBy} filterPriority={filterPriority} lists={lists}/></div>
+              {renderViewToolbar()}
+              <div style={{flex:1,minHeight:0}}><KanbanBoard key={`kb-${view}-${sortBy}-${filterPriority}`} tasks={tasks} columns={activeKanbanCols} onColumnsChange={setKanbanColumns} onResetColumns={kanbanColumns?resetKanbanCols:null} onSelect={t=>setSelectedTask(t)} onUpdate={updateTask} onToggle={toggleTask} onReorder={setTasks} onUpdateSubtask={(taskId,subId)=>{setTasks(prev=>prev.map(t=>t.id!==taskId?t:{...t,subtasks:updateSubById(t.subtasks,subId,{completed:!findSubById(t.subtasks,subId)?.completed,completedAt:!findSubById(t.subtasks,subId)?.completed?new Date().toISOString():null})}));}} onSubUpdate={(subId,changes)=>{setTasks(prev=>prev.map(t=>{const found=findSubById(t.subtasks,subId);if(!found)return t;return{...t,subtasks:updateSubById(t.subtasks,subId,changes)};}));}} flash={flash} setIsDragging={setIsDragging} animatingTasks={animatingTasks} sortBy={sortBy} filterPriority={filterPriority} lists={lists} scopeListName={currentListName} todayListFilter={view==="today"?todayListFilter:null}/></div>
             </div>):(<>
-              {view!=="completed"&&view!=="overdue"&&(<div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",background:"var(--card)",borderRadius:14,border:"1px solid var(--border)",marginBottom:view==="today"?10:16,boxShadow:"0 1px 3px var(--shadow)"}}>
+              {view!=="completed"&&view!=="overdue"&&(<div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",background:"var(--card)",borderRadius:14,border:"1px solid var(--border)",marginBottom:boardEligible?10:16,boxShadow:"0 1px 3px var(--shadow)"}}>
                 <span style={{color:"var(--accent)",flexShrink:0}}>{Icons.plus}</span>
                 <input id="quick-add" value={newTitle} onChange={e=>setNewTitle(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&newTitle.trim()){const t=addTask({title:newTitle.trim()});setNewTitle("");flash(`✓ Added "${t.title}"`);}}} placeholder="Add a task... (Enter) · defaults to today" style={{flex:1,border:"none",outline:"none",fontSize:15,color:"var(--ink)",background:"none",fontFamily:"inherit",minWidth:0}}/>
               </div>)}
@@ -4499,12 +4602,7 @@ export default function InkwellApp() {
                   </div>
                 </div>
               )}
-              {view==="today"&&(
-                <div style={{display:"flex",background:"var(--surface)",borderRadius:8,padding:2,marginBottom:14,width:"fit-content",flexShrink:0}}>
-                  <button onClick={()=>setTodayMode("kanban")} style={{padding:"5px 12px",borderRadius:6,border:"none",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:todayMode==="kanban"?"var(--card)":"transparent",color:todayMode==="kanban"?"var(--ink)":"var(--muted)",boxShadow:todayMode==="kanban"?"0 1px 3px rgba(0,0,0,0.08)":"none",transition:"all 0.15s"}}>Board</button>
-                  <button onClick={()=>setTodayMode("list")} style={{padding:"5px 12px",borderRadius:6,border:"none",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:todayMode==="list"?"var(--card)":"transparent",color:todayMode==="list"?"var(--ink)":"var(--muted)",boxShadow:todayMode==="list"?"0 1px 3px rgba(0,0,0,0.08)":"none",transition:"all 0.15s"}}>List</button>
-                </div>
-              )}
+              {renderViewToolbar()}
               {filtered.length===0?(<div style={{textAlign:"center",padding:"50px 20px",color:view==="overdue"?"var(--danger)":"var(--muted)"}}><div style={{fontSize:44,marginBottom:14,opacity:0.4}}>{view==="completed"?"🎉":view==="today"?"☀️":view==="overdue"?"🎉":search?"🔍":"📋"}</div><div style={{fontSize:16,fontWeight:600,marginBottom:4}}>{view==="completed"?"No completed tasks yet":view==="overdue"?"All caught up!":search?"No matching tasks":"All clear!"}</div><div style={{fontSize:14}}>{view==="overdue"?"No overdue tasks — nice work!":(<>Add a task above or scan a notebook page. <span onClick={()=>setShowTips("welcome")} style={{color:"var(--accent)",cursor:"pointer",fontWeight:600,textDecoration:"underline",textDecorationColor:"var(--accent-a30)",textUnderlineOffset:2}}>See what Inkwell can do →</span></>)}</div></div>):(
                 <div role="list" aria-label="Tasks" style={view==="overdue"?{background:"var(--danger-bg)",borderRadius:14,border:"1px solid var(--danger-border)",padding:"8px 10px"}:undefined}>
                   {filtered.map((task,i)=>{const prev=i>0?filtered[i-1]:null;const showSep=task.completed&&!task._surfacedSub&&prev&&!prev.completed;
@@ -4529,7 +4627,8 @@ export default function InkwellApp() {
                     </div>);})}
                 </div>
               )}
-            </>)}
+            </>);
+            })()}
           </div>
           {selectedTask&&!isMobile&&<TaskDetail task={selectedTask} onUpdate={updateTask} onDelete={deleteTask} onClose={()=>setSelectedTask(null)} onToggle={toggleTask} lists={lists}/>}
         </div>
