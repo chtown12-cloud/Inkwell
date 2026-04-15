@@ -3301,7 +3301,7 @@ export default function InkwellApp() {
   const [confirmSubtaskComplete,setConfirmSubtaskComplete]=useState(()=>load("inkwell-confirmSubtaskComplete",true));
   const confirmSubRef=useRef(confirmSubtaskComplete);
   useEffect(()=>{confirmSubRef.current=confirmSubtaskComplete;},[confirmSubtaskComplete]);
-  const BUILD_VERSION = "2026.04.14-v4";
+  const BUILD_VERSION = "2026.04.15-v1";
   const [darkMode,setDarkMode]=useState(()=>load("inkwell-darkMode",false));
   const [frostMode,setFrostMode]=useState(()=>load("inkwell-frostMode",false));
   useEffect(()=>{save("inkwell-frostMode",frostMode);},[frostMode]);
@@ -4772,7 +4772,7 @@ export default function InkwellApp() {
           </div>
         );
       })()}
-      {toast&&<div role="status" aria-live="polite" style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",background:"#292524",color:"#fafaf9",padding:"12px 24px",borderRadius:12,fontSize:14,fontWeight:600,boxShadow:"0 8px 24px rgba(0,0,0,0.2)",animation:"toastIn 0.3s ease",zIndex:2000,whiteSpace:"nowrap"}}>{toast}</div>}
+      {toast&&<div role="status" aria-live="polite" style={{position:"fixed",bottom:isDragging?84:24,left:"50%",transform:"translateX(-50%)",background:"#292524",color:"#fafaf9",padding:"12px 24px",borderRadius:12,fontSize:14,fontWeight:600,boxShadow:"0 8px 24px rgba(0,0,0,0.2)",animation:"toastIn 0.3s ease",zIndex:2000,whiteSpace:"nowrap",pointerEvents:"none",transition:"bottom 0.2s ease"}}>{toast}</div>}
       {/* Trash drop zone — appears during any drag */}
       {isDragging&&(
         <div data-drop-type="trash"
