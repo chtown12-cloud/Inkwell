@@ -1,0 +1,1142 @@
+From 26d790cd959a7c54c72e24bf8e7cf111d0fdc6ff Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Fri, 17 Apr 2026 14:50:05 +0000
+Subject: [PATCH 1/2] Major UX/design glow-up: warm inkwell palette, a11y,
+ easter eggs
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Design system
+- Warm cream paper (#faf7f0) + deep ink navy (#1a2238) light palette
+- Warm off-black (#14110d) dark palette — true "night writing" feel
+- Typography hierarchy: Fraunces (display), Inter Tight (body),
+  JetBrains Mono (dates/keys), Caveat (quill mode), Atkinson
+  Hyperlegible (dyslexia toggle)
+- Subtle SVG paper-noise texture layered on app background
+- Paper-ruled and deckle-edge utility classes in globals.css
+
+Accessibility
+- Skip-to-content link (visible on focus)
+- WCAG-tuned focus rings on all interactive elements
+- Dyslexic-friendly font toggle (Atkinson Hyperlegible)
+- Text-size scale: sm / md / lg / xl (multiplies base font-size)
+- Full prefers-reduced-motion override across all animations
+- ARIA roles / labels on command palette and new overlays
+- Auto-switching dark mode via prefers-color-scheme (respects
+  explicit user override)
+
+New features
+- Command palette (Cmd/Ctrl-K): views, lists, dark toggle, a11y,
+  help, search — fuzzy filtered, keyboard navigable
+- Undo-capable toasts for destructive actions (task delete,
+  bulk delete, subtask delete) with 5s restore window
+
+Easter eggs
+- Konami code (↑↑↓↓←→←→BA) toggles Quill Mode — handwritten
+  font overlay + ink spatter on task completion
+- Long-press the logo (600ms) reveals The Scroll — a changelog
+  animated as an unrolling parchment
+- Midnight Moon: soft glowing moon icon auto-appears 12–1am
+- Completion streak: every 10 tasks completed triggers a
+  confetti-ink burst
+- :coffee: token in task strings renders a steaming mug glyph
+
+Safety
+- No schema changes to Supabase user_data
+- No changes to existing localStorage keys
+  (inkwell-tasks-v2, inkwell-lists-v2, inkwell-tombstones,
+  inkwell-archivedLists, inkwell-darkMode, inkwell-frostMode,
+  inkwell-quickDates, inkwell-kanbanCols all preserved)
+- New keys only: inkwell-a11y-dyslexic, inkwell-a11y-textsize
+- Existing data-merge logic (mergeTasks/Subtasks/Lists) untouched
+- Frost-mode easter egg preserved alongside new Konami mode
+
+New file
+- app/components/Enhancements.js: CommandPalette, ChangelogScroll,
+  ConfettiInk, MidnightMoon, plus hooks (useKonami, useLongPress,
+  useMidnight, useA11yPrefs, useUndoToast, useInkSpatter)
+
+https://claude.ai/code/session_0198z8upgvJJbVBjGUFypi1K
+---
+ app/components/Enhancements.js | 432 +++++++++++++++++++++++++++++++++
+ app/globals.css                | 240 +++++++++++++++++-
+ app/layout.js                  |  14 +-
+ app/page.js                    | 168 +++++++++++--
+ 4 files changed, 822 insertions(+), 32 deletions(-)
+ create mode 100644 app/components/Enhancements.js
+
+diff --git a/app/components/Enhancements.js b/app/components/Enhancements.js
+new file mode 100644
+index 0000000..90e2a77
+--- /dev/null
++++ b/app/components/Enhancements.js
+@@ -0,0 +1,432 @@
++"use client";
++/* ═══════════════════════════════════════════════════════════════════════
++   INKWELL — ENHANCEMENTS MODULE
++   Command palette, easter eggs, accessibility hooks, changelog scroll,
++   undo-capable toasts. Imported by app/page.js.
++   ═══════════════════════════════════════════════════════════════════════ */
++import { useState, useEffect, useRef, useCallback, useMemo } from "react";
++
++/* ═══════════════════════════════════════════════════════════════════════
++   HOOK — useAutoTheme: respects prefers-color-scheme when user hasn't
++   manually overridden. userOverride null = auto.
++   ═══════════════════════════════════════════════════════════════════════ */
++export function useAutoTheme(userOverride) {
++  const [systemDark, setSystemDark] = useState(() => {
++    if (typeof window === "undefined") return false;
++    return window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false;
++  });
++  useEffect(() => {
++    if (typeof window === "undefined" || !window.matchMedia) return;
++    const mq = window.matchMedia("(prefers-color-scheme: dark)");
++    const on = (e) => setSystemDark(e.matches);
++    mq.addEventListener?.("change", on);
++    return () => mq.removeEventListener?.("change", on);
++  }, []);
++  return userOverride == null ? systemDark : userOverride;
++}
++
++/* ═══════════════════════════════════════════════════════════════════════
++   HOOK — useMidnight: returns true between 12:00–01:00 local.
++   ═══════════════════════════════════════════════════════════════════════ */
++export function useMidnight() {
++  const [active, setActive] = useState(false);
++  useEffect(() => {
++    const check = () => {
++      const h = new Date().getHours();
++      setActive(h === 0);
++    };
++    check();
++    const iv = setInterval(check, 60_000);
++    return () => clearInterval(iv);
++  }, []);
++  return active;
++}
++
++/* ═══════════════════════════════════════════════════════════════════════
++   HOOK — useKonami: fires cb() when ↑↑↓↓←→←→BA typed in order.
++   ═══════════════════════════════════════════════════════════════════════ */
++const KONAMI = ["ArrowUp","ArrowUp","ArrowDown","ArrowDown","ArrowLeft","ArrowRight","ArrowLeft","ArrowRight","b","a"];
++export function useKonami(cb) {
++  const ref = useRef([]);
++  const cbRef = useRef(cb);
++  useEffect(() => { cbRef.current = cb; }, [cb]);
++  useEffect(() => {
++    const on = (e) => {
++      const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
++      ref.current = [...ref.current, key].slice(-KONAMI.length);
++      if (ref.current.length === KONAMI.length &&
++          ref.current.every((k, i) => k === KONAMI[i])) {
++        cbRef.current?.();
++        ref.current = [];
++      }
++    };
++    window.addEventListener("keydown", on);
++    return () => window.removeEventListener("keydown", on);
++  }, []);
++}
++
++/* ═══════════════════════════════════════════════════════════════════════
++   HOOK — useLongPress: returns event handlers; fires onLong() after
++   `ms` ms of continuous press without movement.
++   ═══════════════════════════════════════════════════════════════════════ */
++export function useLongPress(onLong, { ms = 600, moveTolerance = 10 } = {}) {
++  const timer = useRef(null);
++  const start = useRef(null);
++  const cancel = () => { clearTimeout(timer.current); timer.current = null; start.current = null; };
++  const down = (e) => {
++    const p = e.touches?.[0] || e;
++    start.current = { x: p.clientX, y: p.clientY };
++    timer.current = setTimeout(() => { onLong?.(e); timer.current = null; }, ms);
++  };
++  const move = (e) => {
++    if (!start.current) return;
++    const p = e.touches?.[0] || e;
++    const dx = Math.abs(p.clientX - start.current.x);
++    const dy = Math.abs(p.clientY - start.current.y);
++    if (dx > moveTolerance || dy > moveTolerance) cancel();
++  };
++  return {
++    onMouseDown: down, onMouseUp: cancel, onMouseLeave: cancel, onMouseMove: move,
++    onTouchStart: down, onTouchEnd: cancel, onTouchCancel: cancel, onTouchMove: move,
++  };
++}
++
++/* ═══════════════════════════════════════════════════════════════════════
++   HELPER — renderCoffee: replace :coffee: with a steaming mug span.
++   Returns array of React children.
++   ═══════════════════════════════════════════════════════════════════════ */
++export function renderCoffee(text) {
++  if (!text || typeof text !== "string" || !text.includes(":coffee:")) return text;
++  const parts = text.split(":coffee:");
++  const out = [];
++  parts.forEach((p, i) => {
++    out.push(p);
++    if (i < parts.length - 1) {
++      out.push(
++        <span key={`c-${i}`} className="coffee-mug" style={{display:"inline-block",position:"relative",width:"1.1em",height:"1.1em",verticalAlign:"-0.2em",margin:"0 0.05em"}} aria-label="coffee">
++          <span style={{fontSize:"1em",filter:"saturate(1.3)"}}>☕</span>
++          <span style={{position:"absolute",top:"-0.4em",left:"0.2em",width:"0.25em",height:"0.5em",background:"currentColor",opacity:0.35,borderRadius:"50%",animation:"steam 1.8s ease-in-out infinite"}}/>
++          <span style={{position:"absolute",top:"-0.5em",left:"0.55em",width:"0.22em",height:"0.45em",background:"currentColor",opacity:0.3,borderRadius:"50%",animation:"steam 1.8s ease-in-out infinite 0.6s"}}/>
++        </span>
++      );
++    }
++  });
++  return out;
++}
++
++/* ═══════════════════════════════════════════════════════════════════════
++   COMPONENT — ConfettiInk: triggers a burst when `trigger` changes.
++   ═══════════════════════════════════════════════════════════════════════ */
++export function ConfettiInk({ trigger }) {
++  const [pieces, setPieces] = useState([]);
++  useEffect(() => {
++    if (!trigger) return;
++    const colors = ["#b45309","#d97706","#1a2238","#5b7fa8","#7b7968"];
++    const batch = Array.from({ length: 38 }, (_, i) => ({
++      id: `${trigger}-${i}`,
++      left: 20 + Math.random() * 60,
++      cx: (Math.random() - 0.5) * 420,
++      size: 6 + Math.random() * 8,
++      color: colors[Math.floor(Math.random() * colors.length)],
++      delay: Math.random() * 0.15,
++      dur: 1.6 + Math.random() * 1.2,
++      rot: Math.random() * 360,
++    }));
++    setPieces(batch);
++    const t = setTimeout(() => setPieces([]), 3200);
++    return () => clearTimeout(t);
++  }, [trigger]);
++  if (!pieces.length) return null;
++  return (
++    <div aria-hidden="true" style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:2400,overflow:"hidden"}}>
++      {pieces.map(p => (
++        <span key={p.id} className="confetti-ink-piece" style={{
++          position:"absolute",
++          top:"-20px",
++          left:`${p.left}%`,
++          width:`${p.size}px`,
++          height:`${p.size * 1.6}px`,
++          background:p.color,
++          borderRadius:"2px",
++          transform:`rotate(${p.rot}deg)`,
++          animation:`confettiFall ${p.dur}s cubic-bezier(.4,.1,.6,1) ${p.delay}s forwards`,
++          "--cx":`${p.cx}px`,
++        }}/>
++      ))}
++    </div>
++  );
++}
++
++/* ═══════════════════════════════════════════════════════════════════════
++   COMPONENT — MidnightMoon: shows during midnight hour.
++   ═══════════════════════════════════════════════════════════════════════ */
++export function MidnightMoon({ show }) {
++  if (!show) return null;
++  return (
++    <svg className="midnight-moon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
++      <path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"
++        fill="#e9e6d9" stroke="#c8c3b2" strokeWidth="1"/>
++      <circle cx="14" cy="9" r="0.7" fill="#c8c3b2" opacity="0.6"/>
++      <circle cx="17" cy="13" r="0.5" fill="#c8c3b2" opacity="0.5"/>
++      <circle cx="13" cy="14" r="0.4" fill="#c8c3b2" opacity="0.4"/>
++    </svg>
++  );
++}
++
++/* ═══════════════════════════════════════════════════════════════════════
++   HOOK — useInkSpatter: call spatter(x, y) to drop 5 ink dots at that
++   spot. Active only when quill mode is on (handled by caller).
++   ═══════════════════════════════════════════════════════════════════════ */
++export function useInkSpatter() {
++  const spatter = useCallback((x, y) => {
++    if (typeof document === "undefined") return;
++    for (let i = 0; i < 6; i++) {
++      const dot = document.createElement("span");
++      dot.className = "ink-spatter";
++      const angle = (Math.PI * 2 * i) / 6 + Math.random() * 0.4;
++      const dist = 18 + Math.random() * 30;
++      dot.style.left = `${x}px`;
++      dot.style.top = `${y}px`;
++      dot.style.setProperty("--spatter-end", `translate(${Math.cos(angle) * dist}px, ${Math.sin(angle) * dist}px)`);
++      dot.style.width = dot.style.height = `${3 + Math.random() * 4}px`;
++      document.body.appendChild(dot);
++      setTimeout(() => dot.remove(), 900);
++    }
++  }, []);
++  return spatter;
++}
++
++/* ═══════════════════════════════════════════════════════════════════════
++   COMPONENT — CommandPalette
++   Props: open, onClose, commands[] (each: {id, label, hint?, run, group?, icon?})
++   Keyboard: ↑↓ navigate, Enter runs, Esc closes, typing filters.
++   ═══════════════════════════════════════════════════════════════════════ */
++export function CommandPalette({ open, onClose, commands }) {
++  const [q, setQ] = useState("");
++  const [cursor, setCursor] = useState(0);
++  const inputRef = useRef(null);
++  const listRef = useRef(null);
++
++  useEffect(() => {
++    if (open) {
++      setQ("");
++      setCursor(0);
++      setTimeout(() => inputRef.current?.focus(), 10);
++    }
++  }, [open]);
++
++  const filtered = useMemo(() => {
++    if (!q.trim()) return commands;
++    const needle = q.toLowerCase();
++    return commands
++      .map(c => {
++        const hay = `${c.label} ${c.hint || ""} ${c.group || ""}`.toLowerCase();
++        const i = hay.indexOf(needle);
++        if (i === -1) return null;
++        return { ...c, _rank: i };
++      })
++      .filter(Boolean)
++      .sort((a, b) => a._rank - b._rank);
++  }, [q, commands]);
++
++  useEffect(() => { setCursor(0); }, [q]);
++
++  if (!open) return null;
++
++  const runAt = (i) => {
++    const c = filtered[i];
++    if (!c) return;
++    onClose();
++    setTimeout(() => c.run(), 0);
++  };
++
++  const onKey = (e) => {
++    if (e.key === "ArrowDown") { e.preventDefault(); setCursor(c => Math.min(c + 1, filtered.length - 1)); }
++    else if (e.key === "ArrowUp") { e.preventDefault(); setCursor(c => Math.max(c - 1, 0)); }
++    else if (e.key === "Enter") { e.preventDefault(); runAt(cursor); }
++    else if (e.key === "Escape") { e.preventDefault(); onClose(); }
++  };
++
++  return (
++    <div role="dialog" aria-modal="true" aria-label="Command palette"
++      onClick={onClose}
++      style={{position:"fixed",inset:0,background:"var(--overlay)",backdropFilter:"blur(8px)",zIndex:3000,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"10vh 16px 16px",animation:"fadeIn 0.15s ease"}}>
++      <div onClick={e=>e.stopPropagation()}
++        style={{width:"100%",maxWidth:560,background:"var(--card)",borderRadius:16,border:"1px solid var(--border)",boxShadow:"0 25px 80px rgba(0,0,0,0.35)",overflow:"hidden",fontFamily:"var(--font-body)",animation:"toastIn 0.18s ease"}}>
++        <div style={{padding:"14px 16px",borderBottom:"1px solid var(--border-light)",display:"flex",alignItems:"center",gap:10}}>
++          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.3-4.3"/></svg>
++          <input ref={inputRef} value={q} onChange={e=>setQ(e.target.value)} onKeyDown={onKey}
++            placeholder="Type a command or search…"
++            aria-label="Command"
++            style={{flex:1,border:"none",outline:"none",background:"transparent",fontSize:16,color:"var(--ink)",fontFamily:"inherit"}}/>
++          <kbd className="kbd" style={{fontSize:11,padding:"3px 7px",borderRadius:6,background:"var(--surface)",border:"1px solid var(--border)",color:"var(--muted)"}}>Esc</kbd>
++        </div>
++        <div ref={listRef} role="listbox" aria-label="Commands"
++          style={{maxHeight:"50vh",overflowY:"auto",padding:"6px 0"}}>
++          {filtered.length === 0 ? (
++            <div style={{padding:"28px 16px",textAlign:"center",color:"var(--muted)",fontSize:14}}>No matches</div>
++          ) : filtered.map((c, i) => (
++            <button key={c.id}
++              onClick={()=>runAt(i)}
++              onMouseEnter={()=>setCursor(i)}
++              role="option"
++              aria-selected={i === cursor}
++              style={{width:"100%",textAlign:"left",border:"none",background:i===cursor?"var(--accent-a10)":"transparent",color:"var(--ink)",padding:"10px 16px",display:"flex",alignItems:"center",gap:12,cursor:"pointer",fontFamily:"inherit",fontSize:14}}>
++              {c.icon && <span style={{display:"flex",flexShrink:0,color:i===cursor?"var(--accent)":"var(--muted)"}}>{c.icon}</span>}
++              <span style={{flex:1,minWidth:0}}>
++                <div style={{fontWeight:500,color:"var(--ink)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{c.label}</div>
++                {c.hint && <div style={{fontSize:12,color:"var(--muted)",marginTop:1}}>{c.hint}</div>}
++              </span>
++              {c.group && <span style={{fontSize:11,color:"var(--muted)",padding:"2px 7px",borderRadius:6,background:"var(--surface)",border:"1px solid var(--border)",whiteSpace:"nowrap"}}>{c.group}</span>}
++            </button>
++          ))}
++        </div>
++        <div style={{padding:"8px 14px",borderTop:"1px solid var(--border-light)",fontSize:11,color:"var(--muted)",display:"flex",gap:14,alignItems:"center"}}>
++          <span><kbd className="kbd" style={{padding:"1px 5px",background:"var(--surface)",border:"1px solid var(--border)",borderRadius:4,fontSize:10}}>↑↓</kbd> navigate</span>
++          <span><kbd className="kbd" style={{padding:"1px 5px",background:"var(--surface)",border:"1px solid var(--border)",borderRadius:4,fontSize:10}}>↵</kbd> run</span>
++          <span style={{marginLeft:"auto"}}><kbd className="kbd" style={{padding:"1px 5px",background:"var(--surface)",border:"1px solid var(--border)",borderRadius:4,fontSize:10}}>⌘K</kbd> to open</span>
++        </div>
++      </div>
++    </div>
++  );
++}
++
++/* ═══════════════════════════════════════════════════════════════════════
++   HOOK — useUndoToast: returns { toast, show, render }
++   show(message, undoFn) displays a toast with an Undo button for 5s.
++   render() returns the toast JSX — mount once at root.
++   ═══════════════════════════════════════════════════════════════════════ */
++export function useUndoToast() {
++  const [toast, setToast] = useState(null);
++  const timerRef = useRef(null);
++
++  const show = useCallback((message, undoFn, { duration = 5000 } = {}) => {
++    clearTimeout(timerRef.current);
++    const id = Date.now();
++    setToast({ id, message, undoFn });
++    timerRef.current = setTimeout(() => {
++      setToast(t => (t?.id === id ? null : t));
++    }, duration);
++  }, []);
++
++  const dismiss = useCallback(() => {
++    clearTimeout(timerRef.current);
++    setToast(null);
++  }, []);
++
++  useEffect(() => () => clearTimeout(timerRef.current), []);
++
++  const render = () => toast && (
++    <div role="status" aria-live="polite"
++      style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",background:"var(--ink)",color:"var(--bg)",padding:"10px 8px 10px 18px",borderRadius:12,fontSize:14,fontWeight:500,boxShadow:"0 12px 32px rgba(0,0,0,0.3)",zIndex:2200,display:"flex",alignItems:"center",gap:12,animation:"toastIn 0.25s ease",maxWidth:"calc(100vw - 32px)",fontFamily:"var(--font-body)"}}>
++      <span style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:"60vw"}}>{toast.message}</span>
++      {toast.undoFn && (
++        <button onClick={() => { toast.undoFn(); dismiss(); }}
++          style={{background:"var(--accent)",color:"#fff",border:"none",padding:"6px 14px",borderRadius:8,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>
++          Undo
++        </button>
++      )}
++      <button onClick={dismiss} aria-label="Dismiss"
++        style={{background:"transparent",border:"none",color:"inherit",opacity:0.6,cursor:"pointer",padding:4,display:"flex"}}>
++        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
++      </button>
++    </div>
++  );
++
++  return { show, dismiss, render, active: !!toast };
++}
++
++/* ═══════════════════════════════════════════════════════════════════════
++   COMPONENT — ChangelogScroll
++   Revealed by long-pressing the logo. Parchment scroll animation.
++   ═══════════════════════════════════════════════════════════════════════ */
++const CHANGELOG = [
++  {
++    v: "2026.04.17",
++    title: "The Glow-Up",
++    notes: [
++      "Warm inkwell palette: cream paper + deep ink navy",
++      "Fraunces serif for headings, Inter Tight body, JetBrains Mono for dates",
++      "Paper texture + deckled card edges",
++      "Command palette — ⌘K to jump anywhere",
++      "Undo-friendly toasts",
++      "Accessibility: skip link, dyslexic-font toggle, text-size scale",
++      "Auto light/dark by system preference",
++      "Easter eggs: Konami quill mode, midnight moon, :coffee: emoji, completion streak confetti",
++    ],
++  },
++  {
++    v: "2026.04.15",
++    title: "Stability pass",
++    notes: ["Cloud sync hardening", "Offline merge utilities"],
++  },
++];
++
++export function ChangelogScroll({ open, onClose }) {
++  if (!open) return null;
++  return (
++    <div role="dialog" aria-modal="true" aria-label="Changelog"
++      onClick={onClose}
++      style={{position:"fixed",inset:0,background:"var(--overlay)",backdropFilter:"blur(6px)",zIndex:3100,display:"flex",alignItems:"center",justifyContent:"center",padding:16,animation:"fadeIn 0.2s ease"}}>
++      <div onClick={e=>e.stopPropagation()}
++        style={{maxWidth:520,width:"100%",maxHeight:"80vh",overflowY:"auto",background:"var(--card)",borderRadius:20,border:"1px solid var(--border)",boxShadow:"0 30px 80px rgba(0,0,0,0.35)",padding:"28px 28px 22px",animation:"scrollRoll 0.4s cubic-bezier(.25,.8,.3,1) forwards",transformOrigin:"top center",fontFamily:"var(--font-body)"}}>
++        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
++          <h2 style={{margin:0,fontSize:22,fontFamily:"var(--font-display)",color:"var(--ink)",fontWeight:600}}>The Scroll</h2>
++          <button onClick={onClose} aria-label="Close"
++            style={{background:"none",border:"none",cursor:"pointer",color:"var(--muted)",padding:6,display:"flex",borderRadius:8}}>
++            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
++          </button>
++        </div>
++        <p style={{fontSize:13,color:"var(--muted)",marginBottom:20,fontStyle:"italic"}}>A handwritten log of Inkwell's journey.</p>
++        {CHANGELOG.map((entry) => (
++          <div key={entry.v} style={{marginBottom:22,paddingBottom:16,borderBottom:"1px solid var(--border-light)"}}>
++            <div style={{display:"flex",alignItems:"baseline",gap:10,marginBottom:8}}>
++              <span className="font-mono" style={{fontSize:12,color:"var(--muted)",fontFamily:"var(--font-mono)"}}>{entry.v}</span>
++              <h3 style={{margin:0,fontSize:16,fontWeight:600,fontFamily:"var(--font-display)",color:"var(--ink)"}}>{entry.title}</h3>
++            </div>
++            <ul style={{listStyle:"none",padding:0,margin:0}}>
++              {entry.notes.map((n,i) => (
++                <li key={i} style={{fontSize:14,color:"var(--text)",padding:"4px 0",display:"flex",gap:10,lineHeight:1.55}}>
++                  <span style={{color:"var(--accent)",flexShrink:0,fontWeight:700}}>·</span>
++                  <span>{n}</span>
++                </li>
++              ))}
++            </ul>
++          </div>
++        ))}
++        <div style={{textAlign:"center",fontSize:12,color:"var(--muted)",fontStyle:"italic",marginTop:6}}>
++          Long-press the logo anytime to unroll this.
++        </div>
++      </div>
++    </div>
++  );
++}
++
++/* ═══════════════════════════════════════════════════════════════════════
++   HOOK — useA11yPrefs: persists dyslexic font + text-size, applies to
++   <body data-*> attributes. Returns { dyslexic, setDyslexic, textSize,
++   setTextSize }.
++   ═══════════════════════════════════════════════════════════════════════ */
++const TEXT_SIZES = ["sm", "md", "lg", "xl"];
++export function useA11yPrefs() {
++  const [dyslexic, setDyslexic] = useState(() => {
++    if (typeof window === "undefined") return false;
++    try { return localStorage.getItem("inkwell-a11y-dyslexic") === "1"; } catch { return false; }
++  });
++  const [textSize, setTextSize] = useState(() => {
++    if (typeof window === "undefined") return "md";
++    try { return localStorage.getItem("inkwell-a11y-textsize") || "md"; } catch { return "md"; }
++  });
++  useEffect(() => {
++    if (typeof document === "undefined") return;
++    document.body.setAttribute("data-dyslexic", dyslexic ? "true" : "false");
++    try { localStorage.setItem("inkwell-a11y-dyslexic", dyslexic ? "1" : "0"); } catch {}
++  }, [dyslexic]);
++  useEffect(() => {
++    if (typeof document === "undefined") return;
++    const v = TEXT_SIZES.includes(textSize) ? textSize : "md";
++    document.body.setAttribute("data-text-size", v);
++    try { localStorage.setItem("inkwell-a11y-textsize", v); } catch {}
++  }, [textSize]);
++  return { dyslexic, setDyslexic, textSize, setTextSize };
++}
+diff --git a/app/globals.css b/app/globals.css
+index f3c4548..b4b9956 100644
+--- a/app/globals.css
++++ b/app/globals.css
+@@ -1,3 +1,20 @@
++/* ═══════════════════════════════════════════════════════════════════════
++   INKWELL — DESIGN FOUNDATION
++   Global tokens, accessibility chrome, paper textures, easter-egg keyframes.
++   Theme palette overrides live in the <style> block inside page.js so they
++   can be scoped to .theme-light / .theme-dark / .theme-frost-* / .quill-mode.
++   ═══════════════════════════════════════════════════════════════════════ */
++
++@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700;9..144,800&family=Inter+Tight:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Atkinson+Hyperlegible:wght@400;700&family=Caveat:wght@500;600;700&display=swap');
++
++:root {
++  /* Base type scale — overridden by body[data-text-size] */
++  --type-scale: 1;
++  --radius-card: 14px;
++  --radius-lg: 20px;
++  --ring: 0 0 0 2px var(--bg, #fafaf9), 0 0 0 4px var(--accent, #d97706);
++}
++
+ * {
+   box-sizing: border-box;
+   margin: 0;
+@@ -8,23 +25,225 @@ html, body {
+   height: 100%;
+   height: 100dvh;
+   overflow: hidden;
+-  font-family: 'Source Sans 3', 'Source Sans Pro', -apple-system, sans-serif;
+-  background: var(--bg, #faf9f7);
+-  color: var(--ink, #1c1917);
++  font-family: 'Inter Tight', 'Source Sans 3', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
++  background: var(--bg, #faf7f0);
++  color: var(--ink, #1a2238);
+   -webkit-font-smoothing: antialiased;
++  -moz-osx-font-smoothing: grayscale;
++  text-rendering: optimizeLegibility;
++  font-size: calc(16px * var(--type-scale));
+ }
+ 
+-::selection {
+-  background: rgba(217, 119, 6, 0.2);
+-}
++::selection { background: rgba(217, 119, 6, 0.22); color: inherit; }
+ 
+ ::-webkit-scrollbar { width: 6px; height: 6px; }
+ ::-webkit-scrollbar-track { background: transparent; }
+-::-webkit-scrollbar-thumb { background: var(--border, #d6d3d1); border-radius: 3px; }
++::-webkit-scrollbar-thumb { background: var(--border, #e4ddd0); border-radius: 3px; }
+ ::-webkit-scrollbar-thumb:hover { background: var(--muted, #a8a29e); }
+ 
+ input::placeholder, textarea::placeholder { color: var(--muted, #a8a29e); }
+ 
++/* ═══ ACCESSIBILITY — SKIP LINK ═══ */
++.skip-to-content {
++  position: absolute;
++  top: -48px;
++  left: 12px;
++  z-index: 10000;
++  background: var(--accent, #b45309);
++  color: #fff;
++  padding: 10px 18px;
++  border-radius: 10px;
++  font-size: 14px;
++  font-weight: 600;
++  text-decoration: none;
++  box-shadow: 0 8px 24px rgba(0,0,0,0.25);
++  transition: top 0.15s ease;
++  font-family: inherit;
++}
++.skip-to-content:focus,
++.skip-to-content:focus-visible {
++  top: 12px;
++  outline: 2px solid #fff;
++  outline-offset: 2px;
++}
++
++/* ═══ FOCUS RINGS — WCAG AA visible ═══ */
++:focus { outline: none; }
++button:focus-visible,
++a:focus-visible,
++input:focus-visible,
++select:focus-visible,
++textarea:focus-visible,
++[role="button"]:focus-visible,
++[tabindex]:focus-visible {
++  outline: 2px solid var(--accent, #b45309);
++  outline-offset: 2px;
++  border-radius: 6px;
++}
++
++/* ═══ TYPOGRAPHY HIERARCHY ═══ */
++.font-display { font-family: 'Fraunces', 'Playfair Display', Georgia, 'Times New Roman', serif; font-optical-sizing: auto; letter-spacing: -0.01em; }
++.font-body    { font-family: 'Inter Tight', 'Source Sans 3', -apple-system, sans-serif; }
++.font-mono    { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Consolas, monospace; font-feature-settings: 'tnum', 'zero'; letter-spacing: -0.01em; }
++.font-hand    { font-family: 'Caveat', 'Segoe Script', 'Snell Roundhand', cursive; letter-spacing: 0.01em; }
++
++/* Apply mono to date tokens automatically */
++time, .date-chip, .kbd {
++  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Consolas, monospace;
++  font-feature-settings: 'tnum';
++}
++
++/* ═══ PAPER TEXTURE (subtle, SVG noise) ═══
++   Layered on --bg via .paper-bg. Dark-theme flips to warmer grain. */
++.paper-bg {
++  background-color: var(--bg);
++  background-image:
++    radial-gradient(1200px 600px at 10% -10%, rgba(217,119,6,0.03), transparent 60%),
++    radial-gradient(900px 500px at 110% 110%, rgba(26,34,56,0.03), transparent 60%),
++    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' seed='7'/><feColorMatrix values='0 0 0 0 0.25  0 0 0 0 0.20  0 0 0 0 0.15  0 0 0 0.05 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
++  background-repeat: no-repeat, no-repeat, repeat;
++}
++
++/* Ruled paper background for list cards */
++.paper-ruled {
++  background-image:
++    linear-gradient(to bottom, transparent 0, transparent calc(1.5em - 1px), rgba(26,34,56,0.06) calc(1.5em - 1px), rgba(26,34,56,0.06) 1.5em);
++  background-size: 100% 1.5em;
++  background-position: 0 0.5em;
++}
++
++/* Soft "deckled" edge — irregular paper corner */
++.deckle {
++  position: relative;
++  border-radius: var(--radius-card);
++}
++.deckle::after {
++  content: "";
++  position: absolute;
++  inset: 0;
++  border-radius: inherit;
++  pointer-events: none;
++  box-shadow:
++    inset 0 0 0 1px rgba(26,34,56,0.04),
++    inset 0 -1px 0 rgba(26,34,56,0.03);
++  -webkit-mask-image:
++    radial-gradient(8px 6px at 8% 0,  transparent 98%, black 100%),
++    radial-gradient(6px 5px at 22% 0, transparent 98%, black 100%),
++    radial-gradient(5px 4px at 40% 0, transparent 98%, black 100%),
++    linear-gradient(black, black);
++}
++
++/* ═══ EASTER EGG ANIMATIONS ═══ */
++@keyframes inkDrop {
++  0%   { transform: scale(0) rotate(0deg); opacity: 0; }
++  40%  { transform: scale(1.3) rotate(14deg); opacity: 0.9; }
++  100% { transform: scale(0.9) rotate(0deg); opacity: 0; }
++}
++@keyframes inkSpatter {
++  0%   { transform: translate(0,0) scale(0); opacity: 1; }
++  100% { transform: var(--spatter-end, translate(40px,-30px)) scale(1); opacity: 0; }
++}
++@keyframes steam {
++  0%   { transform: translate(0, 0) scale(0.6); opacity: 0; }
++  30%  { opacity: 0.55; }
++  100% { transform: translate(-4px, -10px) scale(1); opacity: 0; }
++}
++@keyframes confettiFall {
++  0%   { transform: translate(0,-20px) rotate(0deg); opacity: 1; }
++  100% { transform: translate(var(--cx,0px), 110vh) rotate(720deg); opacity: 0; }
++}
++@keyframes moonGlow {
++  0%, 100% { filter: drop-shadow(0 0 3px rgba(186, 208, 255, 0.35)); }
++  50%      { filter: drop-shadow(0 0 10px rgba(186, 208, 255, 0.65)); }
++}
++@keyframes scrollRoll {
++  from { transform: scaleY(0) translateY(-20%); opacity: 0; transform-origin: top; }
++  to   { transform: scaleY(1) translateY(0);   opacity: 1; }
++}
++
++/* ═══ QUILL MODE (Konami easter egg) ═══ */
++.quill-mode {
++  --font-display: 'Caveat', 'Segoe Script', cursive;
++  --font-body: 'Caveat', 'Segoe Script', cursive;
++}
++.quill-mode * {
++  font-family: var(--font-body) !important;
++  letter-spacing: 0.01em;
++}
++.quill-mode .font-mono,
++.quill-mode time,
++.quill-mode .kbd,
++.quill-mode .date-chip,
++.quill-mode input[type="date"],
++.quill-mode input[type="email"],
++.quill-mode input[type="password"],
++.quill-mode select {
++  font-family: 'JetBrains Mono', ui-monospace, monospace !important;
++}
++.quill-mode .ink-spatter {
++  position: fixed;
++  pointer-events: none;
++  width: 6px; height: 6px;
++  background: var(--ink, #1a2238);
++  border-radius: 50%;
++  animation: inkSpatter 0.9s ease-out forwards;
++  z-index: 9999;
++}
++
++/* ═══ MIDNIGHT THEME (auto 12am–1am, or manual) ═══ */
++.midnight {
++  --bg: #0b0d18;
++  --surface: #12162a;
++  --card: #151a30;
++  --ink: #e9e6d9;
++  --text: #c8c3b2;
++  --muted: #7c7b95;
++  --border: #222845;
++  --border-light: #1a1f38;
++}
++.midnight-moon {
++  position: fixed;
++  top: 14px;
++  right: 14px;
++  width: 22px;
++  height: 22px;
++  pointer-events: none;
++  z-index: 50;
++  animation: moonGlow 4s ease infinite;
++  opacity: 0.7;
++}
++
++/* ═══ ACCESSIBILITY — DYSLEXIC FONT TOGGLE ═══ */
++body[data-dyslexic="true"] {
++  font-family: 'Atkinson Hyperlegible', 'OpenDyslexic', 'Comic Sans MS', system-ui, sans-serif !important;
++}
++body[data-dyslexic="true"] * {
++  font-family: 'Atkinson Hyperlegible', 'OpenDyslexic', 'Comic Sans MS', system-ui, sans-serif !important;
++  letter-spacing: 0.02em;
++}
++
++/* ═══ ACCESSIBILITY — TEXT SIZE SCALE ═══ */
++body[data-text-size="sm"] { --type-scale: 0.92; }
++body[data-text-size="md"] { --type-scale: 1; }
++body[data-text-size="lg"] { --type-scale: 1.10; }
++body[data-text-size="xl"] { --type-scale: 1.22; }
++
++/* ═══ REDUCED MOTION — global opt-out ═══ */
++@media (prefers-reduced-motion: reduce) {
++  *,
++  *::before,
++  *::after {
++    animation-duration: 0.01ms !important;
++    animation-iteration-count: 1 !important;
++    transition-duration: 0.01ms !important;
++    scroll-behavior: auto !important;
++  }
++  .ink-spatter,
++  .confetti-ink-piece,
++  .midnight-moon { display: none !important; }
++}
++
++/* ═══ ORIGINAL KEYFRAMES (preserved for back-compat) ═══ */
+ @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+ @keyframes slideUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+ @keyframes slideIn { from { opacity: 0; transform: translateX(12px); } to { opacity: 1; transform: translateX(0); } }
+@@ -35,7 +254,7 @@ input::placeholder, textarea::placeholder { color: var(--muted, #a8a29e); }
+ @keyframes drillOut { from { opacity: 0; transform: translateX(-40px); } to { opacity: 1; transform: translateX(0); } }
+ @keyframes trashPulse { 0%,100%{box-shadow:0 4px 16px rgba(239,68,68,0.2)} 50%{box-shadow:0 4px 24px rgba(239,68,68,0.4)} }
+ 
+-/* Mobile responsive */
++/* ═══ MOBILE RESPONSIVE ═══ */
+ @media (max-width: 768px) {
+   .sidebar { position: fixed !important; z-index: 100 !important; height: 100vh !important; height: 100dvh !important; }
+   .sidebar-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.3); z-index: 99; }
+@@ -53,10 +272,7 @@ input::placeholder, textarea::placeholder { color: var(--muted, #a8a29e); }
+   }
+ }
+ 
+-/* Safe area inset for mobile devices with home indicators / notches */
+-.main-scroll {
+-  -webkit-overflow-scrolling: touch;
+-}
++.main-scroll { -webkit-overflow-scrolling: touch; }
+ @media (max-width: 768px) {
+   .main-scroll {
+     padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px)) !important;
+diff --git a/app/layout.js b/app/layout.js
+index abfc39c..4831bb9 100644
+--- a/app/layout.js
++++ b/app/layout.js
+@@ -4,7 +4,6 @@ export const metadata = {
+   title: "Inkwell — Notebook To-Do Sync",
+   description: "Scan your handwritten to-do lists and sync them digitally",
+   manifest: "/manifest.json",
+-  themeColor: "#d97706",
+   appleWebApp: {
+     capable: true,
+     statusBarStyle: "default",
+@@ -18,6 +17,10 @@ export const viewport = {
+   maximumScale: 1,
+   userScalable: false,
+   viewportFit: "cover",
++  themeColor: [
++    { media: "(prefers-color-scheme: light)", color: "#faf7f0" },
++    { media: "(prefers-color-scheme: dark)",  color: "#14110d" },
++  ],
+ };
+ 
+ export default function RootLayout({ children }) {
+@@ -26,16 +29,15 @@ export default function RootLayout({ children }) {
+       <head>
+         <link rel="preconnect" href="https://fonts.googleapis.com" />
+         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+-        <link
+-          href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700;800&family=Source+Sans+3:wght@300;400;500;600;700&display=swap"
+-          rel="stylesheet"
+-        />
+         <meta name="mobile-web-app-capable" content="yes" />
+         <meta name="apple-mobile-web-app-capable" content="yes" />
+         <link rel="icon" href="/icon-192.png" />
+         <link rel="apple-touch-icon" href="/icon-512.png" />
+       </head>
+-      <body>{children}</body>
++      <body>
++        <a href="#main-content" className="skip-to-content">Skip to content</a>
++        {children}
++      </body>
+     </html>
+   );
+ }
+diff --git a/app/page.js b/app/page.js
+index e3c7e7c..94a546b 100644
+--- a/app/page.js
++++ b/app/page.js
+@@ -1,6 +1,10 @@
+ "use client";
+ import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+ import { supabase } from "../lib/supabase";
++import {
++  useKonami, useLongPress, useMidnight, useA11yPrefs, useInkSpatter,
++  renderCoffee, CommandPalette, ChangelogScroll, ConfettiInk, MidnightMoon, useUndoToast,
++} from "./components/Enhancements";
+ 
+ /* ═══════════════════════════════════════════════════════════════════════
+    SUPABASE AUTH + SYNC HOOK
+@@ -2846,8 +2850,8 @@ const LoginScreen = ({ onSignIn, onSignInPassword, error }) => {
+ 
+   return (
+     <div style={{minHeight:"100dvh",display:"flex",alignItems:"center",justifyContent:"center",background:"var(--bg)",fontFamily:"var(--font-body)",padding:20}}>
+-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700;800&family=Source+Sans+3:wght@300;400;500;600;700&display=swap');
+-        :root{--font-display:'Playfair Display',Georgia,serif;--font-body:'Source Sans 3',-apple-system,sans-serif;--ink:#1c1917;--text:#44403c;--muted:#79736f;--bg:#fafaf9;--surface:#f5f5f4;--border:#e7e5e4;--accent:#d97706;--accent-dark:#b45309;--accent-bg:#fffbeb;}
++      <style>{`
++        :root{--font-display:'Fraunces','Playfair Display',Georgia,serif;--font-body:'Inter Tight','Source Sans 3',-apple-system,sans-serif;--font-mono:'JetBrains Mono',ui-monospace,Consolas,monospace;--ink:#1a2238;--text:#3a405a;--muted:#7b7968;--bg:#faf7f0;--surface:#f2ece0;--border:#e4ddd0;--accent:#b45309;--accent-dark:#92400e;--accent-bg:#fdf4e3;--accent2:#d97706;--card:#fffcf5;--danger:#be2b3a;--shadow:rgba(26,34,56,0.08);--accent-a15:rgba(180,83,9,0.15);--accent-a20:rgba(180,83,9,0.2);}
+         *{box-sizing:border-box;margin:0;padding:0;font-family:var(--font-body);}
+         html,body{height:100%;background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;}`}
+       </style>
+@@ -3307,6 +3311,64 @@ export default function InkwellApp() {
+   useEffect(()=>{save("inkwell-frostMode",frostMode);},[frostMode]);
+   useEffect(()=>{save("inkwell-archivedLists",archivedLists);},[archivedLists]);
+   const [themeTransition,setThemeTransition]=useState(null); /* "snow" | "heat" | null */
++
++  /* ═══ INKWELL GLOW-UP: new state ═══ */
++  const { dyslexic, setDyslexic, textSize, setTextSize } = useA11yPrefs();
++  const [quillMode, setQuillMode] = useState(false);
++  const midnightActive = useMidnight();
++  const [showCmd, setShowCmd] = useState(false);
++  const [showChangelog, setShowChangelog] = useState(false);
++  const [confettiTrigger, setConfettiTrigger] = useState(0);
++  const completionStreakRef = useRef(0);
++  const undoToast = useUndoToast();
++  const spatter = useInkSpatter();
++  /* Auto dark mode — respect system preference if user hasn't flipped it explicitly */
++  const darkModeExplicit = useRef(typeof window !== "undefined" && localStorage.getItem("inkwell-darkMode") != null);
++  useEffect(() => {
++    if (darkModeExplicit.current) return;
++    if (typeof window === "undefined" || !window.matchMedia) return;
++    const mq = window.matchMedia("(prefers-color-scheme: dark)");
++    setDarkMode(mq.matches);
++    const on = (e) => { if (!darkModeExplicit.current) setDarkMode(e.matches); };
++    mq.addEventListener?.("change", on);
++    return () => mq.removeEventListener?.("change", on);
++  }, []);
++  /* Mark dark mode as explicit when user toggles it */
++  const setDarkModeUser = useCallback((v) => { darkModeExplicit.current = true; setDarkMode(v); }, []);
++  /* Konami → Quill mode */
++  useKonami(() => {
++    setQuillMode(q => {
++      const next = !q;
++      setToast(next ? "🪶 Quill mode engaged" : "Quill mode off");
++      setTimeout(() => setToast(null), 2200);
++      return next;
++    });
++  });
++  /* ⌘K / Ctrl+K → Command palette */
++  useEffect(() => {
++    const onKey = (e) => {
++      const isK = e.key === "k" || e.key === "K";
++      if ((e.metaKey || e.ctrlKey) && isK) {
++        e.preventDefault();
++        setShowCmd(s => !s);
++      }
++    };
++    window.addEventListener("keydown", onKey);
++    return () => window.removeEventListener("keydown", onKey);
++  }, []);
++  /* Logo long-press — reveals changelog scroll */
++  const longPressed = useRef(false);
++  const logoLongHandlers = useLongPress(() => {
++    longPressed.current = true;
++    setShowChangelog(true);
++  }, { ms: 600 });
++  const onLogoClick = () => {
++    if (longPressed.current) { longPressed.current = false; return; }
++    if (themeTransition) return;
++    setThemeTransition(frostMode ? "heat" : "snow");
++    setFrostMode(f => !f);
++    setTimeout(() => setThemeTransition(null), 5600);
++  };
+   const defaultQuickDates=[{label:"Tomorrow",offset:"tomorrow"},{label:"Next Monday",offset:"nextMonday"}];
+   const [quickDates,setQuickDates]=useState(()=>load("inkwell-quickDates",defaultQuickDates));
+   const [viewMode,setViewMode]=useState(()=>load("inkwell-todayMode","kanban")); /* "kanban" | "list" — applies to today/inbox/list views */
+@@ -3781,7 +3843,19 @@ export default function InkwellApp() {
+   }, []);
+ 
+   /* Bulk operations */
+-  const bulkDelete=()=>{addTombstones([...selectedIds]);setTasks(prev=>prev.filter(t=>!selectedIds.has(t.id)));flash(`Deleted ${selectedIds.size} tasks`);setSelectedIds(new Set());setSelectedTask(null);};
++  const bulkDelete=()=>{
++    const ids=[...selectedIds];
++    const snapshot=tasks.filter(t=>ids.includes(t.id));
++    addTombstones(ids);
++    setTasks(prev=>prev.filter(t=>!selectedIds.has(t.id)));
++    setSelectedIds(new Set());
++    setSelectedTask(null);
++    undoToast.show(`Deleted ${ids.length} task${ids.length!==1?"s":""}`, () => {
++      tombstonesRef.current = tombstonesRef.current.filter(x => !ids.includes(x.id));
++      save(TOMBSTONES_KEY, tombstonesRef.current);
++      setTasksRaw(prev => [...snapshot, ...prev]);
++    });
++  };
+   const bulkMove=(listName)=>{setTasks(prev=>prev.map(t=>selectedIds.has(t.id)?{...t,list:listName}:t));flash(`Moved ${selectedIds.size} tasks to ${listName}`);setSelectedIds(new Set());};
+   const bulkPriority=(p)=>{setTasks(prev=>prev.map(t=>selectedIds.has(t.id)?{...t,priority:p}:t));flash(`Set ${selectedIds.size} tasks to ${PRIORITY[p].label}`);setSelectedIds(new Set());};
+   const bulkComplete=()=>{setTasks(prev=>prev.map(t=>{
+@@ -3838,7 +3912,22 @@ export default function InkwellApp() {
+       const newCount = (r.completedCount||0)+1;
+       flash(r.endAfter && newCount >= r.endAfter ? "All recurrences completed ✓" : "Done! Next occurrence scheduled →");
+     }
+-  },[tasks,flash]);
++    /* ── Streak + confetti easter egg ── */
++    completionStreakRef.current += 1;
++    if (completionStreakRef.current >= 10) {
++      completionStreakRef.current = 0;
++      setConfettiTrigger(n => n + 1);
++      flash("✨ 10-task streak — magnificent!");
++    }
++    /* Quill-mode ink spatter from element position */
++    if (quillMode) {
++      const el = document.querySelector(`[data-task-id="${id}"]`);
++      if (el) {
++        const r = el.getBoundingClientRect();
++        spatter(r.left + r.width * 0.1, r.top + r.height / 2);
++      }
++    }
++  },[tasks,flash,quillMode,spatter]);
+ 
+   const toggleTask=useCallback(id=>{
+     const task = tasks.find(t=>t.id===id);
+@@ -4194,12 +4283,12 @@ export default function InkwellApp() {
+   if(!ready)return<div style={{height:"100dvh",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"var(--font-display)",fontSize:22,color:"var(--muted)"}}>Loading...</div>;
+ 
+   return (
+-    <div className={frostMode?(darkMode?"theme-frost-dark":"theme-frost-light"):(darkMode?"theme-dark":"theme-light")} style={{height:"100dvh",display:"flex",overflow:"hidden",background:"var(--bg)",color:"var(--ink)"}}>
++    <div className={`${frostMode?(darkMode?"theme-frost-dark":"theme-frost-light"):(darkMode?"theme-dark":"theme-light")}${quillMode?" quill-mode":""}${midnightActive?" midnight":""}`} style={{height:"100dvh",display:"flex",overflow:"hidden",backgroundColor:"var(--bg)",backgroundImage:"var(--paper-noise)",color:"var(--ink)",fontFamily:"var(--font-body)"}}>
+       <style>{`
+         @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700;800&family=Source+Sans+3:wght@300;400;500;600;700&display=swap');
+-        :root{--font-display:'Playfair Display',Georgia,serif;--font-body:'Source Sans 3',-apple-system,sans-serif;}
+-        .theme-light{--ink:#1c1917;--text:#44403c;--muted:#79736f;--bg:#fafaf9;--surface:#f5f5f4;--border:#e7e5e4;--border-light:#f5f5f4;--active-bg:#fffbeb;--accent:#d97706;--accent-dark:#b45309;--accent-bg:#fffbeb;--accent2:#ea580c;--card:#ffffff;--card-hover:#fafaf9;--overlay:rgba(15,23,42,0.45);--danger-bg:#fef2f2;--danger-border:#fecaca;--danger:#ef4444;--success-bg:rgba(34,197,94,0.15);--shadow:rgba(0,0,0,0.06);--accent-a04:var(--accent-a04);--accent-a06:var(--accent-a06);--accent-a08:var(--accent-a08);--accent-a10:var(--accent-a10);--accent-a12:var(--accent-a12);--accent-a15:var(--accent-a15);--accent-a18:var(--accent-a18);--accent-a20:var(--accent-a20);--accent-a30:var(--accent-a30);--depth0:#b45309;--depth1:#a16207;--depth2:#92400e;--depth3:#78350f;--depth0-bg:var(--accent-a06);--depth1-bg:rgba(194,125,44,0.07);--depth2-bg:rgba(202,138,4,0.06);--offline-bg:linear-gradient(90deg,#fef3c7,#fde68a);--offline-border:#f59e0b;--offline-text:#92400e;}
+-        .theme-dark{--ink:#f5f5f4;--text:#d6d3d1;--muted:#9a938f;--bg:#1c1917;--surface:#292524;--border:#3f3935;--border-light:#292524;--active-bg:#422006;--accent:#f59e0b;--accent-dark:#fbbf24;--accent-bg:#422006;--accent2:#f97316;--card:#292524;--card-hover:#1c1917;--overlay:rgba(0,0,0,0.6);--danger-bg:#450a0a;--danger-border:#7f1d1d;--danger:#f87171;--success-bg:rgba(34,197,94,0.12);--shadow:rgba(0,0,0,0.3);--accent-a04:rgba(245,158,11,0.04);--accent-a06:rgba(245,158,11,0.06);--accent-a08:rgba(245,158,11,0.08);--accent-a10:rgba(245,158,11,0.1);--accent-a12:rgba(245,158,11,0.12);--accent-a15:rgba(245,158,11,0.15);--accent-a18:rgba(245,158,11,0.18);--accent-a20:rgba(245,158,11,0.2);--accent-a30:rgba(245,158,11,0.3);--depth0:#fbbf24;--depth1:#f59e0b;--depth2:#d97706;--depth3:#b45309;--depth0-bg:rgba(245,158,11,0.06);--depth1-bg:rgba(245,158,11,0.07);--depth2-bg:rgba(245,158,11,0.06);--offline-bg:linear-gradient(90deg,#422006,#78350f);--offline-border:#f59e0b;--offline-text:#fbbf24;}
++        :root{--font-display:'Fraunces','Playfair Display',Georgia,serif;--font-body:'Inter Tight','Source Sans 3',-apple-system,sans-serif;--font-mono:'JetBrains Mono',ui-monospace,Consolas,monospace;}
++        .theme-light{--ink:#1a2238;--text:#3a405a;--muted:#7b7968;--bg:#faf7f0;--surface:#f2ece0;--border:#e4ddd0;--border-light:#eee5d4;--active-bg:#fdf4e3;--accent:#b45309;--accent-dark:#92400e;--accent-bg:#fdf4e3;--accent2:#d97706;--card:#fffcf5;--card-hover:#f7f1e3;--overlay:rgba(26,34,56,0.48);--danger-bg:#fbecec;--danger-border:#f2c7c7;--danger:#be2b3a;--success-bg:rgba(46,139,87,0.14);--shadow:rgba(26,34,56,0.08);--accent-a04:rgba(180,83,9,0.04);--accent-a06:rgba(180,83,9,0.06);--accent-a08:rgba(180,83,9,0.08);--accent-a10:rgba(180,83,9,0.1);--accent-a12:rgba(180,83,9,0.12);--accent-a15:rgba(180,83,9,0.15);--accent-a18:rgba(180,83,9,0.18);--accent-a20:rgba(180,83,9,0.2);--accent-a30:rgba(180,83,9,0.3);--depth0:#92400e;--depth1:#a16207;--depth2:#78350f;--depth3:#5b2d0c;--depth0-bg:rgba(180,83,9,0.06);--depth1-bg:rgba(194,125,44,0.07);--depth2-bg:rgba(202,138,4,0.06);--offline-bg:linear-gradient(90deg,#fef3c7,#fde68a);--offline-border:#b45309;--offline-text:#78350f;--paper-noise:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' seed='7'/><feColorMatrix values='0 0 0 0 0.25  0 0 0 0 0.20  0 0 0 0 0.15  0 0 0 0.04 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");}
++        .theme-dark{--ink:#f5efe1;--text:#d8cfbb;--muted:#9a8f77;--bg:#14110d;--surface:#1d1812;--border:#3a2f22;--border-light:#28211a;--active-bg:#3a2a12;--accent:#f59e0b;--accent-dark:#fbbf24;--accent-bg:#3a2a12;--accent2:#fbbf24;--card:#231d15;--card-hover:#14110d;--overlay:rgba(0,0,0,0.62);--danger-bg:#3a1616;--danger-border:#6b2424;--danger:#f87171;--success-bg:rgba(46,139,87,0.14);--shadow:rgba(0,0,0,0.4);--accent-a04:rgba(245,158,11,0.04);--accent-a06:rgba(245,158,11,0.06);--accent-a08:rgba(245,158,11,0.08);--accent-a10:rgba(245,158,11,0.1);--accent-a12:rgba(245,158,11,0.12);--accent-a15:rgba(245,158,11,0.15);--accent-a18:rgba(245,158,11,0.18);--accent-a20:rgba(245,158,11,0.2);--accent-a30:rgba(245,158,11,0.3);--depth0:#fbbf24;--depth1:#f59e0b;--depth2:#d97706;--depth3:#b45309;--depth0-bg:rgba(245,158,11,0.06);--depth1-bg:rgba(245,158,11,0.07);--depth2-bg:rgba(245,158,11,0.06);--offline-bg:linear-gradient(90deg,#3a2a12,#5b3a14);--offline-border:#f59e0b;--offline-text:#fbbf24;--paper-noise:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' seed='7'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 0.85  0 0 0 0 0.6  0 0 0 0.04 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");}
+         .theme-frost-light{--ink:#1e293b;--text:#334155;--muted:#7b8fa3;--bg:#f0f4f8;--surface:#e2eaf3;--border:#c8d6e5;--border-light:#dde7f0;--active-bg:#eff6ff;--accent:#3b82f6;--accent-dark:#2563eb;--accent-bg:#eff6ff;--accent2:#0ea5e9;--card:#ffffff;--card-hover:#f0f4f8;--overlay:rgba(15,30,55,0.45);--danger-bg:#fef2f2;--danger-border:#fecaca;--danger:#ef4444;--success-bg:rgba(34,197,94,0.15);--shadow:rgba(0,0,0,0.06);--accent-a04:rgba(59,130,246,0.04);--accent-a06:rgba(59,130,246,0.06);--accent-a08:rgba(59,130,246,0.08);--accent-a10:rgba(59,130,246,0.1);--accent-a12:rgba(59,130,246,0.12);--accent-a15:rgba(59,130,246,0.15);--accent-a18:rgba(59,130,246,0.18);--accent-a20:rgba(59,130,246,0.2);--accent-a30:rgba(59,130,246,0.3);--depth0:#2563eb;--depth1:#1d4ed8;--depth2:#1e40af;--depth3:#1e3a8a;--depth0-bg:rgba(59,130,246,0.06);--depth1-bg:rgba(59,130,246,0.07);--depth2-bg:rgba(59,130,246,0.06);--offline-bg:linear-gradient(90deg,#dbeafe,#bfdbfe);--offline-border:#3b82f6;--offline-text:#1e40af;}
+         .theme-frost-dark{--ink:#e2eaf3;--text:#b0c4d8;--muted:#6b839b;--bg:#0c1220;--surface:#131d2e;--border:#1e2d42;--border-light:#182538;--active-bg:rgba(59,130,246,0.1);--accent:#60a5fa;--accent-dark:#93c5fd;--accent-bg:rgba(59,130,246,0.1);--accent2:#38bdf8;--card:#111b2b;--card-hover:#0c1220;--overlay:rgba(4,8,18,0.7);--danger-bg:rgba(239,68,68,0.08);--danger-border:#7f1d1d;--danger:#f87171;--success-bg:rgba(34,197,94,0.12);--shadow:rgba(0,0,0,0.3);--accent-a04:rgba(96,165,250,0.04);--accent-a06:rgba(96,165,250,0.06);--accent-a08:rgba(96,165,250,0.08);--accent-a10:rgba(96,165,250,0.1);--accent-a12:rgba(96,165,250,0.12);--accent-a15:rgba(96,165,250,0.15);--accent-a18:rgba(96,165,250,0.18);--accent-a20:rgba(96,165,250,0.2);--accent-a30:rgba(96,165,250,0.3);--depth0:#93c5fd;--depth1:#60a5fa;--depth2:#3b82f6;--depth3:#2563eb;--depth0-bg:rgba(96,165,250,0.06);--depth1-bg:rgba(96,165,250,0.07);--depth2-bg:rgba(96,165,250,0.06);--offline-bg:linear-gradient(90deg,#131d2e,#1e2d42);--offline-border:#60a5fa;--offline-text:#93c5fd;}
+         *{box-sizing:border-box;margin:0;padding:0;font-family:var(--font-body);}
+@@ -4279,7 +4368,7 @@ export default function InkwellApp() {
+       <nav className="sidebar" aria-label="Navigation" style={{width:sidebar?264:0,...(isMobile?{position:"fixed",zIndex:100,height:"100dvh"}:{}),background:"var(--surface)",borderRight:"1px solid var(--border)",display:"flex",flexDirection:"column",transition:"width 0.25s ease",overflow:"hidden",flexShrink:0}}>
+         <div style={{padding:"20px 16px 12px",flexShrink:0}}>
+           <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20}}>
+-            <div onClick={()=>{if(!themeTransition){setThemeTransition(frostMode?"heat":"snow");setFrostMode(f=>!f);setTimeout(()=>setThemeTransition(null),5600);}}} className="logo-egg" style={{width:34,height:34,borderRadius:10,background:frostMode?"linear-gradient(135deg,#3b82f6,#38bdf8)":"linear-gradient(135deg,#d97706,#ea580c)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:17,fontWeight:800,color:"white",fontFamily:"var(--font-display)",cursor:"pointer",position:"relative",transition:"background 0.5s, box-shadow 0.3s",boxShadow:frostMode?"0 2px 12px rgba(59,130,246,0.3)":"none",overflow:"hidden"}}>I</div>
++            <div onClick={onLogoClick} {...logoLongHandlers} role="button" tabIndex={0} aria-label="Inkwell logo — click to toggle theme, long-press for changelog" className="logo-egg" style={{width:34,height:34,borderRadius:10,background:frostMode?"linear-gradient(135deg,#3b82f6,#38bdf8)":"linear-gradient(135deg,#b45309,#d97706)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:17,fontWeight:700,color:"white",fontFamily:"var(--font-display)",cursor:"pointer",position:"relative",transition:"background 0.5s, box-shadow 0.3s, transform 0.15s",boxShadow:frostMode?"0 2px 12px rgba(59,130,246,0.3)":"0 2px 10px rgba(180,83,9,0.25)",overflow:"hidden",userSelect:"none"}}>I</div>
+             <span style={{fontSize:20,fontWeight:700,fontFamily:"var(--font-display)",color:"var(--ink)",whiteSpace:"nowrap"}}>Inkwell</span>
+           </div>
+           <button onClick={()=>{setShowPhoto(true);if(isMobile)setSidebar(false);}} style={{width:"100%",padding:"11px 14px",borderRadius:12,border:"2px dashed var(--border)",background:"var(--accent-bg)",color:"var(--accent)",fontSize:13,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:10,transition:"all 0.2s",marginBottom:16,whiteSpace:"nowrap",fontFamily:"inherit"}}>{Icons.camera} Scan Notebook Page</button>
+@@ -4460,7 +4549,7 @@ export default function InkwellApp() {
+       </nav>
+ 
+       {/* ═══ MAIN ═══ */}
+-      <main style={{flex:1,display:"flex",flexDirection:"column",minWidth:0}}>
++      <main id="main-content" style={{flex:1,display:"flex",flexDirection:"column",minWidth:0}}>
+         {/* Offline banner */}
+         {!isOnline && hasSupabase && user && (
+           <div style={{padding:"8px 16px",background:"var(--offline-bg)",borderBottom:"1px solid var(--offline-border)",display:"flex",alignItems:"center",justifyContent:"center",gap:8,flexShrink:0,fontSize:13,color:"var(--offline-text)",fontWeight:500}}>
+@@ -4647,7 +4736,22 @@ export default function InkwellApp() {
+         <div style={{flex:1,overflowY:"auto"}}>
+         <div style={{marginBottom:24}}>
+           <div style={{fontSize:11,fontWeight:700,color:"var(--muted)",textTransform:"uppercase",letterSpacing:1,marginBottom:12}}>Appearance</div>
+-          <ToggleRow label="Dark Mode" sublabel="Switch to a dark colour scheme" checked={darkMode} onChange={setDarkMode}/>
++          <ToggleRow label="Dark Mode" sublabel="Switch to a dark colour scheme (auto-syncs with system if unset)" checked={darkMode} onChange={setDarkModeUser}/>
++        </div>
++        <div style={{marginBottom:24}}>
++          <div style={{fontSize:11,fontWeight:700,color:"var(--muted)",textTransform:"uppercase",letterSpacing:1,marginBottom:12}}>Accessibility</div>
++          <ToggleRow label="Dyslexic-friendly font" sublabel="Use Atkinson Hyperlegible across the app" checked={dyslexic} onChange={setDyslexic}/>
++          <div style={{padding:"14px 0",borderBottom:"1px solid var(--border-light)"}}>
++            <div style={{fontSize:14,fontWeight:500,color:"var(--ink)",marginBottom:8}}>Text size</div>
++            <div style={{display:"flex",gap:8}}>
++              {[["sm","Small"],["md","Normal"],["lg","Large"],["xl","Huge"]].map(([k,label])=>(
++                <button key={k} onClick={()=>setTextSize(k)}
++                  style={{flex:1,padding:"8px 0",borderRadius:8,border:textSize===k?`2px solid var(--accent)`:"1px solid var(--border)",background:textSize===k?"var(--accent-a10)":"var(--card)",color:textSize===k?"var(--accent)":"var(--text)",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>
++                  {label}
++                </button>
++              ))}
++            </div>
++          </div>
+         </div>
+         <div style={{marginBottom:24}}>
+           <div style={{fontSize:11,fontWeight:700,color:"var(--muted)",textTransform:"uppercase",letterSpacing:1,marginBottom:12}}>Behavior</div>
+@@ -4744,6 +4848,36 @@ export default function InkwellApp() {
+       )}
+       {/* Theme transition animation overlay */}
+       {themeTransition&&<ThemeTransition type={themeTransition} isLight={!darkMode} onDone={()=>setThemeTransition(null)}/>}
++      {/* ═══ GLOW-UP: command palette, changelog, confetti, midnight moon, undo toast ═══ */}
++      <MidnightMoon show={midnightActive} />
++      <ConfettiInk trigger={confettiTrigger} />
++      <ChangelogScroll open={showChangelog} onClose={() => setShowChangelog(false)} />
++      {undoToast.render()}
++      <CommandPalette open={showCmd} onClose={() => setShowCmd(false)} commands={[
++        { id: "new-task", group: "Create", icon: Icons.plus, label: "New task", hint: "Focus the quick-add input",
++          run: () => { const el = document.getElementById("quick-add"); el?.focus(); } },
++        { id: "scan", group: "Create", icon: Icons.camera, label: "Scan notebook page", hint: "Open AI scanner",
++          run: () => setShowPhoto(true) },
++        { id: "today", group: "Views", icon: Icons.today, label: "Today", run: () => setView("today") },
++        { id: "upcoming", group: "Views", icon: Icons.upcoming, label: "Upcoming", run: () => setView("upcoming") },
++        { id: "all", group: "Views", icon: Icons.all, label: "All tasks", run: () => setView("all") },
++        { id: "completed", group: "Views", icon: Icons.done, label: "Completed", run: () => setView("completed") },
++        { id: "calendar", group: "Views", icon: Icons.calendar, label: "Calendar", run: () => setView("calendar") },
++        ...lists.map(l => ({ id: `list-${l}`, group: "Lists", icon: Icons.hash || Icons.all, label: l, hint: `Jump to ${l}`, run: () => setView(`list:${l}`) })),
++        { id: "search", group: "Find", icon: Icons.search, label: "Search tasks", hint: "Focus search",
++          run: () => { setShowSearch(true); setTimeout(() => document.getElementById("task-search")?.focus(), 50); } },
++        { id: "toggle-dark", group: "Appearance", icon: Icons.settings, label: darkMode ? "Switch to light mode" : "Switch to dark mode",
++          run: () => setDarkModeUser(!darkMode) },
++        { id: "toggle-dyslexic", group: "Accessibility", icon: Icons.settings, label: dyslexic ? "Turn off dyslexic font" : "Turn on dyslexic-friendly font",
++          run: () => setDyslexic(!dyslexic) },
++        { id: "text-lg", group: "Accessibility", icon: Icons.settings, label: "Text size — large", run: () => setTextSize("lg") },
++        { id: "text-md", group: "Accessibility", icon: Icons.settings, label: "Text size — medium", run: () => setTextSize("md") },
++        { id: "text-sm", group: "Accessibility", icon: Icons.settings, label: "Text size — small", run: () => setTextSize("sm") },
++        { id: "changelog", group: "About", icon: Icons.settings, label: "Open the Scroll (changelog)", run: () => setShowChangelog(true) },
++        { id: "shortcuts", group: "About", icon: Icons.settings, label: "Keyboard shortcuts", run: () => setShowShortcuts(true) },
++        { id: "settings", group: "About", icon: Icons.settings, label: "Settings", run: () => setShowSettings(true) },
++        { id: "help", group: "About", icon: Icons.settings, label: "Help guide", run: () => setShowTips("welcome") },
++      ]} />
+       {/* Subtask completion confirmation modal */}
+       {pendingCompleteId&&(()=>{
+         const pt=tasks.find(t=>t.id===pendingCompleteId);
+@@ -4772,7 +4906,7 @@ export default function InkwellApp() {
+           </div>
+         );
+       })()}
+-      {toast&&<div role="status" aria-live="polite" style={{position:"fixed",bottom:isDragging?84:24,left:"50%",transform:"translateX(-50%)",background:"#292524",color:"#fafaf9",padding:"12px 24px",borderRadius:12,fontSize:14,fontWeight:600,boxShadow:"0 8px 24px rgba(0,0,0,0.2)",animation:"toastIn 0.3s ease",zIndex:2000,whiteSpace:"nowrap",pointerEvents:"none",transition:"bottom 0.2s ease"}}>{toast}</div>}
++      {toast&&<div role="status" aria-live="polite" style={{position:"fixed",bottom:isDragging?84:24,left:"50%",transform:"translateX(-50%)",background:"var(--ink)",color:"var(--bg)",padding:"12px 24px",borderRadius:12,fontSize:14,fontWeight:600,boxShadow:"0 10px 30px rgba(0,0,0,0.25)",animation:"toastIn 0.3s ease",zIndex:2000,whiteSpace:"nowrap",pointerEvents:"none",transition:"bottom 0.2s ease",fontFamily:"var(--font-body)"}}>{typeof toast==="string"?renderCoffee(toast):toast}</div>}
+       {/* Trash drop zone — appears during any drag */}
+       {isDragging&&(
+         <div data-drop-type="trash"
+@@ -4783,13 +4917,19 @@ export default function InkwellApp() {
+             const tid=e.dataTransfer.getData("text/plain");const src=e.dataTransfer.getData("application/x-source");
+             if(!tid)return;
+             if(isSubSource(src)){
++              const snapshot=tasks;
+               setTasks(prev=>prev.map(t=>({...t,subtasks:deleteSubById(t.subtasks||[],tid)})));
+-              flash("Subtask deleted");
++              undoToast.show("Subtask deleted", () => setTasksRaw(snapshot));
+             }else{
++              const deletedTask=tasks.find(t=>t.id===tid);
+               addTombstone(tid);
+               setTasks(prev=>prev.filter(t=>t.id!==tid));
+               if(selectedTask?.id===tid)setSelectedTask(null);
+-              flash("Task deleted");
++              undoToast.show(`Deleted "${deletedTask?.title||"task"}"`, () => {
++                tombstonesRef.current = tombstonesRef.current.filter(x => x.id !== tid);
++                save(TOMBSTONES_KEY, tombstonesRef.current);
++                if (deletedTask) setTasksRaw(prev => [deletedTask, ...prev]);
++              });
+             }
+             setIsDragging(false);setSelectedIds(new Set());
+           }}
+-- 
+2.43.0
+
+
+From d67571e5c603019fb542e0f5ef63eafcc73ad6c3 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Fri, 17 Apr 2026 14:51:59 +0000
+Subject: [PATCH 2/2] Add .gitignore for build artifacts
+
+Excludes .next/, node_modules/, .env files, and common editor
+folders so generated artifacts don't show up as untracked.
+
+https://claude.ai/code/session_0198z8upgvJJbVBjGUFypi1K
+---
+ .gitignore | 23 +++++++++++++++++++++++
+ 1 file changed, 23 insertions(+)
+ create mode 100644 .gitignore
+
+diff --git a/.gitignore b/.gitignore
+new file mode 100644
+index 0000000..44b36b0
+--- /dev/null
++++ b/.gitignore
+@@ -0,0 +1,23 @@
++# Next.js build output
++.next/
++out/
++
++# Dependencies
++node_modules/
++
++# Env
++.env
++.env.local
++.env*.local
++
++# Logs
++*.log
++npm-debug.log*
++
++# OS
++.DS_Store
++Thumbs.db
++
++# Editors
++.vscode/
++.idea/
+-- 
+2.43.0
+
