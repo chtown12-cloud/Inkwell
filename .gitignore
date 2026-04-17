@@ -21,3 +21,7 @@ Thumbs.db
 # Editors
 .vscode/
 .idea/
+
+# Local archive bundles (exported patches / zips)
+*.zip
+*.patch
