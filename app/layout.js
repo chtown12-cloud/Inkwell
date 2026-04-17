@@ -4,7 +4,6 @@ export const metadata = {
   title: "Inkwell — Notebook To-Do Sync",
   description: "Scan your handwritten to-do lists and sync them digitally",
   manifest: "/manifest.json",
-  themeColor: "#d97706",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
@@ -18,6 +17,10 @@ export const viewport = {
   maximumScale: 1,
   userScalable: false,
   viewportFit: "cover",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#faf7f0" },
+    { media: "(prefers-color-scheme: dark)",  color: "#14110d" },
+  ],
 };
 
 export default function RootLayout({ children }) {
@@ -26,16 +29,15 @@ export default function RootLayout({ children }) {
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link
-          href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700;800&family=Source+Sans+3:wght@300;400;500;600;700&display=swap"
-          rel="stylesheet"
-        />
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <link rel="icon" href="/icon-192.png" />
         <link rel="apple-touch-icon" href="/icon-512.png" />
       </head>
-      <body>{children}</body>
+      <body>
+        <a href="#main-content" className="skip-to-content">Skip to content</a>
+        {children}
+      </body>
     </html>
   );
 }
