@@ -1,6 +1,10 @@
 "use client";
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { supabase } from "../lib/supabase";
+import {
+  useKonami, useLongPress, useMidnight, useA11yPrefs, useInkSpatter,
+  renderCoffee, CommandPalette, ChangelogScroll, ConfettiInk, MidnightMoon, useUndoToast,
+} from "./components/Enhancements";
 
 /* ═══════════════════════════════════════════════════════════════════════
    SUPABASE AUTH + SYNC HOOK
@@ -2846,8 +2850,8 @@ const LoginScreen = ({ onSignIn, onSignInPassword, error }) => {
 
   return (
     <div style={{minHeight:"100dvh",display:"flex",alignItems:"center",justifyContent:"center",background:"var(--bg)",fontFamily:"var(--font-body)",padding:20}}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700;800&family=Source+Sans+3:wght@300;400;500;600;700&display=swap');
-        :root{--font-display:'Playfair Display',Georgia,serif;--font-body:'Source Sans 3',-apple-system,sans-serif;--ink:#1c1917;--text:#44403c;--muted:#79736f;--bg:#fafaf9;--surface:#f5f5f4;--border:#e7e5e4;--accent:#d97706;--accent-dark:#b45309;--accent-bg:#fffbeb;}
+      <style>{`
+        :root{--font-display:'Fraunces','Playfair Display',Georgia,serif;--font-body:'Inter Tight','Source Sans 3',-apple-system,sans-serif;--font-mono:'JetBrains Mono',ui-monospace,Consolas,monospace;--ink:#1a2238;--text:#3a405a;--muted:#7b7968;--bg:#faf7f0;--surface:#f2ece0;--border:#e4ddd0;--accent:#b45309;--accent-dark:#92400e;--accent-bg:#fdf4e3;--accent2:#d97706;--card:#fffcf5;--danger:#be2b3a;--shadow:rgba(26,34,56,0.08);--accent-a15:rgba(180,83,9,0.15);--accent-a20:rgba(180,83,9,0.2);}
         *{box-sizing:border-box;margin:0;padding:0;font-family:var(--font-body);}
         html,body{height:100%;background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;}`}
       </style>
@@ -3307,6 +3311,64 @@ export default function InkwellApp() {
   useEffect(()=>{save("inkwell-frostMode",frostMode);},[frostMode]);
   useEffect(()=>{save("inkwell-archivedLists",archivedLists);},[archivedLists]);
   const [themeTransition,setThemeTransition]=useState(null); /* "snow" | "heat" | null */
+
+  /* ═══ INKWELL GLOW-UP: new state ═══ */
+  const { dyslexic, setDyslexic, textSize, setTextSize } = useA11yPrefs();
+  const [quillMode, setQuillMode] = useState(false);
+  const midnightActive = useMidnight();
+  const [showCmd, setShowCmd] = useState(false);
+  const [showChangelog, setShowChangelog] = useState(false);
+  const [confettiTrigger, setConfettiTrigger] = useState(0);
+  const completionStreakRef = useRef(0);
+  const undoToast = useUndoToast();
+  const spatter = useInkSpatter();
+  /* Auto dark mode — respect system preference if user hasn't flipped it explicitly */
+  const darkModeExplicit = useRef(typeof window !== "undefined" && localStorage.getItem("inkwell-darkMode") != null);
+  useEffect(() => {
+    if (darkModeExplicit.current) return;
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    setDarkMode(mq.matches);
+    const on = (e) => { if (!darkModeExplicit.current) setDarkMode(e.matches); };
+    mq.addEventListener?.("change", on);
+    return () => mq.removeEventListener?.("change", on);
+  }, []);
+  /* Mark dark mode as explicit when user toggles it */
+  const setDarkModeUser = useCallback((v) => { darkModeExplicit.current = true; setDarkMode(v); }, []);
+  /* Konami → Quill mode */
+  useKonami(() => {
+    setQuillMode(q => {
+      const next = !q;
+      setToast(next ? "🪶 Quill mode engaged" : "Quill mode off");
+      setTimeout(() => setToast(null), 2200);
+      return next;
+    });
+  });
+  /* ⌘K / Ctrl+K → Command palette */
+  useEffect(() => {
+    const onKey = (e) => {
+      const isK = e.key === "k" || e.key === "K";
+      if ((e.metaKey || e.ctrlKey) && isK) {
+        e.preventDefault();
+        setShowCmd(s => !s);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+  /* Logo long-press — reveals changelog scroll */
+  const longPressed = useRef(false);
+  const logoLongHandlers = useLongPress(() => {
+    longPressed.current = true;
+    setShowChangelog(true);
+  }, { ms: 600 });
+  const onLogoClick = () => {
+    if (longPressed.current) { longPressed.current = false; return; }
+    if (themeTransition) return;
+    setThemeTransition(frostMode ? "heat" : "snow");
+    setFrostMode(f => !f);
+    setTimeout(() => setThemeTransition(null), 5600);
+  };
   const defaultQuickDates=[{label:"Tomorrow",offset:"tomorrow"},{label:"Next Monday",offset:"nextMonday"}];
   const [quickDates,setQuickDates]=useState(()=>load("inkwell-quickDates",defaultQuickDates));
   const [viewMode,setViewMode]=useState(()=>load("inkwell-todayMode","kanban")); /* "kanban" | "list" — applies to today/inbox/list views */
@@ -3781,7 +3843,19 @@ export default function InkwellApp() {
   }, []);
 
   /* Bulk operations */
-  const bulkDelete=()=>{addTombstones([...selectedIds]);setTasks(prev=>prev.filter(t=>!selectedIds.has(t.id)));flash(`Deleted ${selectedIds.size} tasks`);setSelectedIds(new Set());setSelectedTask(null);};
+  const bulkDelete=()=>{
+    const ids=[...selectedIds];
+    const snapshot=tasks.filter(t=>ids.includes(t.id));
+    addTombstones(ids);
+    setTasks(prev=>prev.filter(t=>!selectedIds.has(t.id)));
+    setSelectedIds(new Set());
+    setSelectedTask(null);
+    undoToast.show(`Deleted ${ids.length} task${ids.length!==1?"s":""}`, () => {
+      tombstonesRef.current = tombstonesRef.current.filter(x => !ids.includes(x.id));
+      save(TOMBSTONES_KEY, tombstonesRef.current);
+      setTasksRaw(prev => [...snapshot, ...prev]);
+    });
+  };
   const bulkMove=(listName)=>{setTasks(prev=>prev.map(t=>selectedIds.has(t.id)?{...t,list:listName}:t));flash(`Moved ${selectedIds.size} tasks to ${listName}`);setSelectedIds(new Set());};
   const bulkPriority=(p)=>{setTasks(prev=>prev.map(t=>selectedIds.has(t.id)?{...t,priority:p}:t));flash(`Set ${selectedIds.size} tasks to ${PRIORITY[p].label}`);setSelectedIds(new Set());};
   const bulkComplete=()=>{setTasks(prev=>prev.map(t=>{
@@ -3838,7 +3912,22 @@ export default function InkwellApp() {
       const newCount = (r.completedCount||0)+1;
       flash(r.endAfter && newCount >= r.endAfter ? "All recurrences completed ✓" : "Done! Next occurrence scheduled →");
     }
-  },[tasks,flash]);
+    /* ── Streak + confetti easter egg ── */
+    completionStreakRef.current += 1;
+    if (completionStreakRef.current >= 10) {
+      completionStreakRef.current = 0;
+      setConfettiTrigger(n => n + 1);
+      flash("✨ 10-task streak — magnificent!");
+    }
+    /* Quill-mode ink spatter from element position */
+    if (quillMode) {
+      const el = document.querySelector(`[data-task-id="${id}"]`);
+      if (el) {
+        const r = el.getBoundingClientRect();
+        spatter(r.left + r.width * 0.1, r.top + r.height / 2);
+      }
+    }
+  },[tasks,flash,quillMode,spatter]);
 
   const toggleTask=useCallback(id=>{
     const task = tasks.find(t=>t.id===id);
@@ -4194,12 +4283,12 @@ export default function InkwellApp() {
   if(!ready)return<div style={{height:"100dvh",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"var(--font-display)",fontSize:22,color:"var(--muted)"}}>Loading...</div>;
 
   return (
-    <div className={frostMode?(darkMode?"theme-frost-dark":"theme-frost-light"):(darkMode?"theme-dark":"theme-light")} style={{height:"100dvh",display:"flex",overflow:"hidden",background:"var(--bg)",color:"var(--ink)"}}>
+    <div className={`${frostMode?(darkMode?"theme-frost-dark":"theme-frost-light"):(darkMode?"theme-dark":"theme-light")}${quillMode?" quill-mode":""}${midnightActive?" midnight":""}`} style={{height:"100dvh",display:"flex",overflow:"hidden",backgroundColor:"var(--bg)",backgroundImage:"var(--paper-noise)",color:"var(--ink)",fontFamily:"var(--font-body)"}}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700;800&family=Source+Sans+3:wght@300;400;500;600;700&display=swap');
-        :root{--font-display:'Playfair Display',Georgia,serif;--font-body:'Source Sans 3',-apple-system,sans-serif;}
-        .theme-light{--ink:#1c1917;--text:#44403c;--muted:#79736f;--bg:#fafaf9;--surface:#f5f5f4;--border:#e7e5e4;--border-light:#f5f5f4;--active-bg:#fffbeb;--accent:#d97706;--accent-dark:#b45309;--accent-bg:#fffbeb;--accent2:#ea580c;--card:#ffffff;--card-hover:#fafaf9;--overlay:rgba(15,23,42,0.45);--danger-bg:#fef2f2;--danger-border:#fecaca;--danger:#ef4444;--success-bg:rgba(34,197,94,0.15);--shadow:rgba(0,0,0,0.06);--accent-a04:var(--accent-a04);--accent-a06:var(--accent-a06);--accent-a08:var(--accent-a08);--accent-a10:var(--accent-a10);--accent-a12:var(--accent-a12);--accent-a15:var(--accent-a15);--accent-a18:var(--accent-a18);--accent-a20:var(--accent-a20);--accent-a30:var(--accent-a30);--depth0:#b45309;--depth1:#a16207;--depth2:#92400e;--depth3:#78350f;--depth0-bg:var(--accent-a06);--depth1-bg:rgba(194,125,44,0.07);--depth2-bg:rgba(202,138,4,0.06);--offline-bg:linear-gradient(90deg,#fef3c7,#fde68a);--offline-border:#f59e0b;--offline-text:#92400e;}
-        .theme-dark{--ink:#f5f5f4;--text:#d6d3d1;--muted:#9a938f;--bg:#1c1917;--surface:#292524;--border:#3f3935;--border-light:#292524;--active-bg:#422006;--accent:#f59e0b;--accent-dark:#fbbf24;--accent-bg:#422006;--accent2:#f97316;--card:#292524;--card-hover:#1c1917;--overlay:rgba(0,0,0,0.6);--danger-bg:#450a0a;--danger-border:#7f1d1d;--danger:#f87171;--success-bg:rgba(34,197,94,0.12);--shadow:rgba(0,0,0,0.3);--accent-a04:rgba(245,158,11,0.04);--accent-a06:rgba(245,158,11,0.06);--accent-a08:rgba(245,158,11,0.08);--accent-a10:rgba(245,158,11,0.1);--accent-a12:rgba(245,158,11,0.12);--accent-a15:rgba(245,158,11,0.15);--accent-a18:rgba(245,158,11,0.18);--accent-a20:rgba(245,158,11,0.2);--accent-a30:rgba(245,158,11,0.3);--depth0:#fbbf24;--depth1:#f59e0b;--depth2:#d97706;--depth3:#b45309;--depth0-bg:rgba(245,158,11,0.06);--depth1-bg:rgba(245,158,11,0.07);--depth2-bg:rgba(245,158,11,0.06);--offline-bg:linear-gradient(90deg,#422006,#78350f);--offline-border:#f59e0b;--offline-text:#fbbf24;}
+        :root{--font-display:'Fraunces','Playfair Display',Georgia,serif;--font-body:'Inter Tight','Source Sans 3',-apple-system,sans-serif;--font-mono:'JetBrains Mono',ui-monospace,Consolas,monospace;}
+        .theme-light{--ink:#1a2238;--text:#3a405a;--muted:#7b7968;--bg:#faf7f0;--surface:#f2ece0;--border:#e4ddd0;--border-light:#eee5d4;--active-bg:#fdf4e3;--accent:#b45309;--accent-dark:#92400e;--accent-bg:#fdf4e3;--accent2:#d97706;--card:#fffcf5;--card-hover:#f7f1e3;--overlay:rgba(26,34,56,0.48);--danger-bg:#fbecec;--danger-border:#f2c7c7;--danger:#be2b3a;--success-bg:rgba(46,139,87,0.14);--shadow:rgba(26,34,56,0.08);--accent-a04:rgba(180,83,9,0.04);--accent-a06:rgba(180,83,9,0.06);--accent-a08:rgba(180,83,9,0.08);--accent-a10:rgba(180,83,9,0.1);--accent-a12:rgba(180,83,9,0.12);--accent-a15:rgba(180,83,9,0.15);--accent-a18:rgba(180,83,9,0.18);--accent-a20:rgba(180,83,9,0.2);--accent-a30:rgba(180,83,9,0.3);--depth0:#92400e;--depth1:#a16207;--depth2:#78350f;--depth3:#5b2d0c;--depth0-bg:rgba(180,83,9,0.06);--depth1-bg:rgba(194,125,44,0.07);--depth2-bg:rgba(202,138,4,0.06);--offline-bg:linear-gradient(90deg,#fef3c7,#fde68a);--offline-border:#b45309;--offline-text:#78350f;--paper-noise:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' seed='7'/><feColorMatrix values='0 0 0 0 0.25  0 0 0 0 0.20  0 0 0 0 0.15  0 0 0 0.04 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");}
+        .theme-dark{--ink:#f5efe1;--text:#d8cfbb;--muted:#9a8f77;--bg:#14110d;--surface:#1d1812;--border:#3a2f22;--border-light:#28211a;--active-bg:#3a2a12;--accent:#f59e0b;--accent-dark:#fbbf24;--accent-bg:#3a2a12;--accent2:#fbbf24;--card:#231d15;--card-hover:#14110d;--overlay:rgba(0,0,0,0.62);--danger-bg:#3a1616;--danger-border:#6b2424;--danger:#f87171;--success-bg:rgba(46,139,87,0.14);--shadow:rgba(0,0,0,0.4);--accent-a04:rgba(245,158,11,0.04);--accent-a06:rgba(245,158,11,0.06);--accent-a08:rgba(245,158,11,0.08);--accent-a10:rgba(245,158,11,0.1);--accent-a12:rgba(245,158,11,0.12);--accent-a15:rgba(245,158,11,0.15);--accent-a18:rgba(245,158,11,0.18);--accent-a20:rgba(245,158,11,0.2);--accent-a30:rgba(245,158,11,0.3);--depth0:#fbbf24;--depth1:#f59e0b;--depth2:#d97706;--depth3:#b45309;--depth0-bg:rgba(245,158,11,0.06);--depth1-bg:rgba(245,158,11,0.07);--depth2-bg:rgba(245,158,11,0.06);--offline-bg:linear-gradient(90deg,#3a2a12,#5b3a14);--offline-border:#f59e0b;--offline-text:#fbbf24;--paper-noise:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' seed='7'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 0.85  0 0 0 0 0.6  0 0 0 0.04 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");}
         .theme-frost-light{--ink:#1e293b;--text:#334155;--muted:#7b8fa3;--bg:#f0f4f8;--surface:#e2eaf3;--border:#c8d6e5;--border-light:#dde7f0;--active-bg:#eff6ff;--accent:#3b82f6;--accent-dark:#2563eb;--accent-bg:#eff6ff;--accent2:#0ea5e9;--card:#ffffff;--card-hover:#f0f4f8;--overlay:rgba(15,30,55,0.45);--danger-bg:#fef2f2;--danger-border:#fecaca;--danger:#ef4444;--success-bg:rgba(34,197,94,0.15);--shadow:rgba(0,0,0,0.06);--accent-a04:rgba(59,130,246,0.04);--accent-a06:rgba(59,130,246,0.06);--accent-a08:rgba(59,130,246,0.08);--accent-a10:rgba(59,130,246,0.1);--accent-a12:rgba(59,130,246,0.12);--accent-a15:rgba(59,130,246,0.15);--accent-a18:rgba(59,130,246,0.18);--accent-a20:rgba(59,130,246,0.2);--accent-a30:rgba(59,130,246,0.3);--depth0:#2563eb;--depth1:#1d4ed8;--depth2:#1e40af;--depth3:#1e3a8a;--depth0-bg:rgba(59,130,246,0.06);--depth1-bg:rgba(59,130,246,0.07);--depth2-bg:rgba(59,130,246,0.06);--offline-bg:linear-gradient(90deg,#dbeafe,#bfdbfe);--offline-border:#3b82f6;--offline-text:#1e40af;}
         .theme-frost-dark{--ink:#e2eaf3;--text:#b0c4d8;--muted:#6b839b;--bg:#0c1220;--surface:#131d2e;--border:#1e2d42;--border-light:#182538;--active-bg:rgba(59,130,246,0.1);--accent:#60a5fa;--accent-dark:#93c5fd;--accent-bg:rgba(59,130,246,0.1);--accent2:#38bdf8;--card:#111b2b;--card-hover:#0c1220;--overlay:rgba(4,8,18,0.7);--danger-bg:rgba(239,68,68,0.08);--danger-border:#7f1d1d;--danger:#f87171;--success-bg:rgba(34,197,94,0.12);--shadow:rgba(0,0,0,0.3);--accent-a04:rgba(96,165,250,0.04);--accent-a06:rgba(96,165,250,0.06);--accent-a08:rgba(96,165,250,0.08);--accent-a10:rgba(96,165,250,0.1);--accent-a12:rgba(96,165,250,0.12);--accent-a15:rgba(96,165,250,0.15);--accent-a18:rgba(96,165,250,0.18);--accent-a20:rgba(96,165,250,0.2);--accent-a30:rgba(96,165,250,0.3);--depth0:#93c5fd;--depth1:#60a5fa;--depth2:#3b82f6;--depth3:#2563eb;--depth0-bg:rgba(96,165,250,0.06);--depth1-bg:rgba(96,165,250,0.07);--depth2-bg:rgba(96,165,250,0.06);--offline-bg:linear-gradient(90deg,#131d2e,#1e2d42);--offline-border:#60a5fa;--offline-text:#93c5fd;}
         *{box-sizing:border-box;margin:0;padding:0;font-family:var(--font-body);}
@@ -4279,7 +4368,7 @@ export default function InkwellApp() {
       <nav className="sidebar" aria-label="Navigation" style={{width:sidebar?264:0,...(isMobile?{position:"fixed",zIndex:100,height:"100dvh"}:{}),background:"var(--surface)",borderRight:"1px solid var(--border)",display:"flex",flexDirection:"column",transition:"width 0.25s ease",overflow:"hidden",flexShrink:0}}>
         <div style={{padding:"20px 16px 12px",flexShrink:0}}>
           <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20}}>
-            <div onClick={()=>{if(!themeTransition){setThemeTransition(frostMode?"heat":"snow");setFrostMode(f=>!f);setTimeout(()=>setThemeTransition(null),5600);}}} className="logo-egg" style={{width:34,height:34,borderRadius:10,background:frostMode?"linear-gradient(135deg,#3b82f6,#38bdf8)":"linear-gradient(135deg,#d97706,#ea580c)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:17,fontWeight:800,color:"white",fontFamily:"var(--font-display)",cursor:"pointer",position:"relative",transition:"background 0.5s, box-shadow 0.3s",boxShadow:frostMode?"0 2px 12px rgba(59,130,246,0.3)":"none",overflow:"hidden"}}>I</div>
+            <div onClick={onLogoClick} {...logoLongHandlers} role="button" tabIndex={0} aria-label="Inkwell logo — click to toggle theme, long-press for changelog" className="logo-egg" style={{width:34,height:34,borderRadius:10,background:frostMode?"linear-gradient(135deg,#3b82f6,#38bdf8)":"linear-gradient(135deg,#b45309,#d97706)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:17,fontWeight:700,color:"white",fontFamily:"var(--font-display)",cursor:"pointer",position:"relative",transition:"background 0.5s, box-shadow 0.3s, transform 0.15s",boxShadow:frostMode?"0 2px 12px rgba(59,130,246,0.3)":"0 2px 10px rgba(180,83,9,0.25)",overflow:"hidden",userSelect:"none"}}>I</div>
             <span style={{fontSize:20,fontWeight:700,fontFamily:"var(--font-display)",color:"var(--ink)",whiteSpace:"nowrap"}}>Inkwell</span>
           </div>
           <button onClick={()=>{setShowPhoto(true);if(isMobile)setSidebar(false);}} style={{width:"100%",padding:"11px 14px",borderRadius:12,border:"2px dashed var(--border)",background:"var(--accent-bg)",color:"var(--accent)",fontSize:13,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:10,transition:"all 0.2s",marginBottom:16,whiteSpace:"nowrap",fontFamily:"inherit"}}>{Icons.camera} Scan Notebook Page</button>
@@ -4460,7 +4549,7 @@ export default function InkwellApp() {
       </nav>
 
       {/* ═══ MAIN ═══ */}
-      <main style={{flex:1,display:"flex",flexDirection:"column",minWidth:0}}>
+      <main id="main-content" style={{flex:1,display:"flex",flexDirection:"column",minWidth:0}}>
         {/* Offline banner */}
         {!isOnline && hasSupabase && user && (
           <div style={{padding:"8px 16px",background:"var(--offline-bg)",borderBottom:"1px solid var(--offline-border)",display:"flex",alignItems:"center",justifyContent:"center",gap:8,flexShrink:0,fontSize:13,color:"var(--offline-text)",fontWeight:500}}>
@@ -4647,7 +4736,22 @@ export default function InkwellApp() {
         <div style={{flex:1,overflowY:"auto"}}>
         <div style={{marginBottom:24}}>
           <div style={{fontSize:11,fontWeight:700,color:"var(--muted)",textTransform:"uppercase",letterSpacing:1,marginBottom:12}}>Appearance</div>
-          <ToggleRow label="Dark Mode" sublabel="Switch to a dark colour scheme" checked={darkMode} onChange={setDarkMode}/>
+          <ToggleRow label="Dark Mode" sublabel="Switch to a dark colour scheme (auto-syncs with system if unset)" checked={darkMode} onChange={setDarkModeUser}/>
+        </div>
+        <div style={{marginBottom:24}}>
+          <div style={{fontSize:11,fontWeight:700,color:"var(--muted)",textTransform:"uppercase",letterSpacing:1,marginBottom:12}}>Accessibility</div>
+          <ToggleRow label="Dyslexic-friendly font" sublabel="Use Atkinson Hyperlegible across the app" checked={dyslexic} onChange={setDyslexic}/>
+          <div style={{padding:"14px 0",borderBottom:"1px solid var(--border-light)"}}>
+            <div style={{fontSize:14,fontWeight:500,color:"var(--ink)",marginBottom:8}}>Text size</div>
+            <div style={{display:"flex",gap:8}}>
+              {[["sm","Small"],["md","Normal"],["lg","Large"],["xl","Huge"]].map(([k,label])=>(
+                <button key={k} onClick={()=>setTextSize(k)}
+                  style={{flex:1,padding:"8px 0",borderRadius:8,border:textSize===k?`2px solid var(--accent)`:"1px solid var(--border)",background:textSize===k?"var(--accent-a10)":"var(--card)",color:textSize===k?"var(--accent)":"var(--text)",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
         <div style={{marginBottom:24}}>
           <div style={{fontSize:11,fontWeight:700,color:"var(--muted)",textTransform:"uppercase",letterSpacing:1,marginBottom:12}}>Behavior</div>
@@ -4744,6 +4848,36 @@ export default function InkwellApp() {
       )}
       {/* Theme transition animation overlay */}
       {themeTransition&&<ThemeTransition type={themeTransition} isLight={!darkMode} onDone={()=>setThemeTransition(null)}/>}
+      {/* ═══ GLOW-UP: command palette, changelog, confetti, midnight moon, undo toast ═══ */}
+      <MidnightMoon show={midnightActive} />
+      <ConfettiInk trigger={confettiTrigger} />
+      <ChangelogScroll open={showChangelog} onClose={() => setShowChangelog(false)} />
+      {undoToast.render()}
+      <CommandPalette open={showCmd} onClose={() => setShowCmd(false)} commands={[
+        { id: "new-task", group: "Create", icon: Icons.plus, label: "New task", hint: "Focus the quick-add input",
+          run: () => { const el = document.getElementById("quick-add"); el?.focus(); } },
+        { id: "scan", group: "Create", icon: Icons.camera, label: "Scan notebook page", hint: "Open AI scanner",
+          run: () => setShowPhoto(true) },
+        { id: "today", group: "Views", icon: Icons.today, label: "Today", run: () => setView("today") },
+        { id: "upcoming", group: "Views", icon: Icons.upcoming, label: "Upcoming", run: () => setView("upcoming") },
+        { id: "all", group: "Views", icon: Icons.all, label: "All tasks", run: () => setView("all") },
+        { id: "completed", group: "Views", icon: Icons.done, label: "Completed", run: () => setView("completed") },
+        { id: "calendar", group: "Views", icon: Icons.calendar, label: "Calendar", run: () => setView("calendar") },
+        ...lists.map(l => ({ id: `list-${l}`, group: "Lists", icon: Icons.hash || Icons.all, label: l, hint: `Jump to ${l}`, run: () => setView(`list:${l}`) })),
+        { id: "search", group: "Find", icon: Icons.search, label: "Search tasks", hint: "Focus search",
+          run: () => { setShowSearch(true); setTimeout(() => document.getElementById("task-search")?.focus(), 50); } },
+        { id: "toggle-dark", group: "Appearance", icon: Icons.settings, label: darkMode ? "Switch to light mode" : "Switch to dark mode",
+          run: () => setDarkModeUser(!darkMode) },
+        { id: "toggle-dyslexic", group: "Accessibility", icon: Icons.settings, label: dyslexic ? "Turn off dyslexic font" : "Turn on dyslexic-friendly font",
+          run: () => setDyslexic(!dyslexic) },
+        { id: "text-lg", group: "Accessibility", icon: Icons.settings, label: "Text size — large", run: () => setTextSize("lg") },
+        { id: "text-md", group: "Accessibility", icon: Icons.settings, label: "Text size — medium", run: () => setTextSize("md") },
+        { id: "text-sm", group: "Accessibility", icon: Icons.settings, label: "Text size — small", run: () => setTextSize("sm") },
+        { id: "changelog", group: "About", icon: Icons.settings, label: "Open the Scroll (changelog)", run: () => setShowChangelog(true) },
+        { id: "shortcuts", group: "About", icon: Icons.settings, label: "Keyboard shortcuts", run: () => setShowShortcuts(true) },
+        { id: "settings", group: "About", icon: Icons.settings, label: "Settings", run: () => setShowSettings(true) },
+        { id: "help", group: "About", icon: Icons.settings, label: "Help guide", run: () => setShowTips("welcome") },
+      ]} />
       {/* Subtask completion confirmation modal */}
       {pendingCompleteId&&(()=>{
         const pt=tasks.find(t=>t.id===pendingCompleteId);
@@ -4772,7 +4906,7 @@ export default function InkwellApp() {
           </div>
         );
       })()}
-      {toast&&<div role="status" aria-live="polite" style={{position:"fixed",bottom:isDragging?84:24,left:"50%",transform:"translateX(-50%)",background:"#292524",color:"#fafaf9",padding:"12px 24px",borderRadius:12,fontSize:14,fontWeight:600,boxShadow:"0 8px 24px rgba(0,0,0,0.2)",animation:"toastIn 0.3s ease",zIndex:2000,whiteSpace:"nowrap",pointerEvents:"none",transition:"bottom 0.2s ease"}}>{toast}</div>}
+      {toast&&<div role="status" aria-live="polite" style={{position:"fixed",bottom:isDragging?84:24,left:"50%",transform:"translateX(-50%)",background:"var(--ink)",color:"var(--bg)",padding:"12px 24px",borderRadius:12,fontSize:14,fontWeight:600,boxShadow:"0 10px 30px rgba(0,0,0,0.25)",animation:"toastIn 0.3s ease",zIndex:2000,whiteSpace:"nowrap",pointerEvents:"none",transition:"bottom 0.2s ease",fontFamily:"var(--font-body)"}}>{typeof toast==="string"?renderCoffee(toast):toast}</div>}
       {/* Trash drop zone — appears during any drag */}
       {isDragging&&(
         <div data-drop-type="trash"
@@ -4783,13 +4917,19 @@ export default function InkwellApp() {
             const tid=e.dataTransfer.getData("text/plain");const src=e.dataTransfer.getData("application/x-source");
             if(!tid)return;
             if(isSubSource(src)){
+              const snapshot=tasks;
               setTasks(prev=>prev.map(t=>({...t,subtasks:deleteSubById(t.subtasks||[],tid)})));
-              flash("Subtask deleted");
+              undoToast.show("Subtask deleted", () => setTasksRaw(snapshot));
             }else{
+              const deletedTask=tasks.find(t=>t.id===tid);
               addTombstone(tid);
               setTasks(prev=>prev.filter(t=>t.id!==tid));
               if(selectedTask?.id===tid)setSelectedTask(null);
-              flash("Task deleted");
+              undoToast.show(`Deleted "${deletedTask?.title||"task"}"`, () => {
+                tombstonesRef.current = tombstonesRef.current.filter(x => x.id !== tid);
+                save(TOMBSTONES_KEY, tombstonesRef.current);
+                if (deletedTask) setTasksRaw(prev => [deletedTask, ...prev]);
+              });
             }
             setIsDragging(false);setSelectedIds(new Set());
           }}
