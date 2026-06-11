@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 
 export async function POST(request) {
   try {
-    const { imageData, mediaType, existingTasks, existingLists } = await request.json();
+    const { imageData, mediaType, existingTasks, existingLists, todayDate } = await request.json();
 
     if (!imageData) {
       return NextResponse.json({ error: "No image data provided" }, { status: 400 });
@@ -21,6 +21,7 @@ export async function POST(request) {
 
     const existingTitles = (existingTasks || []).map((t) => t.toLowerCase().trim());
     const listNames = existingLists || ["Inbox"];
+    const today = todayDate || new Date().toISOString().slice(0, 10);
 
     const message = await client.messages.create({
       model: "claude-sonnet-4-6",
@@ -50,7 +51,9 @@ For each item, determine:
    - Top-level items (no indent, or marked with •, -, ☐, numbers) = tasks
    - Indented items below a task (marked with →, >, indented dash, sub-bullets, letters like a/b/c) = subtasks of the item above
    - Further-indented items = sub-subtasks (children of the subtask above)
-   
+6. DEFER / MIGRATION notation (Bullet Journal style): today's date is ${today}. If an item has a ">" or "→" annotation followed by a timeframe — e.g. ">1w", "> 2w", ">1m", ">3m", ">Fri", ">Mar 3", "→ next week" — the user is pushing that task out. Compute the actual calendar date relative to today and put it in that item's "date" field (e.g. ">1w" = today + 7 days, ">1m" = today + 1 month, ">Fri" = the next upcoming Friday). A bare ">" at the start or end of a line with no timeframe means defer to tomorrow. Do NOT include the defer notation in the task title.
+7. PRIORITY signifier: an item marked with a leading or trailing "*" or "!" is high priority — set "priority": "high" for it and strip the marker from the title. Otherwise use null.
+
 IMPORTANT — Category matching:
 The user already has these lists in their app: ${JSON.stringify(listNames)}
 When you identify a category from the page, try to match it to one of these existing lists. Use fuzzy matching — for example if the page says "TY tasks" and the user has a list called "TY", use "TY". If the page says "Concentrix project" and they have "Concentrix", use "Concentrix". Only create a new category name if nothing in the existing lists is a reasonable match.
@@ -66,6 +69,7 @@ Return ONLY valid JSON with no markdown backticks and no preamble text. Use this
       "completed": false,
       "category": "matched list name or new category name or null",
       "date": "YYYY-MM-DD or null",
+      "priority": "high or null",
       "is_duplicate_of": "matching existing task title or null",
       "subtasks": [
         {

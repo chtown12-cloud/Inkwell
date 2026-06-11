@@ -4,7 +4,9 @@ A beautiful to-do app that bridges your physical notebook and digital life. Scan
 
 ## Features
 
-- **📸 AI Notebook Scanning** — Photograph your handwritten to-do list and AI extracts all tasks, detects completed items, flags duplicates, and picks up dates
+- **📸 AI Notebook Scanning** — Photograph your handwritten to-do list and AI extracts all tasks, detects completed items, flags duplicates, picks up dates, defer marks (`>1w`), and priority stars
+- **🖋 Paper Mode** — Notebook-first mode that pins the app to Today. The only verbs are scan, check off, and snooze; unfinished tasks carry forward automatically, and everything else waits for a deliberate weekly review. Built to keep your workflow on paper and your app time under a minute a day
+- **💤 Snooze** — One-tap "push it out" horizons (tomorrow / week / month / 3 months). Snoozed tasks vanish until their day, then resurface on Today with a badge
 - **📋 Smart Lists** — Today, Upcoming, All Tasks, Completed views + custom lists
 - **📅 Calendar View** — Monthly calendar with tasks color-coded by priority
 - **✅ Subtasks** — Break down tasks into smaller steps
@@ -107,3 +109,18 @@ inkwell/
 - **On your phone**, use the camera button in the scan modal to take a photo directly
 - Tasks are stored in your browser's localStorage — clearing browser data will erase them
 - The app works offline after the first load (PWA caching), but photo scanning requires internet
+
+### Bullet-journal notation the scanner understands
+
+| On the page | What it means | What the scan does |
+|---|---|---|
+| `☐` `□` `[ ]` `-` `•` | Open task | Imports it |
+| `✓` `[x]` `X` / strikethrough | Done | Checks it off (even if it already exists in the app) |
+| `>1w` `>1m` `>3m` `>Fri` `>Mar 3` | Defer / migrate | Reschedules the task to that date |
+| Bare `>` | Defer to tomorrow | Reschedules to tomorrow |
+| `*` or `!` | Priority signifier | Imports as high priority |
+| Underlined header | Category / collection | Fuzzy-matches to your lists |
+| Indentation | Subtask | Nests under the task above |
+| Date at top of page | Page date | Default due date for the page |
+
+The full in-app guide (sidebar → ?) covers Paper Mode, the daily scan loop, and the weekly review ritual.

@@ -716,9 +716,9 @@ const Icons = {
    SHARED UI COMPONENTS
    ═══════════════════════════════════════════════════════════════════════ */
 const Checkbox = ({checked, onChange, priority="none", size=20, animating=false}) => (
-  <button onClick={e=>{e.stopPropagation();onChange(!checked);}}
+  <button onClick={e=>{e.stopPropagation();onChange(!checked);}} className="cb-hit"
     aria-label={checked?"Mark incomplete":"Mark complete"} role="checkbox" aria-checked={checked}
-    style={{width:size,height:size,borderRadius:6,flexShrink:0,padding:0,
+    style={{width:size,height:size,borderRadius:6,flexShrink:0,padding:0,position:"relative",
       border:`2px solid ${checked?PRIORITY[priority].color:(priority!=="none"?PRIORITY[priority].color:"var(--border)")}`,
       background:checked?PRIORITY[priority].color:"transparent",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",
       transition:animating?"none":"all 0.2s ease",
@@ -744,14 +744,22 @@ const EditableText = ({value, onSave, onEditStart, style={}, tag:Tag="span"}) =>
     style={{border:"none",outline:"none",background:"var(--accent-a10)",borderRadius:4,padding:"2px 6px",fontFamily:"inherit",...style}} />;
 };
 
-const Overlay = ({onClose,children,wide}) => (
+const Overlay = ({onClose,children,wide}) => {
+  /* Esc closes every modal, not just the ones the global handler knows about */
+  useEffect(()=>{
+    const h=e=>{if(e.key==="Escape"){e.stopPropagation();onClose();}};
+    window.addEventListener("keydown",h);
+    return()=>window.removeEventListener("keydown",h);
+  },[onClose]);
+  return (
   <div style={{position:"fixed",inset:0,background:"var(--overlay)",backdropFilter:"blur(8px)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,animation:"fadeIn 0.2s ease",padding:16}} onClick={onClose} role="dialog" aria-modal="true">
     <div onClick={e=>e.stopPropagation()} style={{background:"var(--bg)",borderRadius:20,padding:28,width:"100%",maxWidth:wide?560:500,boxShadow:"0 25px 60px rgba(0,0,0,0.25)",position:"relative",display:"flex",flexDirection:"column",maxHeight:"90vh"}}>
       <button onClick={onClose} style={{position:"absolute",top:16,right:16,background:"none",border:"none",cursor:"pointer",color:"var(--muted)",padding:4}} aria-label="Close">{Icons.x}</button>
       {children}
     </div>
   </div>
-);
+  );
+};
 const Btn = ({children,variant="primary",...p}) => (
   <button {...p} style={{flex:1,padding:"12px 16px",borderRadius:12,border:variant==="secondary"?"1px solid var(--border)":"none",background:variant==="secondary"?"var(--card)":"linear-gradient(135deg,var(--accent),var(--accent2))",color:variant==="secondary"?"var(--text)":"white",fontSize:14,fontWeight:600,cursor:p.disabled?"wait":"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8,fontFamily:"inherit",opacity:p.disabled?0.6:1,...(p.style||{})}}>{children}</button>
 );
@@ -780,6 +788,55 @@ const InlineDatePicker = ({value, overdue, onChange}) => {
       {Icons.calendar} {value?formatDate(value):"No date"}
     </span>
   );
+};
+
+/* ═══ SNOOZE — one-tap "push it out" with fixed horizons. Designed to feel
+   like dismissing a notification, not like project management. ═══ */
+const SNOOZE_PRESETS = [
+  { label: "Tomorrow",   offset: 1 },
+  { label: "Next week",  offset: 7 },
+  { label: "In 2 weeks", offset: 14 },
+  { label: "In a month", offset: 30 },
+  { label: "In 3 months", offset: 90 },
+];
+const SnoozeButton = ({task, onSnooze}) => {
+  const [menu, setMenu] = useState(null); /* {x,y} or null */
+  const [picking, setPicking] = useState(false);
+  const close = () => { setMenu(null); setPicking(false); };
+  return (<>
+    <button onClick={e=>{e.stopPropagation();const r=e.currentTarget.getBoundingClientRect();setMenu({x:Math.min(r.left,window.innerWidth-210),y:Math.min(r.bottom+4,window.innerHeight-280)});}}
+      title="Snooze — push this task out, it returns on Today when due" aria-label={`Snooze "${task.title}"`} aria-haspopup="menu"
+      style={{background:"none",border:"none",cursor:"pointer",color:"var(--muted)",padding:"1px 4px",borderRadius:4,display:"flex",alignItems:"center",gap:3,fontSize:11,fontWeight:600,fontFamily:"inherit"}}>
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+      <span>zZ</span>
+    </button>
+    {menu&&(<>
+      <div style={{position:"fixed",inset:0,zIndex:1199}} onClick={e=>{e.stopPropagation();close();}}/>
+      <div role="menu" onClick={e=>e.stopPropagation()}
+        style={{position:"fixed",left:menu.x,top:menu.y,zIndex:1200,background:"var(--card)",border:"1px solid var(--border)",borderRadius:12,boxShadow:"0 8px 30px rgba(0,0,0,0.18)",padding:6,minWidth:190,animation:"fadeIn 0.1s ease"}}>
+        <div style={{fontSize:10,fontWeight:700,color:"var(--muted)",textTransform:"uppercase",letterSpacing:0.8,padding:"5px 10px 3px"}}>Snooze until</div>
+        {SNOOZE_PRESETS.map(p=>{const d=dateOffset(p.offset);return(
+          <button key={p.label} role="menuitem" onClick={()=>{onSnooze(task,d);close();}}
+            style={{width:"100%",padding:"8px 10px",border:"none",borderRadius:8,background:"transparent",color:"var(--text)",fontSize:13,fontWeight:500,cursor:"pointer",textAlign:"left",fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,transition:"background 0.1s"}}
+            onMouseEnter={e=>e.currentTarget.style.background="var(--surface)"} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+            <span>{p.label}</span><span style={{fontSize:11,color:"var(--muted)"}}>{formatDate(d)}</span>
+          </button>);})}
+        <div style={{height:1,background:"var(--border-light)",margin:"4px 4px"}}/>
+        {!picking?(
+          <button role="menuitem" onClick={()=>setPicking(true)}
+            style={{width:"100%",padding:"8px 10px",border:"none",borderRadius:8,background:"transparent",color:"var(--accent)",fontSize:13,fontWeight:600,cursor:"pointer",textAlign:"left",fontFamily:"inherit",transition:"background 0.1s"}}
+            onMouseEnter={e=>e.currentTarget.style.background="var(--accent-a06)"} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+            Pick a date…
+          </button>
+        ):(
+          <input type="date" autoFocus min={todayStr()}
+            onChange={e=>{if(e.target.value){onSnooze(task,e.target.value);close();}}}
+            onKeyDown={e=>{if(e.key==="Escape")close();}}
+            style={{width:"100%",padding:"7px 10px",borderRadius:8,border:"1px solid var(--accent)",fontSize:13,outline:"none",background:"var(--card)",color:"var(--text)",fontFamily:"inherit",boxSizing:"border-box"}}/>
+        )}
+      </div>
+    </>)}
+  </>);
 };
 
 /* Depth styling for subtask hierarchy — warm amber→gold→honey gradient
@@ -1009,12 +1066,12 @@ const SubtaskTree = ({subtasks, onAction, onOpenSub, onReorder, depth=0, compact
   const [dropZone, setDropZone] = useState(null); /* {id, zone} */
   const editRef = useRef(null);
   const toggle = id => setOpenIds(p=>({...p,[id]:!p[id]}));
+  /* Hooks must run before any conditional return (Rules of Hooks) */
+  useEffect(()=>{if(editingId&&editRef.current){editRef.current.focus();editRef.current.select();}},[editingId]);
   if(!subtasks?.length && !compact) return null;
   const ds = getDepthStyle(depth);
   const borderCol = listColor || ds.border;
   const bgCol = listColor ? hexTint(listColor, 0.05 + depth*0.015) : ds.bg;
-
-  useEffect(()=>{if(editingId&&editRef.current){editRef.current.focus();editRef.current.select();}},[editingId]);
 
   const handleDragStart = (e, sub) => {
     e.stopPropagation();
@@ -1142,7 +1199,31 @@ const PhotoModal = ({onClose,onProcess,processing,error}) => {
   const [fileData,setFileData]=useState(null);
   const [mediaType,setMediaType]=useState("image/jpeg");
   const inputRef=useRef(null);
-  const handleFile=f=>{if(!f?.type.startsWith("image/"))return;setMediaType(f.type);const r=new FileReader();r.onload=e=>{setPreview(e.target.result);setFileData(e.target.result.split(",")[1]);};r.readAsDataURL(f);};
+  /* Downscale big phone photos client-side: modern cameras produce 8–20MB
+     images that blow past the vision API's size limit and waste upload time.
+     1600px on the long edge keeps handwriting crisp for OCR. */
+  const handleFile=f=>{
+    if(!f?.type.startsWith("image/"))return;
+    const r=new FileReader();
+    r.onload=e=>{
+      const img=new Image();
+      img.onload=()=>{
+        const MAX=1600;
+        const scale=Math.min(1,MAX/Math.max(img.width,img.height));
+        if(scale>=1&&f.size<2.5*1024*1024){
+          setMediaType(f.type);setPreview(e.target.result);setFileData(e.target.result.split(",")[1]);
+          return;
+        }
+        const c=document.createElement("canvas");
+        c.width=Math.round(img.width*scale);c.height=Math.round(img.height*scale);
+        c.getContext("2d").drawImage(img,0,0,c.width,c.height);
+        const dataUrl=c.toDataURL("image/jpeg",0.85);
+        setMediaType("image/jpeg");setPreview(dataUrl);setFileData(dataUrl.split(",")[1]);
+      };
+      img.src=e.target.result;
+    };
+    r.readAsDataURL(f);
+  };
   return (
     <Overlay onClose={onClose}>
       <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20}}>
@@ -1183,7 +1264,7 @@ const ScanResultsModal = ({results,onConfirm,onClose,lists}) => {
     const flat=[];let id=0;
     const walk=(arr,depth)=>{
       (arr||[]).forEach(it=>{
-        flat.push({title:it.title,completed:it.completed||false,category:depth===0?(it.category||null):null,date:depth===0?(it.date||null):null,is_duplicate_of:it.is_duplicate_of||null,_depth:depth,_selected:true,_id:id++});
+        flat.push({title:it.title,completed:it.completed||false,category:depth===0?(it.category||null):null,date:depth===0?(it.date||null):null,priority:depth===0?(it.priority||null):null,is_duplicate_of:it.is_duplicate_of||null,_depth:depth,_selected:true,_id:id++});
         walk(it.subtasks,depth+1);
       });
     };
@@ -1300,7 +1381,7 @@ const ScanResultsModal = ({results,onConfirm,onClose,lists}) => {
     const roots=[];const stack=[{children:roots,depth:-1}];
     items.forEach(it=>{
       if(!it._selected) return;
-      const node={title:it.title,completed:it.completed,category:it._depth===0?it.category:null,date:it._depth===0?it.date:null,is_duplicate_of:it._depth===0?it.is_duplicate_of:null,subtasks:[]};
+      const node={title:it.title,completed:it.completed,category:it._depth===0?it.category:null,date:it._depth===0?it.date:null,priority:it._depth===0?it.priority:null,is_duplicate_of:it._depth===0?it.is_duplicate_of:null,subtasks:[]};
       while(stack.length>1&&stack[stack.length-1].depth>=it._depth) stack.pop();
       stack[stack.length-1].children.push(node);
       stack.push({children:node.subtasks,depth:it._depth});
@@ -1391,6 +1472,7 @@ const ScanResultsModal = ({results,onConfirm,onClose,lists}) => {
             <input type="date" value={item.date||results.page_date||""} onChange={e=>updateItem(idx,{date:e.target.value||null})}
               style={{fontSize:12,padding:"2px 6px",borderRadius:4,border:"1px solid var(--border)",background:"var(--card)",color:"var(--text)",cursor:"pointer",fontFamily:"inherit"}}/>
             {item.completed&&<span style={{fontSize:11,background:"#dcfce7",color:"#166534",padding:"1px 7px",borderRadius:4,fontWeight:600}}>✓ done</span>}
+            {item.priority==="high"&&<span style={{fontSize:11,background:"rgba(248,113,113,0.12)",color:"#dc2626",padding:"1px 7px",borderRadius:4,fontWeight:600}} title="Marked with * or ! on the page">⚑ high</span>}
           </div>
         )}
       </div>
@@ -1869,32 +1951,52 @@ const HelpGuideModal = ({onClose, initialSection}) => {
           </div>
         </HelpSection>
 
-        <HelpSection icon="📸" title="Scanning Notebook Pages" defaultOpen={initialSection==="scan"}>
-          <p style={{marginBottom:10}}>Format your pages like this for the best scan accuracy:</p>
+        <HelpSection icon="📸" title="Scanning & Note-Taking Best Practices" defaultOpen={initialSection==="scan"}>
+          <p style={{marginBottom:10}}>Inkwell understands <b>Bullet Journal rapid logging</b> — a handful of consistent pen marks that carry meaning. Format your pages like this for the best scan accuracy:</p>
           <div style={{marginBottom:12}}>
-            <div style={featureStyle}><div style={dotStyle}/><div><b>Date at the top</b> — write <b>19/2</b>, <b>Feb 19</b>, or <b>2026-02-19</b>. This becomes the default due date.</div></div>
+            <div style={featureStyle}><div style={dotStyle}/><div><b>Date at the top</b> — write <b>19/2</b>, <b>Feb 19</b>, or <b>2026-02-19</b>. This becomes the default due date for the page.</div></div>
+            <div style={featureStyle}><div style={dotStyle}/><div><b>One bullet per task</b> — short, action-first phrases ("Email Sam re: invoice", not a paragraph). Use ☐ □ [ ] – • for open tasks.</div></div>
+            <div style={featureStyle}><div style={dotStyle}/><div><b>Mark completions clearly</b> — ☑ ✓ [x], an X through the bullet, or a strikethrough. Scanning a page with crossed-off items checks them off in the app too.</div></div>
+            <div style={featureStyle}><div style={dotStyle}/><div><b>Push tasks out with <code>&gt;</code></b> — the BuJo migration mark. Write <b>&gt;1w</b>, <b>&gt;1m</b>, <b>&gt;3m</b>, <b>&gt;Fri</b>, or <b>&gt;Mar 3</b> next to a task and the scan reschedules it to that date. A bare <b>&gt;</b> means tomorrow. This is how you defer tasks <i>without opening the app</i>.</div></div>
+            <div style={featureStyle}><div style={dotStyle}/><div><b>Star what matters</b> — a <b>*</b> or <b>!</b> next to a task imports it as high priority.</div></div>
             <div style={featureStyle}><div style={dotStyle}/><div><b>Underline category headers</b> — Inkwell fuzzy-matches them to your existing lists (e.g. "Work tasks" → Work).</div></div>
             <div style={featureStyle}><div style={dotStyle}/><div><b>Indent for subtasks</b> — anything indented beneath a task becomes a subtask. Deeper indentation creates nested sub-subtasks.</div></div>
-            <div style={featureStyle}><div style={dotStyle}/><div><b>Use clear markers</b> — ☐ □ [ ] – • for open tasks; ☑ ✓ [x] or strikethrough for completed.</div></div>
+            <div style={featureStyle}><div style={dotStyle}/><div><b>Projects get their own page</b> — a BuJo "collection". Title at the top (underlined), steps listed beneath. Scanning it creates one task with the steps as subtasks, so the project lives in the app as a single record.</div></div>
+            <div style={featureStyle}><div style={dotStyle}/><div><b>Camera basics</b> — dark pen, flat page, good light, fill the frame. Photos are automatically downscaled before upload, so don't worry about file size.</div></div>
           </div>
           <span style={codeStyle}>{`Feb 19
 
 Work
 ──────
-☐ Prepare quarterly review
+☐ Prepare quarterly review *
     - Gather metrics
     - Draft slides
         - Add charts
-☐ Schedule 1:1 meetings
+☐ Schedule 1:1 meetings  >1w
 ✓ Submit expense report
 
 Personal
 ────────
-☐ Book dentist appointment
-☐ Research weekend trips
+☐ Book dentist appointment  >Fri
+☐ Research weekend trips  >1m
     - Compare prices`}</span>
           <div style={{padding:"10px 14px",background:"var(--accent-bg)",borderRadius:10,border:"1px solid var(--accent-a15)",fontSize:12,color:"var(--accent-dark)",lineHeight:1.6,marginTop:4}}>
             <b>💡</b> After scanning, you can drag rows to reorder, use ← → to fix nesting, edit titles, and reassign lists — all before importing.
+          </div>
+        </HelpSection>
+
+        <HelpSection icon="🖋" title="Paper Mode — Notebook First" defaultOpen={initialSection==="paper"}>
+          <p style={{marginBottom:10}}>Paper Mode (Settings → Paper Mode) inverts the app: <b>your notebook is the workspace, Inkwell is the record</b>. It's for people who noticed they were spending more time optimising tasks in the app than doing them on paper.</p>
+          <div style={{marginBottom:12}}>
+            <div style={featureStyle}><div style={dotStyle}/><div><b>Today is the whole app</b> — boards, lists, calendar, and upcoming views are hidden. The sanctioned verbs are: <b>scan</b>, <b>check off</b>, and <b>snooze</b>.</div></div>
+            <div style={featureStyle}><div style={dotStyle}/><div><b>Carry-forward</b> — unfinished tasks roll onto Today automatically with a "↻ carried" badge, like rewriting a bullet in a journal (without the rewriting). If something keeps carrying, do it, snooze it, or let it go.</div></div>
+            <div style={featureStyle}><div style={dotStyle}/><div><b>Snooze (💤)</b> — the one thing paper can't do: make a task vanish and reappear months later. Tap <b>zZ</b> on any task for one-tap horizons (tomorrow / week / month / 3 months). It returns to Today with an "↩ resurfaced" badge — copy it onto that day's notebook page and carry on.</div></div>
+            <div style={featureStyle}><div style={dotStyle}/><div><b>Defer from the page</b> — better still, write <b>&gt;1w</b> next to the task in your notebook and let the next scan do the snoozing. You never opened a view.</div></div>
+            <div style={featureStyle}><div style={dotStyle}/><div><b>Weekly review</b> — one deliberate, time-boxed session (sidebar → "Weekly review"). The full app unlocks: triage Upcoming, prune stale projects, tidy lists. Tap "End weekly review" and the app pins back to Today.</div></div>
+            <div style={featureStyle}><div style={dotStyle}/><div><b>No confetti</b> — completion streaks and celebrations are off in Paper Mode. The reward for finishing a task is crossing it off the page.</div></div>
+          </div>
+          <div style={{padding:"10px 14px",background:"var(--accent-bg)",borderRadius:10,border:"1px solid var(--accent-a15)",fontSize:12,color:"var(--accent-dark)",lineHeight:1.6}}>
+            <b>The daily loop:</b> ① Each morning, open the app once — Today shows what's due and what resurfaced. ② Copy those onto today's notebook page. ③ Work from paper all day. ④ In the evening (or next morning), scan the page: completions get checked off, new tasks recorded, <code>&gt;</code> marks deferred. Total app time: under a minute.
           </div>
         </HelpSection>
 
@@ -2720,7 +2822,7 @@ const CalendarView = ({tasks, onSelect, onUpdate}) => {
 /* ═══════════════════════════════════════════════════════════════════════
    TASK ROW — editable title, drag handle, collapsible subtasks
    ═══════════════════════════════════════════════════════════════════════ */
-const TaskRow = ({task,isActive,isSelected,onSelect,onToggle,onUpdateTask,onDragStart,onDragOver,onDrop,onDragEnd,dropTarget,view,lists,animateState}) => {
+const TaskRow = ({task,isActive,isSelected,onSelect,onToggle,onUpdateTask,onSnooze,paperUI,onDragStart,onDragOver,onDrop,onDragEnd,dropTarget,view,lists,animateState}) => {
   const [subsOpen,setSubsOpen]=useState(false);
   const clickTimer=useRef(null);
   const overdue=!task.completed&&isOverdue(task.dueDate);
@@ -2759,7 +2861,7 @@ const TaskRow = ({task,isActive,isSelected,onSelect,onToggle,onUpdateTask,onDrag
       {/* Drop indicator lines */}
       {dtZone==="before"&&<div style={{position:"absolute",top:-1,left:12,right:12,height:2,background:"var(--accent)",borderRadius:1,zIndex:5}}/>}
       {dtZone==="after"&&<div style={{position:"absolute",bottom:-1,left:12,right:12,height:2,background:"var(--accent)",borderRadius:1,zIndex:5}}/>}
-      {dtZone==="nest"&&<div style={{position:"absolute",left:42,top:"50%",transform:"translateY(-50)",fontSize:10,color:"var(--accent)",fontWeight:700,zIndex:5,pointerEvents:"none"}}>↳ nest</div>}
+      {dtZone==="nest"&&<div style={{position:"absolute",left:42,top:"50%",transform:"translateY(-50%)",fontSize:10,color:"var(--accent)",fontWeight:700,zIndex:5,pointerEvents:"none"}}>↳ nest</div>}
 
       <div onClick={handleRowClick} style={{display:"flex",alignItems:"flex-start",gap:8,padding:"11px 12px",cursor:"pointer"}}>
         <div style={{paddingTop:3,cursor:"grab",color:"var(--border)"}} onMouseDown={e=>e.stopPropagation()}>{Icons.grip}</div>
@@ -2769,6 +2871,16 @@ const TaskRow = ({task,isActive,isSelected,onSelect,onToggle,onUpdateTask,onDrag
             style={{fontSize:15,fontWeight:task.completed?400:500,lineHeight:1.4,color:task.completed?"var(--muted)":"var(--ink)",textDecoration:task.completed?"line-through":"none",display:"block",marginBottom:3}}/>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
             <InlineDatePicker value={task.dueDate} overdue={overdue} onChange={d=>onUpdateTask({...task,dueDate:d||null})}/>
+            {!task.completed&&onSnooze&&<SnoozeButton task={task} onSnooze={onSnooze}/>}
+            {!task.completed&&task.snoozedFrom&&task.dueDate===todayStr()&&(
+              <span title={`Snoozed on ${formatDate(task.snoozedFrom)} — back today`}
+                style={{fontSize:11,fontWeight:600,color:"#0e7490",background:"rgba(14,116,144,0.1)",padding:"1px 7px",borderRadius:4}}>↩ resurfaced</span>
+            )}
+            {paperUI&&overdue&&(()=>{
+              const days=Math.max(1,Math.floor((new Date(todayStr()+"T00:00:00")-new Date(task.dueDate+"T00:00:00"))/86400000));
+              return <span title="Carried forward — do it, snooze it, or let it go"
+                style={{fontSize:11,fontWeight:600,color:"var(--danger)",background:"var(--danger-bg)",padding:"1px 7px",borderRadius:4}}>↻ carried {days}d</span>;
+            })()}
             {hasDuration&&<span style={{fontSize:11,display:"flex",alignItems:"center",gap:3,color:"var(--muted)"}}>{Icons.duration} {formatDate(task.startDate)}–{formatDate(task.endDate)}</span>}
             {task.priority!=="none"&&<span style={{fontSize:11,fontWeight:700,display:"flex",alignItems:"center",gap:3,color:PRIORITY[task.priority].color}}>{Icons.flag} {PRIORITY[task.priority].label}</span>}
             {subTotal>0&&(<button onClick={e=>{e.stopPropagation();setSubsOpen(!subsOpen);}} style={{fontSize:12,display:"flex",alignItems:"center",gap:3,color:subDone===subTotal?"#16a34a":"var(--muted)",background:"none",border:"none",cursor:"pointer",padding:0,fontFamily:"inherit"}}>{Icons.subtask} {subDone}/{subTotal} <span style={{transform:subsOpen?"rotate(0)":"rotate(-90deg)",transition:"transform 0.15s",display:"flex"}}>{Icons.chevD}</span></button>)}
@@ -3305,6 +3417,22 @@ export default function InkwellApp() {
   const [confirmSubtaskComplete,setConfirmSubtaskComplete]=useState(()=>load("inkwell-confirmSubtaskComplete",true));
   const confirmSubRef=useRef(confirmSubtaskComplete);
   useEffect(()=>{confirmSubRef.current=confirmSubtaskComplete;},[confirmSubtaskComplete]);
+
+  /* ═══ PAPER MODE — notebook-first. The app pins to Today; the only verbs are
+     scan, check off, and snooze. Everything else (boards, lists, calendar,
+     upcoming) is set aside for a deliberate weekly review session. ═══ */
+  const [paperMode,setPaperMode]=useState(()=>load("inkwell-paperMode",false));
+  const [reviewMode,setReviewMode]=useState(false); /* session-only escape hatch — never persisted */
+  const paperUI = paperMode && !reviewMode;
+  useEffect(()=>{save("inkwell-paperMode",paperMode);},[paperMode]);
+  /* Pin to Today whenever paper restrictions (re)engage */
+  useEffect(()=>{ if(paperMode && !reviewMode && view!=="today") setView("today"); },[paperMode,reviewMode]);
+  /* Gentle anti-stickiness nudge after 5 minutes of paper-mode browsing */
+  useEffect(()=>{
+    if(!paperUI||!ready) return;
+    const t=setTimeout(()=>{ setToast("🖋 Five minutes in the app — your notebook misses you"); setTimeout(()=>setToast(null),4000); },5*60*1000);
+    return()=>clearTimeout(t);
+  },[paperUI,ready]);
   const BUILD_VERSION = "2026.04.15-v1";
   const [darkMode,setDarkMode]=useState(()=>load("inkwell-darkMode",false));
   const [frostMode,setFrostMode]=useState(()=>load("inkwell-frostMode",false));
@@ -3466,6 +3594,7 @@ export default function InkwellApp() {
       if (cloudData.settings.archivedLists !== undefined) setArchivedLists(cloudData.settings.archivedLists);
       if (cloudData.settings.darkMode !== undefined) setDarkMode(cloudData.settings.darkMode);
       if (cloudData.settings.quickDates !== undefined) setQuickDates(cloudData.settings.quickDates);
+      if (cloudData.settings.paperMode !== undefined) setPaperMode(cloudData.settings.paperMode);
       if (cloudData.settings.kanbanColumns !== undefined) {
         /* Prune any past-date columns from cloud data */
         const today = todayStr();
@@ -3537,6 +3666,7 @@ export default function InkwellApp() {
       if (cloudData.settings.archivedLists !== undefined) setArchivedLists(cloudData.settings.archivedLists);
               if (cloudData.settings.darkMode !== undefined) setDarkMode(cloudData.settings.darkMode);
               if (cloudData.settings.quickDates !== undefined) setQuickDates(cloudData.settings.quickDates);
+              if (cloudData.settings.paperMode !== undefined) setPaperMode(cloudData.settings.paperMode);
               if (cloudData.settings.kanbanColumns !== undefined) {
                 const today = todayStr();
                 const cols = cloudData.settings.kanbanColumns;
@@ -3566,6 +3696,7 @@ export default function InkwellApp() {
               frostMode: load("inkwell-frostMode", false),
               archivedLists: load("inkwell-archivedLists", []),
               quickDates: load("inkwell-quickDates", defaultQuickDates),
+              paperMode: load("inkwell-paperMode", false),
               kanbanColumns: null,
               _tombstones: result.tombstones
             };
@@ -3731,10 +3862,10 @@ export default function InkwellApp() {
 
   /* ── Refs for latest values (prevent stale closures in save effects) ── */
   const tasksRef=useRef(tasks);const listsRef=useRef(lists);
-  const settingsRef=useRef({showViewCounts,showListCounts,confirmSubtaskComplete,darkMode,frostMode,archivedLists,quickDates,kanbanColumns});
+  const settingsRef=useRef({showViewCounts,showListCounts,confirmSubtaskComplete,darkMode,frostMode,archivedLists,quickDates,paperMode,kanbanColumns});
   useEffect(()=>{tasksRef.current=tasks;},[tasks]);
   useEffect(()=>{listsRef.current=lists;},[lists]);
-  useEffect(()=>{settingsRef.current={showViewCounts,showListCounts,confirmSubtaskComplete,darkMode,frostMode,archivedLists,quickDates,kanbanColumns};},[showViewCounts,showListCounts,confirmSubtaskComplete,darkMode,frostMode,archivedLists,quickDates,kanbanColumns]);
+  useEffect(()=>{settingsRef.current={showViewCounts,showListCounts,confirmSubtaskComplete,darkMode,frostMode,archivedLists,quickDates,paperMode,kanbanColumns};},[showViewCounts,showListCounts,confirmSubtaskComplete,darkMode,frostMode,archivedLists,quickDates,paperMode,kanbanColumns]);
 
   /* ── Save on every USER edit ── */
   useEffect(()=>{
@@ -3775,10 +3906,10 @@ export default function InkwellApp() {
   useEffect(()=>{
     if(!ready) return;
     if(cloudSyncReady.current && navigator.onLine) {
-      const settings = { ...({showViewCounts,showListCounts,confirmSubtaskComplete,darkMode,frostMode,archivedLists,quickDates,kanbanColumns}), _tombstones: tombstonesRef.current };
+      const settings = { ...({showViewCounts,showListCounts,confirmSubtaskComplete,darkMode,frostMode,archivedLists,quickDates,paperMode,kanbanColumns}), _tombstones: tombstonesRef.current };
       saveToCloud(tasksRef.current,listsRef.current,settings);
     }
-  },[showViewCounts,showListCounts,confirmSubtaskComplete,darkMode,frostMode,archivedLists,quickDates,kanbanColumns]);
+  },[showViewCounts,showListCounts,confirmSubtaskComplete,darkMode,frostMode,archivedLists,quickDates,paperMode,kanbanColumns]);
 
   /* ── Flush to cloud on tab hide AND page unload ── */
   useEffect(()=>{
@@ -3912,12 +4043,15 @@ export default function InkwellApp() {
       const newCount = (r.completedCount||0)+1;
       flash(r.endAfter && newCount >= r.endAfter ? "All recurrences completed ✓" : "Done! Next occurrence scheduled →");
     }
-    /* ── Streak + confetti easter egg ── */
-    completionStreakRef.current += 1;
-    if (completionStreakRef.current >= 10) {
-      completionStreakRef.current = 0;
-      setConfettiTrigger(n => n + 1);
-      flash("✨ 10-task streak — magnificent!");
+    /* ── Streak + confetti easter egg — suppressed in Paper Mode (the reward
+       for finishing tasks belongs on the page, not in the app) ── */
+    if (!paperMode) {
+      completionStreakRef.current += 1;
+      if (completionStreakRef.current >= 10) {
+        completionStreakRef.current = 0;
+        setConfettiTrigger(n => n + 1);
+        flash("✨ 10-task streak — magnificent!");
+      }
     }
     /* Quill-mode ink spatter from element position */
     if (quillMode) {
@@ -3927,7 +4061,7 @@ export default function InkwellApp() {
         spatter(r.left + r.width * 0.1, r.top + r.height / 2);
       }
     }
-  },[tasks,flash,quillMode,spatter]);
+  },[tasks,flash,quillMode,spatter,paperMode]);
 
   const toggleTask=useCallback(id=>{
     const task = tasks.find(t=>t.id===id);
@@ -3967,7 +4101,24 @@ export default function InkwellApp() {
   const cancelPendingComplete = useCallback(()=>{
     setPendingCompleteId(null);
   },[]);
-  const deleteTask=useCallback(id=>{addTombstone(id);setTasks(prev=>prev.filter(t=>t.id!==id));if(selectedTask?.id===id)setSelectedTask(null);},[selectedTask,addTombstone]);
+  const deleteTask=useCallback(id=>{
+    const deleted=tasksRef.current.find(t=>t.id===id);
+    addTombstone(id);
+    setTasks(prev=>prev.filter(t=>t.id!==id));
+    if(selectedTask?.id===id)setSelectedTask(null);
+    if(deleted) undoToast.show(`Deleted "${deleted.title}"`, () => {
+      tombstonesRef.current = tombstonesRef.current.filter(x => x.id !== id);
+      save(TOMBSTONES_KEY, tombstonesRef.current);
+      setTasksRaw(prev => [deleted, ...prev]);
+    });
+  },[selectedTask,addTombstone,undoToast]);
+
+  /* Snooze — the single sanctioned "push it out" gesture. Stamps snoozedFrom
+     so the task can show a "resurfaced" badge when its day arrives. */
+  const snoozeTask=useCallback((task,dateStr)=>{
+    setTasks(prev=>prev.map(t=>t.id===task.id?{...t,dueDate:dateStr,snoozedFrom:todayStr()}:t));
+    flash(`💤 Snoozed until ${formatDate(dateStr)} — it'll be back on Today`);
+  },[]);
 
   const renameList=useCallback((oldN,newN)=>{if(!newN.trim()||newN===oldN||lists.includes(newN))return;setLists(prev=>prev.map(l=>l===oldN?newN:l));setTasks(prev=>prev.map(t=>t.list===oldN?{...t,list:newN}:t));if(view===`list:${oldN}`)setView(`list:${newN}`);},[lists,view]);
   const deleteList=useCallback((name)=>{if(name==="Inbox")return;const ct=tasks.filter(t=>t.list===name).length;if(ct>0&&!confirm(`"${name}" has ${ct} task${ct>1?"s":""}. They'll be moved to Inbox. Continue?`))return;setTasks(prev=>prev.map(t=>t.list===name?{...t,list:"Inbox"}:t));setLists(prev=>prev.filter(l=>l!==name));if(view===`list:${name}`)setView("all");flash(`Deleted list "${name}"`);},[tasks,view,flash]);
@@ -4201,12 +4352,12 @@ export default function InkwellApp() {
   /* Bulk operations */
 
 
-  const handleScan=async(b64,mt)=>{if(!navigator.onLine){setScanError("You're offline. Scanning requires an internet connection — try again when you're back online.");flash("⚠ Can't scan while offline");return;}setProcessing(true);setScanError(null);try{const res=await fetch("/api/scan",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({imageData:b64,mediaType:mt,existingTasks:tasks.map(t=>t.title),existingLists:lists})});if(!res.ok){let errMsg="Scan failed ("+res.status+")";try{const err=await res.json();errMsg=err.error||errMsg;}catch(_){}throw new Error(errMsg);}const results=await res.json();setShowPhoto(false);setScanResults(results);}catch(e){const msg=e.message||"Unknown error";setScanError(msg);flash("⚠ "+msg);}setProcessing(false);};
+  const handleScan=async(b64,mt)=>{if(!navigator.onLine){setScanError("You're offline. Scanning requires an internet connection — try again when you're back online.");flash("⚠ Can't scan while offline");return;}setProcessing(true);setScanError(null);try{const res=await fetch("/api/scan",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({imageData:b64,mediaType:mt,existingTasks:tasks.map(t=>t.title),existingLists:lists,todayDate:todayStr()})});if(!res.ok){let errMsg="Scan failed ("+res.status+")";try{const err=await res.json();errMsg=err.error||errMsg;}catch(_){}throw new Error(errMsg);}const results=await res.json();setShowPhoto(false);setScanResults(results);}catch(e){const msg=e.message||"Unknown error";setScanError(msg);flash("⚠ "+msg);}setProcessing(false);};
 
   const confirmScan=items=>{let added=0,checked=0;const pageDate=scanResults?.page_date;const newCats=new Set();items.forEach(it=>{if(it.category?.trim()&&!lists.includes(it.category.trim()))newCats.add(it.category.trim());});if(newCats.size>0)setLists(prev=>[...prev,...Array.from(newCats)]);const all=[...lists,...Array.from(newCats)];
     /* Convert scanned subtask tree to app format */
     const convertSubs=(subs)=>(subs||[]).map(s=>({id:uid(),title:s.title,completed:s.completed||false,dueDate:null,startDate:null,endDate:null,priority:"none",notes:"",tags:[],subtasks:convertSubs(s.subtasks)}));
-    items.forEach(item=>{if(item.is_duplicate_of){const ex=tasks.find(t=>t.title.toLowerCase().trim()===item.is_duplicate_of.toLowerCase().trim());if(ex&&item.completed&&!ex.completed){updateTask({...ex,completed:true,completedAt:new Date().toISOString()});checked++;return;}if(ex)return;}const tl=item.category&&all.includes(item.category.trim())?item.category.trim():"Inbox";addTask({title:item.title,completed:item.completed,dueDate:item.date||pageDate||todayStr(),list:tl,subtasks:convertSubs(item.subtasks)});added++;});
+    items.forEach(item=>{if(item.is_duplicate_of){const ex=tasks.find(t=>t.title.toLowerCase().trim()===item.is_duplicate_of.toLowerCase().trim());if(ex&&item.completed&&!ex.completed){updateTask({...ex,completed:true,completedAt:new Date().toISOString()});checked++;return;}if(ex)return;}const tl=item.category&&all.includes(item.category.trim())?item.category.trim():"Inbox";addTask({title:item.title,completed:item.completed,dueDate:item.date||pageDate||todayStr(),list:tl,priority:item.priority==="high"?"high":"none",subtasks:convertSubs(item.subtasks)});added++;});
     setScanResults(null);const lm=newCats.size>0?`, created ${newCats.size} list${newCats.size!==1?"s":""}`:""
     flash(`✓ Added ${added} task${added!==1?"s":""}${checked?`, checked off ${checked}`:""}${lm}`);};
 
@@ -4234,7 +4385,7 @@ export default function InkwellApp() {
     if(!view.startsWith("list:") || !archivedLists.includes(view.replace("list:","")))
       f=f.filter(t=>!archivedLists.includes(t.list));
     if(search){const q=search.toLowerCase();f=f.filter(t=>t.title.toLowerCase().includes(q)||(t.notes||"").toLowerCase().includes(q)||(t.tags||[]).some(tg=>tg.toLowerCase().includes(q)));}
-    else{switch(view){case"today":f=f.filter(t=>t.dueDate===todayStr()||(!t.dueDate&&t.createdAt?.startsWith(todayStr())));break;case"overdue":f=f.filter(t=>!t.completed&&t.dueDate&&t.dueDate<todayStr());if(sortBy==="default")f.sort((a,b)=>(a.dueDate||"").localeCompare(b.dueDate||""));break;case"upcoming":f=f.filter(t=>!t.completed&&t.dueDate&&t.dueDate>=todayStr());if(sortBy==="default")f.sort((a,b)=>(a.dueDate||"").localeCompare(b.dueDate||""));break;case"all":break;case"completed":return applySortFilter(f.filter(t=>t.completed));case"inbox":f=f.filter(t=>t.list==="Inbox");break;default:if(view.startsWith("list:"))f=f.filter(t=>t.list===view.replace("list:",""));}}
+    else{switch(view){case"today":f=f.filter(t=>t.dueDate===todayStr()||(!t.dueDate&&t.createdAt?.startsWith(todayStr()))||(paperMode&&!t.completed&&t.dueDate&&t.dueDate<todayStr()));break;case"overdue":f=f.filter(t=>!t.completed&&t.dueDate&&t.dueDate<todayStr());if(sortBy==="default")f.sort((a,b)=>(a.dueDate||"").localeCompare(b.dueDate||""));break;case"upcoming":f=f.filter(t=>!t.completed&&t.dueDate&&t.dueDate>=todayStr());if(sortBy==="default")f.sort((a,b)=>(a.dueDate||"").localeCompare(b.dueDate||""));break;case"all":break;case"completed":return applySortFilter(f.filter(t=>t.completed));case"inbox":f=f.filter(t=>t.list==="Inbox");break;default:if(view.startsWith("list:"))f=f.filter(t=>t.list===view.replace("list:",""));}}
     /* Today view: apply list multi-select filter if active */
     if(view==="today" && todayListFilter.size > 0){f=f.filter(t=>todayListFilter.has(t.list));}
     const result=applySortFilter(f);
@@ -4252,16 +4403,17 @@ export default function InkwellApp() {
       result.splice(insertAt,0,...surfaced);
     }
     return result;
-  },[tasks,view,search,sortBy,filterPriority,applySortFilter,archivedLists,currentDateStr,todayListFilter]);
+  },[tasks,view,search,sortBy,filterPriority,applySortFilter,archivedLists,currentDateStr,todayListFilter,paperMode]);
 
   const overdueCount=useMemo(()=>tasks.filter(t=>!t.completed&&isOverdue(t.dueDate)&&!archivedLists.includes(t.list)).length,[tasks,archivedLists,currentDateStr]);
   /* Auto-redirect from overdue view when all tasks resolved */
   useEffect(()=>{if(view==="overdue"&&overdueCount===0)setView("today");},[view,overdueCount]);
   const todayCount=useMemo(()=>{
-    const direct=tasks.filter(t=>!t.completed&&t.dueDate===todayStr()&&!archivedLists.includes(t.list)).length;
+    /* Paper Mode carries overdue tasks forward into Today, so count them there too */
+    const direct=tasks.filter(t=>!t.completed&&!archivedLists.includes(t.list)&&(t.dueDate===todayStr()||(paperMode&&t.dueDate&&t.dueDate<todayStr()))).length;
     const subs=collectDatedSubtasks(tasks).filter(ds=>ds.sub.dueDate===todayStr()&&ds.parentTask.dueDate!==todayStr()&&!archivedLists.includes(ds.parentTask.list)).length;
     return direct+subs;
-  },[tasks,archivedLists,currentDateStr]);
+  },[tasks,archivedLists,currentDateStr,paperMode]);
 
   /* Keyboard shortcuts — must be after filtered/bulkDelete definitions */
   useEffect(()=>{const h=e=>{
@@ -4374,6 +4526,32 @@ export default function InkwellApp() {
           <button onClick={()=>{setShowPhoto(true);if(isMobile)setSidebar(false);}} style={{width:"100%",padding:"11px 14px",borderRadius:12,border:"2px dashed var(--border)",background:"var(--accent-bg)",color:"var(--accent)",fontSize:13,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:10,transition:"all 0.2s",marginBottom:16,whiteSpace:"nowrap",fontFamily:"inherit"}}>{Icons.camera} Scan Notebook Page</button>
         </div>
         <div style={{flex:1,overflowY:"auto",padding:"0 8px"}}>
+          {paperUI?(<>
+            {/* ═══ PAPER MODE SIDEBAR — Today is the whole app ═══ */}
+            <NavSection title="Today">
+              <NavItem active={view==="today"} icon={Icons.today} label="Today" count={showViewCounts?todayCount:0}
+                onClick={()=>selectView("today")} countColor={overdueCount>0?"var(--danger)":undefined}/>
+            </NavSection>
+            <div style={{padding:"0 4px",marginBottom:14}}>
+              <button onClick={()=>{setReviewMode(true);flash("📖 Weekly review — the full app is open until you end it");}}
+                style={{width:"100%",padding:"10px 12px",borderRadius:10,border:"1px solid var(--border)",background:"var(--card)",color:"var(--text)",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit",textAlign:"left",display:"flex",alignItems:"center",gap:8,transition:"all 0.15s"}}
+                onMouseEnter={e=>{e.currentTarget.style.borderColor="var(--accent)";e.currentTarget.style.color="var(--accent)";}}
+                onMouseLeave={e=>{e.currentTarget.style.borderColor="var(--border)";e.currentTarget.style.color="var(--text)";}}>
+                📖 Weekly review →
+              </button>
+              <p style={{fontSize:11,color:"var(--muted)",lineHeight:1.6,margin:"10px 2px 0"}}>
+                Plan on paper. Scan to record. Check off and snooze here — everything else waits for your weekly review.
+              </p>
+            </div>
+          </>):(<>
+          {paperMode&&reviewMode&&(
+            <div style={{padding:"0 4px",marginBottom:12}}>
+              <button onClick={()=>{setReviewMode(false);setView("today");flash("🖋 Review done — back to paper");}}
+                style={{width:"100%",padding:"10px 12px",borderRadius:10,border:"none",background:"linear-gradient(135deg,var(--accent),var(--accent2))",color:"white",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center",gap:8,boxShadow:"0 2px 10px rgba(180,83,9,0.25)"}}>
+                ✓ End weekly review
+              </button>
+            </div>
+          )}
           <NavSection title="Views">
             {(()=>{
               const dateDrop=(dateStr,label)=>({
@@ -4517,8 +4695,9 @@ export default function InkwellApp() {
               )}
             </div>
           )}
+          </>)}
         </div>
-        {overdueCount>0&&view!=="overdue"&&<button onClick={()=>selectView("overdue")} style={{margin:"0 8px 8px",padding:"10px 14px",borderRadius:10,background:"var(--danger-bg)",border:"1px solid var(--danger-border)",fontSize:13,color:"var(--danger)",fontWeight:600,flexShrink:0,cursor:"pointer",width:"calc(100% - 16px)",textAlign:"left",fontFamily:"inherit",transition:"background 0.15s"}}
+        {overdueCount>0&&view!=="overdue"&&!paperUI&&<button onClick={()=>selectView("overdue")} style={{margin:"0 8px 8px",padding:"10px 14px",borderRadius:10,background:"var(--danger-bg)",border:"1px solid var(--danger-border)",fontSize:13,color:"var(--danger)",fontWeight:600,flexShrink:0,cursor:"pointer",width:"calc(100% - 16px)",textAlign:"left",fontFamily:"inherit",transition:"background 0.15s"}}
           onMouseEnter={e=>e.currentTarget.style.background="var(--danger-border)"} onMouseLeave={e=>e.currentTarget.style.background="var(--danger-bg)"}>⚠ {overdueCount} overdue — view →</button>}
         {hasSupabase && user && (
           <div style={{padding:"6px 16px",fontSize:11,color:"var(--muted)",display:"flex",alignItems:"center",gap:5,flexShrink:0}}>
@@ -4564,13 +4743,15 @@ export default function InkwellApp() {
               <span style={{color:view==="overdue"?"var(--danger)":"var(--accent)",flexShrink:0}}>{viewIcon}</span>
               {view.startsWith("list:")?(<EditableText value={viewTitle} onSave={n=>renameList(viewTitle,n)} tag="h1" style={{fontSize:isMobile?20:22,fontFamily:"var(--font-display)",fontWeight:700,color:"var(--ink)"}}/>):(<h1 style={{margin:0,fontSize:isMobile?20:22,fontFamily:"var(--font-display)",fontWeight:700,color:view==="overdue"?"var(--danger)":"var(--ink)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{viewTitle}</h1>)}
               {view==="today"&&!isMobile&&<span style={{fontSize:13,color:"var(--muted)"}}>{new Date().toLocaleDateString("en-IE",{weekday:"long",month:"long",day:"numeric"})}</span>}
+              {paperUI&&<span title="Paper Mode — your notebook is the workspace, this is the record" style={{fontSize:10,fontWeight:700,color:"var(--accent)",background:"var(--accent-bg)",padding:"3px 9px",borderRadius:12,whiteSpace:"nowrap",letterSpacing:0.6,flexShrink:0}}>🖋 PAPER MODE</span>}
               {view==="overdue"&&<button onClick={()=>{const ot=tasks.filter(t=>!t.completed&&t.dueDate&&t.dueDate<todayStr());setTasks(prev=>prev.map(t=>(!t.completed&&t.dueDate&&t.dueDate<todayStr())?{...t,dueDate:todayStr()}:t));flash(`Moved ${ot.length} task${ot.length!==1?"s":""} to today`);setView("today");}}
                 style={{padding:"6px 14px",borderRadius:8,border:"1px solid var(--danger-border)",background:"var(--danger-bg)",color:"var(--danger)",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap",transition:"all 0.15s"}}
                 onMouseEnter={e=>{e.currentTarget.style.background="var(--danger-border)"}} onMouseLeave={e=>{e.currentTarget.style.background="var(--danger-bg)"}}>
                 → Move All to Today
               </button>}
-            </>):(<input autoFocus value={search} onChange={e=>setSearch(e.target.value)} onKeyDown={e=>{if(e.key==="Escape"){setShowSearch(false);setSearch("");}}} placeholder="Search tasks, tags..." style={{flex:1,padding:"10px 14px",borderRadius:12,border:"1px solid var(--border)",fontSize:15,outline:"none",background:"var(--card)",fontFamily:"inherit",minWidth:0}}/>)}
+            </>):(<input id="task-search" autoFocus value={search} onChange={e=>setSearch(e.target.value)} onKeyDown={e=>{if(e.key==="Escape"){setShowSearch(false);setSearch("");}}} placeholder="Search tasks, tags..." style={{flex:1,padding:"10px 14px",borderRadius:12,border:"1px solid var(--border)",fontSize:15,outline:"none",background:"var(--card)",fontFamily:"inherit",minWidth:0}}/>)}
           </div>
+          {paperUI&&<button onClick={()=>setShowPhoto(true)} style={{background:"var(--accent-bg)",border:"none",cursor:"pointer",color:"var(--accent)",padding:8,borderRadius:8,display:"flex",flexShrink:0}} aria-label="Scan notebook page" title="Scan notebook page">{Icons.camera}</button>}
           <button onClick={()=>{setShowSearch(!showSearch);if(showSearch)setSearch("");}} style={{background:showSearch?"var(--surface)":"none",border:"none",cursor:"pointer",color:"var(--muted)",padding:8,borderRadius:8,display:"flex",flexShrink:0}} aria-label="Search">{Icons.search}</button>
           {view!=="calendar"&&(<div style={{position:"relative",flexShrink:0}}>
             <button onClick={()=>setShowSortMenu(!showSortMenu)}
@@ -4621,7 +4802,7 @@ export default function InkwellApp() {
               const boardEligible = view==="today" || view==="inbox" || view.startsWith("list:");
               const currentListName = view==="inbox" ? "Inbox" : view.startsWith("list:") ? view.replace("list:","") : null;
               /* Shared toolbar: Board/List toggle (if eligible) + Today filter button (if on Today) */
-              const renderViewToolbar = () => boardEligible && (
+              const renderViewToolbar = () => !paperUI && boardEligible && (
                 <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14,flexShrink:0,flexWrap:"wrap"}}>
                   <div style={{display:"flex",background:"var(--surface)",borderRadius:8,padding:2,width:"fit-content"}}>
                     <button onClick={()=>setViewMode("kanban")} style={{padding:"5px 12px",borderRadius:6,border:"none",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:viewMode==="kanban"?"var(--card)":"transparent",color:viewMode==="kanban"?"var(--ink)":"var(--muted)",boxShadow:viewMode==="kanban"?"0 1px 3px rgba(0,0,0,0.08)":"none",transition:"all 0.15s"}}>Board</button>
@@ -4668,7 +4849,7 @@ export default function InkwellApp() {
                   )}
                 </div>
               );
-              const inKanbanMode = boardEligible && viewMode==="kanban";
+              const inKanbanMode = boardEligible && viewMode==="kanban" && !paperUI;
 
               return view==="calendar"?(<CalendarView tasks={tasks} onSelect={t=>setSelectedTask(t)} onUpdate={updateTask}/>):inKanbanMode?(<div style={{display:"flex",flexDirection:"column",height:"100%"}}>
               <div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",background:"var(--card)",borderRadius:14,border:"1px solid var(--border)",marginBottom:10,boxShadow:"0 1px 3px var(--shadow)",flexShrink:0}}>
@@ -4712,7 +4893,7 @@ export default function InkwellApp() {
                           style={{fontSize:11,fontWeight:600,color:"var(--danger)",background:"var(--card)",border:"1px solid var(--danger-border)",borderRadius:6,padding:"3px 8px",cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>→ Today</button>
                       </div>)}
                       {showSep&&(<div style={{display:"flex",alignItems:"center",gap:10,padding:"12px 12px 8px",marginTop:8}}><div style={{height:1,flex:1,background:"var(--border)"}}/><span style={{fontSize:12,fontWeight:600,color:"var(--muted)",textTransform:"uppercase",letterSpacing:0.8}}>Completed</span><div style={{height:1,flex:1,background:"var(--border)"}}/></div>)}
-                      <TaskRow task={task} isActive={selectedTask?.id===task.id} isSelected={selectedIds.has(task.id)} onSelect={handleTaskClick} onToggle={toggleTask} onUpdateTask={updateTask} view={view} lists={lists} onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop} onDragEnd={onDragEnd} dropTarget={dropTarget?.id===task.id?dropTarget:null} animateState={animatingTasks[task.id]}/>
+                      <TaskRow task={task} isActive={selectedTask?.id===task.id} isSelected={selectedIds.has(task.id)} onSelect={handleTaskClick} onToggle={toggleTask} onUpdateTask={updateTask} onSnooze={snoozeTask} paperUI={paperUI} view={view} lists={lists} onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop} onDragEnd={onDragEnd} dropTarget={dropTarget?.id===task.id?dropTarget:null} animateState={animatingTasks[task.id]}/>
                     </div>);})}
                 </div>
               )}
@@ -4734,6 +4915,15 @@ export default function InkwellApp() {
           <h2 style={{margin:0,fontSize:19,fontFamily:"var(--font-display)"}}>Settings</h2>
         </div>
         <div style={{flex:1,overflowY:"auto"}}>
+        <div style={{marginBottom:24}}>
+          <div style={{fontSize:11,fontWeight:700,color:"var(--muted)",textTransform:"uppercase",letterSpacing:1,marginBottom:12}}>Paper Mode</div>
+          <ToggleRow label="🖋 Paper Mode" sublabel="Notebook-first. The app pins to Today: scan, check off, snooze. Unfinished tasks carry forward. Boards, lists and other views are saved for your weekly review." checked={paperMode} onChange={v=>{setPaperMode(v);setReviewMode(false);}}/>
+          {paperMode&&(
+            <div style={{padding:"10px 14px",background:"var(--accent-bg)",borderRadius:10,marginTop:10,fontSize:12,color:"var(--accent-dark)",lineHeight:1.6}}>
+              <b>Tip:</b> write <b style={{fontFamily:"var(--font-mono)"}}>&gt;1w</b>, <b style={{fontFamily:"var(--font-mono)"}}>&gt;1m</b> or <b style={{fontFamily:"var(--font-mono)"}}>&gt;Fri</b> next to a task on paper and the next scan will snooze it for you. Open <b>Weekly review</b> from the sidebar for your deliberate planning session.
+            </div>
+          )}
+        </div>
         <div style={{marginBottom:24}}>
           <div style={{fontSize:11,fontWeight:700,color:"var(--muted)",textTransform:"uppercase",letterSpacing:1,marginBottom:12}}>Appearance</div>
           <ToggleRow label="Dark Mode" sublabel="Switch to a dark colour scheme (auto-syncs with system if unset)" checked={darkMode} onChange={setDarkModeUser}/>
@@ -4829,7 +5019,7 @@ export default function InkwellApp() {
       </Overlay>)}
       {/* ═══ BULK ACTION BAR ═══ */}
       {selectedIds.size>1&&(
-        <div style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",background:"#292524",color:"#fafaf9",padding:"10px 16px",borderRadius:14,fontSize:13,fontWeight:600,boxShadow:"0 8px 24px rgba(0,0,0,0.25)",animation:"toastIn 0.3s ease",zIndex:1500,display:"flex",alignItems:"center",gap:10,whiteSpace:"nowrap"}}>
+        <div style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",background:"#292524",color:"#fafaf9",padding:"10px 16px",borderRadius:14,fontSize:13,fontWeight:600,boxShadow:"0 8px 24px rgba(0,0,0,0.25)",animation:"toastIn 0.3s ease",zIndex:1500,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",justifyContent:"center",maxWidth:"calc(100vw - 24px)"}}>
           <span style={{opacity:0.7}}>{selectedIds.size} selected</span>
           <div style={{width:1,height:20,background:"rgba(255,255,255,0.2)"}}/>
           <select onChange={e=>{if(e.target.value)bulkMove(e.target.value);e.target.value="";}} defaultValue="" style={{background:"rgba(255,255,255,0.15)",border:"none",color:"white",borderRadius:6,padding:"5px 8px",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
@@ -4853,7 +5043,7 @@ export default function InkwellApp() {
       <ConfettiInk trigger={confettiTrigger} />
       <ChangelogScroll open={showChangelog} onClose={() => setShowChangelog(false)} />
       {undoToast.render()}
-      <CommandPalette open={showCmd} onClose={() => setShowCmd(false)} commands={[
+      <CommandPalette open={showCmd} onClose={() => setShowCmd(false)} commands={(()=>{const all=[
         { id: "new-task", group: "Create", icon: Icons.plus, label: "New task", hint: "Focus the quick-add input",
           run: () => { const el = document.getElementById("quick-add"); el?.focus(); } },
         { id: "scan", group: "Create", icon: Icons.camera, label: "Scan notebook page", hint: "Open AI scanner",
@@ -4873,11 +5063,20 @@ export default function InkwellApp() {
         { id: "text-lg", group: "Accessibility", icon: Icons.settings, label: "Text size — large", run: () => setTextSize("lg") },
         { id: "text-md", group: "Accessibility", icon: Icons.settings, label: "Text size — medium", run: () => setTextSize("md") },
         { id: "text-sm", group: "Accessibility", icon: Icons.settings, label: "Text size — small", run: () => setTextSize("sm") },
+        { id: "paper-mode", group: "Modes", icon: Icons.note, label: paperMode ? "Turn off Paper Mode" : "Turn on Paper Mode (notebook-first)",
+          run: () => { setPaperMode(p => !p); setReviewMode(false); } },
+        ...(paperMode ? [{ id: "weekly-review", group: "Modes", icon: Icons.all, label: reviewMode ? "End weekly review" : "Start weekly review",
+          run: () => setReviewMode(r => !r) }] : []),
         { id: "changelog", group: "About", icon: Icons.settings, label: "Open the Scroll (changelog)", run: () => setShowChangelog(true) },
         { id: "shortcuts", group: "About", icon: Icons.settings, label: "Keyboard shortcuts", run: () => setShowShortcuts(true) },
         { id: "settings", group: "About", icon: Icons.settings, label: "Settings", run: () => setShowSettings(true) },
         { id: "help", group: "About", icon: Icons.settings, label: "Help guide", run: () => setShowTips("welcome") },
-      ]} />
+      ];
+      /* Paper Mode trims the palette to the sanctioned verbs */
+      if(!paperUI) return all;
+      const allowed=new Set(["new-task","scan","today","search","settings","help","shortcuts","paper-mode","weekly-review","toggle-dark","toggle-dyslexic"]);
+      return all.filter(c=>allowed.has(c.id));
+      })()} />
       {/* Subtask completion confirmation modal */}
       {pendingCompleteId&&(()=>{
         const pt=tasks.find(t=>t.id===pendingCompleteId);
