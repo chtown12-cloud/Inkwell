@@ -272,6 +272,14 @@ body[data-text-size="xl"] { --type-scale: 1.22; }
   }
 }
 
+/* Checkbox hit-slop — the visual box stays small (15–20px) but the touch
+   target extends to ~36px+, closer to the 44px WCAG/HIG recommendation */
+.cb-hit::after {
+  content: "";
+  position: absolute;
+  inset: -9px;
+}
+
 .main-scroll { -webkit-overflow-scrolling: touch; }
 @media (max-width: 768px) {
   .main-scroll {
