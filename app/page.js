@@ -4446,7 +4446,7 @@ export default function InkwellApp() {
         /* ═══ PAPER MODE — DOTTED JOURNAL ═══
            5mm-style dot grid on real ivory paper, journal typeface, hand-drawn
            accents. --font-journal is the single swap point for the typeface. */
-        .paper-journal{--font-journal:'Quicksand','Inter Tight',-apple-system,sans-serif;--font-display:var(--font-journal);--font-body:var(--font-journal);background-size:22px 22px;background-position:-3px -3px;}
+        .paper-journal{--font-journal:'Kalam','Quicksand','Inter Tight',-apple-system,sans-serif;--font-display:var(--font-journal);--font-body:var(--font-journal);background-size:22px 22px;background-position:-3px -3px;}
         .paper-journal.theme-light{--bg:#fdfaf1;--card:#fffdf6;--paper-noise:radial-gradient(circle,rgba(146,109,63,0.24) 1.1px,transparent 1.7px);}
         .paper-journal.theme-dark{--paper-noise:radial-gradient(circle,rgba(245,158,11,0.16) 1.1px,transparent 1.7px);}
         .paper-journal.theme-frost-light{--paper-noise:radial-gradient(circle,rgba(59,130,246,0.19) 1.1px,transparent 1.7px);}
