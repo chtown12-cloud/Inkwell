@@ -2155,6 +2155,7 @@ Personal
             <div style={featureStyle}><div style={dotStyle}/><div><b>Defer from the page</b> — better still, write <b>&gt;1w</b> next to the task in your notebook and let the next scan do the snoozing. You never opened a view.</div></div>
             <div style={featureStyle}><div style={dotStyle}/><div><b>Weekly review</b> — one deliberate, time-boxed session (sidebar → "Weekly review"). The full app unlocks: triage Upcoming, prune stale projects, tidy lists. Tap "End weekly review" and the app pins back to Today.</div></div>
             <div style={featureStyle}><div style={dotStyle}/><div><b>No confetti</b> — completion streaks and celebrations are off in Paper Mode. The reward for finishing a task is crossing it off the page.</div></div>
+            <div style={featureStyle}><div style={dotStyle}/><div><b>Inkwell Drop (app blockers)</b> — a scan-only mini app at <b>/capture</b> that installs as its own Android app. If you block Chrome/Inkwell with Brick or Screen Time, exempt "Drop": capture keeps working while the full app stays locked. It also appears in the system Share sheet, so you can send a camera-roll photo straight to it. Scans import automatically — no review screen.</div></div>
           </div>
           <div style={{padding:"10px 14px",background:"var(--accent-bg)",borderRadius:10,border:"1px solid var(--accent-a15)",fontSize:12,color:"var(--accent-dark)",lineHeight:1.6}}>
             <b>The daily loop:</b> ① Each morning, open the app once — Today shows what's due and what resurfaced. ② Copy those onto today's notebook page. ③ Work from paper all day. ④ In the evening (or next morning), scan the page: completions get checked off, new tasks recorded, <code>&gt;</code> marks deferred. Total app time: under a minute.
@@ -5102,6 +5103,9 @@ export default function InkwellApp() {
               <b>Tip:</b> write <b style={{fontFamily:"var(--font-mono)"}}>&gt;1w</b>, <b style={{fontFamily:"var(--font-mono)"}}>&gt;1m</b> or <b style={{fontFamily:"var(--font-mono)"}}>&gt;Fri</b> next to a task on paper and the next scan will snooze it for you. Open <b>Weekly review</b> from the sidebar for your deliberate planning session.
             </div>
           )}
+          <div style={{padding:"10px 14px",background:"var(--surface)",borderRadius:10,marginTop:10,fontSize:12,color:"var(--text)",lineHeight:1.6}}>
+            <b>📷 Inkwell Drop</b> — a scan-only mini app that installs separately, so app blockers (Brick, Screen Time…) can block Inkwell + Chrome but leave capture working. Open <a href="/capture" style={{color:"var(--accent)",fontWeight:600}}>/capture</a> in Chrome → menu → <b>Install app</b>, then leave "Drop" off your blocklist. You can also share photos straight to it from your camera roll.
+          </div>
         </div>
         <div style={{marginBottom:24}}>
           <div style={{fontSize:11,fontWeight:700,color:"var(--muted)",textTransform:"uppercase",letterSpacing:1,marginBottom:12}}>Appearance</div>

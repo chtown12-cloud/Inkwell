@@ -1,0 +1,39 @@
+{
+  "id": "/capture",
+  "name": "Inkwell Drop",
+  "short_name": "Drop",
+  "description": "Scan a notebook page into Inkwell — nothing else",
+  "start_url": "/capture",
+  "scope": "/capture",
+  "display": "standalone",
+  "background_color": "#8a5a33",
+  "theme_color": "#8a5a33",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "share_target": {
+    "action": "/capture/share",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "files": [
+        {
+          "name": "photo",
+          "accept": ["image/*"]
+        }
+      ]
+    }
+  }
+}
