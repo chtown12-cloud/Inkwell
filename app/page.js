@@ -839,6 +839,167 @@ const SnoozeButton = ({task, onSnooze}) => {
   </>);
 };
 
+/* ═══════════════════════════════════════════════════════════════════════
+   PAPER MODE — JOURNAL SCENE
+   The skeuomorphic "dot journal on a wooden desk" rendering. Styles live
+   in app/paper-mode.css; these components only produce the markup. Bullet
+   journal conventions: • open task, × done, ◦/– nested, − note lines.
+   Marks are real buttons (the mark IS the checkbox); rows open the detail
+   panel; a faint › on hover reveals the snooze (migration) menu.
+   ═══════════════════════════════════════════════════════════════════════ */
+const JournalRule = () => (
+  <svg className="journal-rule" viewBox="0 0 240 8" preserveAspectRatio="none" aria-hidden="true">
+    <path d="M2 5 C 42 2, 84 7, 126 4 S 206 3, 238 5" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/>
+  </svg>
+);
+
+/* Days a task has rolled forward past its due date */
+const carriedDays = (t) => !t.completed && t.dueDate && t.dueDate < todayStr()
+  ? Math.max(1, Math.floor((new Date(todayStr()+"T00:00:00") - new Date(t.dueDate+"T00:00:00"))/86400000))
+  : 0;
+
+/* Nested subtasks — always fully visible (no collapse), journal indentation */
+const JournalSubList = ({subs, depth, taskId, onSubToggle}) => {
+  if(!subs?.length) return null;
+  return subs.map(s => (
+    <div key={s.id}>
+      <div className={`journal-entry ${depth>1?"sub2":"sub"} ${s.completed?"done":""}`} style={{marginLeft: 22 + depth*24}}>
+        <button className="journal-mark" onClick={e=>{e.stopPropagation();onSubToggle(taskId, s.id);}}
+          aria-label={s.completed?`Mark "${s.title}" incomplete`:`Mark "${s.title}" complete`}>
+          {s.completed ? "×" : depth === 1 ? "◦" : "–"}
+        </button>
+        <span className="journal-text">{s.title}</span>
+        {s.dueDate && <span className="journal-due">— {formatDate(s.dueDate).toLowerCase()}</span>}
+      </div>
+      <JournalSubList subs={s.subtasks} depth={depth+1} taskId={taskId} onSubToggle={onSubToggle}/>
+    </div>
+  ));
+};
+
+const JournalEntry = ({task, onToggle, onSubToggle, onSelect, onSnooze}) => {
+  const carried = carriedDays(task);
+  const notes = (task.notes||"").split("\n").map(n=>n.trim()).filter(Boolean).slice(0,2);
+  return (
+    <div role="listitem">
+      <div className={`journal-entry ${task.completed?"done":""}`} onClick={()=>onSelect(task)}>
+        <button className="journal-mark" onClick={e=>{e.stopPropagation();onToggle(task.id);}}
+          aria-label={task.completed?`Mark "${task.title}" incomplete`:`Mark "${task.title}" complete`}>
+          {task.completed ? "×" : "•"}
+        </button>
+        {task.priority==="high" && !task.completed && <span className="journal-sig" title="High priority">*</span>}
+        <span className="journal-text">
+          {task.title}
+          {(task.tags||[]).map(tg=><span key={tg} className="journal-tag">#{tg}</span>)}
+        </span>
+        <span className="journal-due">
+          {task.dueDate && task.dueDate !== todayStr() && !carried ? `— due ${formatDate(task.dueDate).toLowerCase()}` : ""}
+          {carried ? ` — carried ${carried}d` : ""}
+          {!task.completed && task.snoozedFrom && task.dueDate === todayStr() ? " — back today" : ""}
+        </span>
+        {!task.completed && onSnooze && (
+          <span className="journal-snooze" onClick={e=>e.stopPropagation()}>
+            <SnoozeButton task={task} onSnooze={onSnooze}/>
+          </span>
+        )}
+      </div>
+      {notes.map((n,i)=><div key={i} className="journal-note">− {n}</div>)}
+      <JournalSubList subs={task.subtasks} depth={1} taskId={task.id} onSubToggle={onSubToggle}/>
+    </div>
+  );
+};
+
+/* Subtasks surfaced onto Today by their own due date (parent lives elsewhere) */
+const JournalSurfacedEntry = ({item, onSubToggle, onSelect}) => (
+  <div role="listitem">
+    <div className={`journal-entry sub ${item.completed?"done":""}`} onClick={()=>onSelect(item._parentTask)}>
+      <button className="journal-mark" onClick={e=>{e.stopPropagation();onSubToggle(item._parentTask.id, item.id);}}
+        aria-label={item.completed?`Mark "${item.title}" incomplete`:`Mark "${item.title}" complete`}>
+        {item.completed ? "×" : "◦"}
+      </button>
+      <span className="journal-text">{item.title}</span>
+      <span className="journal-due">↳ {item._breadcrumb.slice(0,-1).join(" › ")}</span>
+    </div>
+  </div>
+);
+
+const JournalView = ({tasks, lists, dateLabel, searching, onToggle, onSubToggle, onSelect, onSnooze, onAdd}) => {
+  const [jot, setJot] = useState("");
+  /* Group by list, in sidebar order, unknown lists appended */
+  const order = [...lists];
+  tasks.forEach(t=>{const l=(t._surfacedSub?t._parentTask.list:t.list)||"Inbox"; if(!order.includes(l)) order.push(l);});
+  const groups = order.map(l=>({
+    list: l,
+    items: tasks.filter(t=>(((t._surfacedSub?t._parentTask.list:t.list))||"Inbox")===l)
+  })).filter(g=>g.items.length>0)
+    .map(g=>({...g, items:[...g.items.filter(t=>!t.completed), ...g.items.filter(t=>t.completed)]}));
+  const showHeaders = groups.length > 1 || (groups.length === 1 && groups[0].list !== "Inbox");
+
+  return (
+    <div className="journal-page">
+      <div className="journal-datehead">
+        <h2>{searching ? "Looking back…" : "Today"}</h2>
+        <span className="journal-date">{dateLabel}</span>
+      </div>
+      <JournalRule/>
+      {!searching && (
+        <div className="journal-jot">
+          <span className="journal-mark" aria-hidden="true">•</span>
+          <input id="quick-add" value={jot} onChange={e=>setJot(e.target.value)} aria-label="Add a task"
+            enterKeyHint="done" placeholder="jot a task…"
+            onKeyDown={e=>{if(e.key==="Enter"&&jot.trim()){onAdd(jot.trim());setJot("");}}}/>
+        </div>
+      )}
+      {groups.length===0 && (
+        <div className="journal-empty">{searching ? "Nothing written under that…" : "Nothing on today's page — go fill the paper one. ✎"}</div>
+      )}
+      <div role="list" aria-label="Tasks">
+        {groups.map(g=>(
+          <section key={g.list}>
+            {showHeaders && (<><div className="journal-cat">{g.list}</div><JournalRule/></>)}
+            {g.items.map(t=>t._surfacedSub
+              ? <JournalSurfacedEntry key={`sub-${t.id}`} item={t} onSubToggle={onSubToggle} onSelect={onSelect}/>
+              : <JournalEntry key={t.id} task={t} onToggle={onToggle} onSubToggle={onSubToggle} onSelect={onSelect} onSnooze={onSnooze}/>)}
+          </section>
+        ))}
+      </div>
+      {/* Coffee ring easter egg — hover: it freshens and steams */}
+      <div className="coffee-ring" aria-hidden="true">
+        <span className="steam s1"/><span className="steam s2"/><span className="steam s3"/>
+      </div>
+    </div>
+  );
+};
+
+/* Fountain pen resting across the page edge — hover nudges it, ink blots */
+const DeskPen = () => (
+  <div className="desk-pen" aria-hidden="true">
+    <span className="pen-inkblot"/>
+    <svg viewBox="0 0 240 28" width="100%" height="auto">
+      <defs>
+        <linearGradient id="penBody" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#5c2331"/><stop offset="0.4" stopColor="#83364a"/>
+          <stop offset="0.55" stopColor="#96475d"/><stop offset="1" stopColor="#43181f"/>
+        </linearGradient>
+        <linearGradient id="penMetal" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#8a6a2f"/><stop offset="0.5" stopColor="#dcb768"/><stop offset="1" stopColor="#755625"/>
+        </linearGradient>
+      </defs>
+      <path d="M2 14 L30 7 L46 14 L30 21 Z" fill="url(#penMetal)"/>
+      <line x1="9" y1="14" x2="30" y2="14" stroke="#5c451c" strokeWidth="0.9"/>
+      <circle cx="30" cy="14" r="1.5" fill="#5c451c"/>
+      <rect x="42" y="7.5" width="24" height="13" rx="5.5" fill="#2c2128"/>
+      <rect x="63" y="6" width="116" height="16" rx="8" fill="url(#penBody)"/>
+      <rect x="177" y="6.5" width="7" height="15" rx="2.5" fill="url(#penMetal)"/>
+      <rect x="184" y="6.5" width="48" height="15" rx="7.5" fill="url(#penBody)"/>
+      <rect x="196" y="2.5" width="32" height="4.5" rx="2.2" fill="url(#penMetal)"/>
+      <ellipse cx="232" cy="14" rx="5.5" ry="7" fill="#43181f"/>
+    </svg>
+  </div>
+);
+
+/* Afternoon sun through a window pane — fixed multiply layer over the desk */
+const WindowLight = () => <div className="window-light" aria-hidden="true"/>;
+
 /* Depth styling for subtask hierarchy — warm amber→gold→honey gradient
    No reds (avoids urgency connotation). All pass WCAG AA contrast. */
 const DEPTH_STYLES = [
@@ -4443,20 +4604,8 @@ export default function InkwellApp() {
         .theme-dark{--ink:#f5efe1;--text:#d8cfbb;--muted:#9a8f77;--bg:#14110d;--surface:#1d1812;--border:#3a2f22;--border-light:#28211a;--active-bg:#3a2a12;--accent:#f59e0b;--accent-dark:#fbbf24;--accent-bg:#3a2a12;--accent2:#fbbf24;--card:#231d15;--card-hover:#14110d;--overlay:rgba(0,0,0,0.62);--danger-bg:#3a1616;--danger-border:#6b2424;--danger:#f87171;--success-bg:rgba(46,139,87,0.14);--shadow:rgba(0,0,0,0.4);--accent-a04:rgba(245,158,11,0.04);--accent-a06:rgba(245,158,11,0.06);--accent-a08:rgba(245,158,11,0.08);--accent-a10:rgba(245,158,11,0.1);--accent-a12:rgba(245,158,11,0.12);--accent-a15:rgba(245,158,11,0.15);--accent-a18:rgba(245,158,11,0.18);--accent-a20:rgba(245,158,11,0.2);--accent-a30:rgba(245,158,11,0.3);--depth0:#fbbf24;--depth1:#f59e0b;--depth2:#d97706;--depth3:#b45309;--depth0-bg:rgba(245,158,11,0.06);--depth1-bg:rgba(245,158,11,0.07);--depth2-bg:rgba(245,158,11,0.06);--offline-bg:linear-gradient(90deg,#3a2a12,#5b3a14);--offline-border:#f59e0b;--offline-text:#fbbf24;--paper-noise:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' seed='7'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 0.85  0 0 0 0 0.6  0 0 0 0.04 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");}
         .theme-frost-light{--ink:#1e293b;--text:#334155;--muted:#7b8fa3;--bg:#f0f4f8;--surface:#e2eaf3;--border:#c8d6e5;--border-light:#dde7f0;--active-bg:#eff6ff;--accent:#3b82f6;--accent-dark:#2563eb;--accent-bg:#eff6ff;--accent2:#0ea5e9;--card:#ffffff;--card-hover:#f0f4f8;--overlay:rgba(15,30,55,0.45);--danger-bg:#fef2f2;--danger-border:#fecaca;--danger:#ef4444;--success-bg:rgba(34,197,94,0.15);--shadow:rgba(0,0,0,0.06);--accent-a04:rgba(59,130,246,0.04);--accent-a06:rgba(59,130,246,0.06);--accent-a08:rgba(59,130,246,0.08);--accent-a10:rgba(59,130,246,0.1);--accent-a12:rgba(59,130,246,0.12);--accent-a15:rgba(59,130,246,0.15);--accent-a18:rgba(59,130,246,0.18);--accent-a20:rgba(59,130,246,0.2);--accent-a30:rgba(59,130,246,0.3);--depth0:#2563eb;--depth1:#1d4ed8;--depth2:#1e40af;--depth3:#1e3a8a;--depth0-bg:rgba(59,130,246,0.06);--depth1-bg:rgba(59,130,246,0.07);--depth2-bg:rgba(59,130,246,0.06);--offline-bg:linear-gradient(90deg,#dbeafe,#bfdbfe);--offline-border:#3b82f6;--offline-text:#1e40af;}
         .theme-frost-dark{--ink:#e2eaf3;--text:#b0c4d8;--muted:#6b839b;--bg:#0c1220;--surface:#131d2e;--border:#1e2d42;--border-light:#182538;--active-bg:rgba(59,130,246,0.1);--accent:#60a5fa;--accent-dark:#93c5fd;--accent-bg:rgba(59,130,246,0.1);--accent2:#38bdf8;--card:#111b2b;--card-hover:#0c1220;--overlay:rgba(4,8,18,0.7);--danger-bg:rgba(239,68,68,0.08);--danger-border:#7f1d1d;--danger:#f87171;--success-bg:rgba(34,197,94,0.12);--shadow:rgba(0,0,0,0.3);--accent-a04:rgba(96,165,250,0.04);--accent-a06:rgba(96,165,250,0.06);--accent-a08:rgba(96,165,250,0.08);--accent-a10:rgba(96,165,250,0.1);--accent-a12:rgba(96,165,250,0.12);--accent-a15:rgba(96,165,250,0.15);--accent-a18:rgba(96,165,250,0.18);--accent-a20:rgba(96,165,250,0.2);--accent-a30:rgba(96,165,250,0.3);--depth0:#93c5fd;--depth1:#60a5fa;--depth2:#3b82f6;--depth3:#2563eb;--depth0-bg:rgba(96,165,250,0.06);--depth1-bg:rgba(96,165,250,0.07);--depth2-bg:rgba(96,165,250,0.06);--offline-bg:linear-gradient(90deg,#131d2e,#1e2d42);--offline-border:#60a5fa;--offline-text:#93c5fd;}
-        /* ═══ PAPER MODE — DOTTED JOURNAL ═══
-           5mm-style dot grid on real ivory paper, journal typeface, hand-drawn
-           accents. --font-journal is the single swap point for the typeface. */
-        .paper-journal{--font-journal:'Kalam','Quicksand','Inter Tight',-apple-system,sans-serif;--font-display:var(--font-journal);--font-body:var(--font-journal);background-size:22px 22px;background-position:-3px -3px;}
-        /* Warm pastel palette — dusty rose, terracotta, sand. Applies in ALL
-           themes (incl. frost) — Paper Mode owns its look. */
-        .paper-journal.theme-light,.paper-journal.theme-frost-light{--bg:#fdf6ee;--surface:#f8ece0;--card:#fffaf3;--card-hover:#f9efe4;--ink:#52403a;--text:#6e564d;--muted:#a3897b;--border:#ecd8c6;--border-light:#f4e7d8;--accent:#c1654d;--accent-dark:#a04f3a;--accent2:#d98e6b;--accent-bg:#fae9e0;--active-bg:#faeade;--accent-a04:rgba(193,101,77,0.04);--accent-a06:rgba(193,101,77,0.06);--accent-a08:rgba(193,101,77,0.08);--accent-a10:rgba(193,101,77,0.1);--accent-a12:rgba(193,101,77,0.12);--accent-a15:rgba(193,101,77,0.15);--accent-a18:rgba(193,101,77,0.18);--accent-a20:rgba(193,101,77,0.2);--accent-a30:rgba(193,101,77,0.3);--depth0:#b05c41;--depth1:#c97f56;--depth2:#96503a;--depth0-bg:rgba(193,101,77,0.06);--depth1-bg:rgba(217,142,107,0.08);--depth2-bg:rgba(150,80,58,0.06);--shadow:rgba(82,64,58,0.08);--paper-noise:radial-gradient(circle,rgba(193,101,77,0.20) 1.1px,transparent 1.7px);}
-        .paper-journal.theme-dark,.paper-journal.theme-frost-dark{--bg:#221712;--surface:#2b1d17;--card:#31221b;--card-hover:#221712;--ink:#f6e9de;--text:#dcc4b4;--muted:#a3877a;--border:#46312a;--border-light:#382721;--accent:#e89277;--accent-dark:#f0b49b;--accent2:#e7b297;--accent-bg:#3e2a21;--active-bg:#3e2a21;--accent-a04:rgba(232,146,119,0.04);--accent-a06:rgba(232,146,119,0.06);--accent-a08:rgba(232,146,119,0.08);--accent-a10:rgba(232,146,119,0.1);--accent-a12:rgba(232,146,119,0.12);--accent-a15:rgba(232,146,119,0.15);--accent-a18:rgba(232,146,119,0.18);--accent-a20:rgba(232,146,119,0.2);--accent-a30:rgba(232,146,119,0.3);--depth0:#eda584;--depth1:#e8927a;--depth2:#d97f63;--depth0-bg:rgba(232,146,119,0.07);--depth1-bg:rgba(232,146,119,0.08);--depth2-bg:rgba(232,146,119,0.06);--paper-noise:radial-gradient(circle,rgba(232,146,119,0.15) 1.1px,transparent 1.7px);}
-        .paper-journal .sidebar{background-image:radial-gradient(circle,rgba(193,101,77,0.11) 1px,transparent 1.5px);background-size:22px 22px;}
-        .paper-journal.theme-dark .sidebar,.paper-journal.theme-frost-dark .sidebar{background-image:radial-gradient(circle,rgba(232,146,119,0.08) 1px,transparent 1.5px);}
-        /* Logo + scan affordances pick up the terracotta wash (inline gradients need !important) */
-        .paper-journal .logo-egg{background:linear-gradient(135deg,#c1654d,#d98e6b)!important;box-shadow:0 2px 10px rgba(193,101,77,0.3)!important;}
-        .paper-journal .quick-add-card{border:1.5px dashed var(--border)!important;background:transparent!important;box-shadow:none!important;}
-        .paper-journal h1{letter-spacing:-0.02em;}
+        /* ═══ PAPER MODE — the full "journal on a wooden desk" scene lives in
+           app/paper-mode.css, entirely scoped under .paper-journal. ═══ */
         *{box-sizing:border-box;margin:0;padding:0;font-family:var(--font-body);}
         html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;color-scheme:${darkMode?"dark":"light"};}
         ::selection{background:var(--accent-a15);}
@@ -4865,6 +5014,22 @@ export default function InkwellApp() {
               );
               const inKanbanMode = boardEligible && viewMode==="kanban" && !paperUI;
 
+              /* ═══ Paper Mode: the journal-on-a-desk scene replaces the list UI ═══ */
+              if (paperUI) return (
+                <div className="journal-desk">
+                  <JournalView
+                    tasks={filtered} lists={lists} searching={!!search}
+                    dateLabel={new Date().toLocaleDateString("en-IE",{weekday:"long",month:"long",day:"numeric"})}
+                    onToggle={toggleTask}
+                    onSubToggle={(taskId,subId)=>{setTasks(prev=>prev.map(t=>t.id!==taskId?t:{...t,subtasks:updateSubById(t.subtasks,subId,{completed:!findSubById(t.subtasks,subId)?.completed,completedAt:!findSubById(t.subtasks,subId)?.completed?new Date().toISOString():null})}));}}
+                    onSelect={t=>setSelectedTask(t)}
+                    onSnooze={snoozeTask}
+                    onAdd={title=>{const t=addTask({title:title});flash(`✓ Added "${t.title}"`);}}
+                  />
+                  <DeskPen/>
+                </div>
+              );
+
               return view==="calendar"?(<CalendarView tasks={tasks} onSelect={t=>setSelectedTask(t)} onUpdate={updateTask}/>):inKanbanMode?(<div style={{display:"flex",flexDirection:"column",height:"100%"}}>
               <div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",background:"var(--card)",borderRadius:14,border:"1px solid var(--border)",marginBottom:10,boxShadow:"0 1px 3px var(--shadow)",flexShrink:0}}>
                 <span style={{color:"var(--accent)",flexShrink:0}}>{Icons.plus}</span>
@@ -5151,6 +5316,8 @@ export default function InkwellApp() {
           Drop to delete
         </div>
       )}
+      {/* Paper Mode: sunlight through a window pane, cast across the desk */}
+      {paperUI&&<WindowLight/>}
     </div>
   );
 }

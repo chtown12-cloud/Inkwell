@@ -1,0 +1,419 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   INKWELL — PAPER MODE: "JOURNAL ON A DESK" SCENE
+   ═══════════════════════════════════════════════════════════════════════
+
+   A self-contained skeuomorphic theme. Every rule is scoped under
+   `.paper-journal`, which the app root only carries while Paper Mode is
+   active (and not in a weekly-review session). Regular mode never matches
+   a single selector in this file.
+
+   Scene structure (JSX in page.js):
+
+     <root .paper-journal>                 ← wood desk (fixed background)
+       <nav .sidebar>                      ← journal leather cover tones
+       <main>
+         <header>                          ← floats over the desk
+         <div .main-scroll>
+           <div .journal-desk>             ← positioning context
+             <div .journal-page>           ← the ivory dot-grid page
+               …journal entries…
+               <div .coffee-ring>          ← easter egg (hover = steam)
+             <div .desk-pen>               ← easter egg (hover = nudge + blot)
+       <div .window-light>                 ← sun through a window pane
+
+   Design rules honored here:
+   - No checkboxes / pills / gradient buttons inside the page — bullet
+     journal marks only (• task, × done, ◦/– nested, − note).
+   - Colors: Leuchtturm-style ivory paper, warm fountain-pen ink, muted
+     earthy accents. The "digital" chrome (header/sidebar) recedes into
+     desk-and-cover materials.
+   - Animations are transform/opacity only; blurs are static. Textures are
+     inline SVG/gradients — zero network assets.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+
+/* ═══ 1. PALETTE — CSS variables the rest of the app already consumes ═══
+   Higher specificity (.paper-journal.theme-*) beats the base theme blocks,
+   so Paper Mode owns its look in all four themes. Modals, the detail
+   panel, and toasts pick these up automatically and read as "paper". */
+
+/* Daylight desk (light + frost-light) */
+.paper-journal.theme-light, .paper-journal.theme-frost-light {
+  --ink: #33271a;               /* fountain-pen near-black, warm brown undertone */
+  --text: #4d3f2c;
+  --muted: #8f7d5f;
+  --bg: #f6efdd;                /* Leuchtturm ivory — page + modals */
+  --surface: #eee5cd;
+  --card: #fbf5e6;
+  --card-hover: #f1e9d4;
+  --border: #ddcfae;
+  --border-light: #e9deC4;
+  --active-bg: #f0e6cb;
+  --accent: #8d6b34;            /* muted raw-sienna ink */
+  --accent-dark: #6f5326;
+  --accent2: #b08950;
+  --accent-bg: #f0e6cb;
+  --accent-a04: rgba(141,107,52,0.04); --accent-a06: rgba(141,107,52,0.06);
+  --accent-a08: rgba(141,107,52,0.08); --accent-a10: rgba(141,107,52,0.10);
+  --accent-a12: rgba(141,107,52,0.12); --accent-a15: rgba(141,107,52,0.15);
+  --accent-a18: rgba(141,107,52,0.18); --accent-a20: rgba(141,107,52,0.20);
+  --accent-a30: rgba(141,107,52,0.30);
+  --depth0: #7a5c2e; --depth1: #8d6b34; --depth2: #64491f;
+  --depth0-bg: rgba(141,107,52,0.06); --depth1-bg: rgba(176,137,80,0.08);
+  --depth2-bg: rgba(100,73,31,0.06);
+  --shadow: rgba(63,42,16,0.12);
+  /* The desk itself: grain noise → plank seams → fine fibre lines → wood tone */
+  --paper-noise:
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='w'><feTurbulence type='fractalNoise' baseFrequency='0.012 0.28' numOctaves='3' seed='11'/><feColorMatrix values='0 0 0 0 0.22  0 0 0 0 0.12  0 0 0 0 0.04  0 0 0 0.16 0'/></filter><rect width='100%25' height='100%25' filter='url(%23w)'/></svg>"),
+    repeating-linear-gradient(90deg, rgba(59,35,14,0.25) 0px, rgba(59,35,14,0.25) 2px, rgba(255,231,190,0.06) 2px, rgba(255,231,190,0.06) 3px, transparent 3px, transparent 148px),
+    linear-gradient(105deg, #9a6b3e 0%, #8a5a33 34%, #97673b 58%, #7b4d29 100%);
+}
+
+/* Evening desk (dark + frost-dark): lamplit — darker walnut, page dims a
+   step but stays paper. A black journal page would break the illusion. */
+.paper-journal.theme-dark, .paper-journal.theme-frost-dark {
+  --ink: #3a2c1b;
+  --text: #55452e;
+  --muted: #93815f;
+  --bg: #e9dec2;
+  --surface: #ded2b1;
+  --card: #efe5cb;
+  --card-hover: #e2d6b6;
+  --border: #c9b992;
+  --border-light: #d8caa7;
+  --active-bg: #ddd0ab;
+  --accent: #7d5e2b;
+  --accent-dark: #614819;
+  --accent2: #a07c42;
+  --accent-bg: #ddd0ab;
+  --accent-a04: rgba(125,94,43,0.05); --accent-a06: rgba(125,94,43,0.07);
+  --accent-a08: rgba(125,94,43,0.09); --accent-a10: rgba(125,94,43,0.11);
+  --accent-a12: rgba(125,94,43,0.13); --accent-a15: rgba(125,94,43,0.16);
+  --accent-a18: rgba(125,94,43,0.19); --accent-a20: rgba(125,94,43,0.22);
+  --accent-a30: rgba(125,94,43,0.32);
+  --depth0: #6d5226; --depth1: #7d5e2b; --depth2: #594218;
+  --depth0-bg: rgba(125,94,43,0.07); --depth1-bg: rgba(160,124,66,0.09);
+  --depth2-bg: rgba(89,66,24,0.07);
+  --shadow: rgba(28,17,5,0.3);
+  --overlay: rgba(24,14,4,0.55);
+  --paper-noise:
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='w'><feTurbulence type='fractalNoise' baseFrequency='0.012 0.28' numOctaves='3' seed='11'/><feColorMatrix values='0 0 0 0 0.10  0 0 0 0 0.05  0 0 0 0 0.01  0 0 0 0.2 0'/></filter><rect width='100%25' height='100%25' filter='url(%23w)'/></svg>"),
+    repeating-linear-gradient(90deg, rgba(24,12,3,0.35) 0px, rgba(24,12,3,0.35) 2px, rgba(210,170,120,0.05) 2px, rgba(210,170,120,0.05) 3px, transparent 3px, transparent 148px),
+    linear-gradient(105deg, #4e3118 0%, #422818 34%, #4c2f1a 58%, #38200e 100%);
+}
+
+/* The wood spans the whole root; the old dot-grid sizing no longer applies
+   (dots now live on .journal-page only). Fixed attachment keeps the desk
+   still while the page scrolls; disabled on touch (jank + iOS quirks). */
+.paper-journal { background-size: auto; background-attachment: fixed; }
+@media (max-width: 768px), (pointer: coarse) {
+  .paper-journal { background-attachment: scroll; }
+}
+
+/* ═══ 2. CHROME — header and sidebar recede into the scene ═══ */
+
+/* Journal typeface for chrome (Kalam is sturdier at small UI sizes;
+   Caveat — the true handwriting — is reserved for the page itself). */
+.paper-journal {
+  --font-journal: 'Kalam', 'Caveat', 'Quicksand', cursive;
+  --font-display: var(--font-journal);
+  --font-body: var(--font-journal);
+}
+.paper-journal h1 { letter-spacing: -0.02em; }
+
+/* Header floats directly on the desk: no bar, cream lettering. The scoped
+   variable overrides recolor its children without touching markup. */
+.paper-journal #main-content > header {
+  border-bottom: none !important;
+  --ink: #f7edd8; --text: #eadfc2; --muted: #d9c69e;
+  --accent: #ffd9a0; --accent-dark: #ffe7c2;
+  --accent-bg: rgba(255, 240, 210, 0.16);
+  --surface: rgba(255, 240, 210, 0.14);
+  --card: rgba(43, 25, 9, 0.55);
+  --border: rgba(255, 240, 210, 0.28);
+  --border-light: rgba(255, 240, 210, 0.18);
+}
+
+/* Sidebar = the journal's leather cover: dark oiled leather, brass text. */
+.paper-journal .sidebar {
+  --surface: #2f1d0e; --card: #3b2512; --card-hover: #34200f;
+  --ink: #f4e9d0; --text: #e2d3b0; --muted: #b09a72;
+  --border: #4d3319; --border-light: #3d2813;
+  --accent: #e8b06a; --accent-dark: #f4cd96; --accent2: #d89c50;
+  --accent-bg: rgba(232, 176, 106, 0.14);
+  --active-bg: rgba(232, 176, 106, 0.18);
+  --accent-a06: rgba(232,176,106,0.08); --accent-a10: rgba(232,176,106,0.12);
+  --danger: #ff9d8a; --danger-bg: rgba(255,157,138,0.12);
+  --danger-border: rgba(255, 157, 138, 0.3);
+  background-image: none;
+  box-shadow: 6px 0 18px rgba(28, 15, 3, 0.35);
+}
+.paper-journal .logo-egg {
+  background: linear-gradient(135deg, #8d6b34, #c9a15b) !important;
+  box-shadow: 0 2px 10px rgba(60, 40, 10, 0.45) !important;
+}
+
+/* The scroll container is just desk surface — the page floats on it. */
+.paper-journal .main-scroll {
+  padding: 0 16px !important;
+  background: transparent;
+}
+
+/* ═══ 3. THE JOURNAL PAGE ═══ */
+
+.journal-desk {
+  position: relative;
+  min-height: 100%;
+  /* Room for the pen to overhang the page edge on wide screens */
+  padding: 0 12px;
+}
+
+.journal-page {
+  position: relative;
+  max-width: 700px;
+  margin: 36px auto 72px;
+  padding: 44px 52px 84px;
+  min-height: calc(100dvh - 200px);
+  color: var(--ink);
+  background-color: var(--bg);
+  /* The 5mm dot grid — printed slightly warm, low opacity, like Leuchtturm */
+  background-image: radial-gradient(circle, rgba(120, 96, 58, 0.28) 1px, transparent 1.45px);
+  background-size: 19px 19px;
+  background-position: 9px 12px;
+  /* Bound edge on the left (tight radius + inset shadow), free edge right */
+  border-radius: 3px 12px 12px 4px;
+  box-shadow:
+    0 1px 1px rgba(46, 30, 10, 0.18),
+    0 8px 18px rgba(46, 30, 10, 0.26),
+    0 26px 54px rgba(38, 22, 6, 0.38),
+    inset 14px 0 22px -16px rgba(46, 30, 10, 0.45);
+}
+/* Sheets stacked underneath — two staggered page edges peeking out */
+.journal-page::before, .journal-page::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  left: 7px; right: 3px; bottom: -5px; height: 12px;
+  background: color-mix(in srgb, var(--bg) 88%, #b09b6e);
+  border-radius: 0 0 12px 5px;
+  box-shadow: 0 2px 5px rgba(46, 30, 10, 0.28);
+}
+.journal-page::after {
+  left: 12px; right: 6px; bottom: -10px; height: 10px;
+  background: color-mix(in srgb, var(--bg) 78%, #a38d5e);
+}
+
+/* Date heading — hand-lettered page title */
+.journal-datehead {
+  display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+.journal-datehead h2 {
+  font-family: 'Caveat', 'Kalam', cursive;
+  font-weight: 700; font-size: 40px; line-height: 1;
+  color: var(--ink); margin: 0;
+}
+.journal-datehead .journal-date {
+  font-family: 'Caveat', 'Kalam', cursive;
+  font-size: 22px; color: var(--muted); font-weight: 500;
+}
+/* Hand-drawn rule under the heading (inline SVG squiggle, currentColor) */
+.journal-rule { display: block; width: 240px; height: 8px; color: var(--accent); opacity: 0.75; margin: 2px 0 10px; }
+
+/* "Jot" line — the quick-add, disguised as the next empty writing line */
+.journal-jot { display: flex; align-items: center; gap: 10px; margin: 6px 0 10px; }
+.journal-jot .journal-mark { opacity: 0.4; }
+.journal-jot input {
+  flex: 1; min-width: 0;
+  font-family: 'Caveat', 'Kalam', cursive;
+  font-size: 22px; font-weight: 500; color: var(--ink);
+  background: transparent; border: none; outline: none;
+  border-bottom: 1.5px dashed rgba(120, 96, 58, 0.35);
+  padding: 0 2px 2px;
+}
+.journal-jot input::placeholder { color: rgba(120, 96, 58, 0.5); }
+.journal-jot input:focus { border-bottom-color: var(--accent); }
+
+/* Collection (category) headers — hand-lettered with a squiggle divider */
+.journal-cat {
+  font-family: 'Caveat', 'Kalam', cursive;
+  font-weight: 700; font-size: 27px; line-height: 1.1;
+  color: var(--accent-dark); margin: 24px 0 2px;
+}
+.journal-cat .journal-rule { width: 170px; height: 7px; margin: 0 0 4px; }
+
+/* ═══ 4. ENTRIES — bullet journal rows ═══ */
+
+.journal-entry {
+  display: flex; align-items: baseline; gap: 10px;
+  padding: 1px 2px; border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.journal-entry:hover { background: rgba(120, 96, 58, 0.07); }
+
+/* The mark IS the toggle — a real button, drawn as a pen stroke */
+.journal-mark {
+  font-family: 'Caveat', 'Kalam', cursive;
+  font-size: 22px; font-weight: 700; line-height: 1.05;
+  width: 22px; flex-shrink: 0; text-align: center;
+  color: var(--ink);
+  background: none; border: none; padding: 0; cursor: pointer;
+  position: relative;
+}
+/* generous invisible hit area (the visible mark is small) */
+.journal-mark::after { content: ""; position: absolute; inset: -10px; }
+.journal-mark:hover { color: var(--accent); }
+
+.journal-sig { /* BuJo "*" priority signifier, sits left of the text */
+  font-family: 'Caveat', cursive; font-weight: 700;
+  color: var(--accent-dark); font-size: 22px; line-height: 1; flex-shrink: 0;
+}
+
+.journal-text {
+  font-family: 'Caveat', 'Kalam', cursive;
+  font-size: 22px; font-weight: 500; line-height: 1.35;
+  color: var(--ink); min-width: 0; position: relative;
+}
+.journal-tag { font-size: 17px; color: var(--muted); margin-left: 6px; }
+
+/* Inline due-date etc. — lighter, smaller handwriting, no chips */
+.journal-due {
+  font-family: 'Caveat', 'Kalam', cursive;
+  font-size: 17px; color: var(--muted); white-space: nowrap; flex-shrink: 0;
+}
+
+/* Completed: × mark + hand-drawn strikethrough (slightly tilted stroke) */
+.journal-entry.done .journal-text { color: rgba(51, 39, 26, 0.42); }
+.paper-journal .theme-dark .journal-entry.done .journal-text { color: rgba(58, 44, 27, 0.45); }
+.journal-entry.done .journal-text::after {
+  content: "";
+  position: absolute; left: -3px; right: -5px; top: 54%; height: 2px;
+  background: currentColor; opacity: 0.75; border-radius: 2px;
+  transform: rotate(-1.4deg);
+}
+
+/* Notes: "−" lines in smaller, lighter ink under their task */
+.journal-note {
+  font-family: 'Caveat', 'Kalam', cursive;
+  font-size: 18px; color: var(--muted); line-height: 1.3;
+  padding-left: 34px; opacity: 0.9;
+}
+
+/* Nesting: everything visible, journal indentation, subtler marks/sizes.
+   Depth is applied via inline margin-left in the component; these classes
+   step the type down so deeper levels read as smaller handwriting. */
+.journal-entry.sub .journal-text { font-size: 19px; }
+.journal-entry.sub .journal-mark { font-size: 19px; }
+.journal-entry.sub2 .journal-text { font-size: 17.5px; }
+.journal-entry.sub2 .journal-mark { font-size: 17.5px; }
+
+/* Snooze trigger: a faint "›" migration mark, revealed on row hover */
+.journal-snooze { opacity: 0; transition: opacity 0.15s; flex-shrink: 0; }
+.journal-entry:hover .journal-snooze { opacity: 1; }
+@media (hover: none) { .journal-snooze { opacity: 0.5; } }
+.journal-snooze button { color: var(--muted) !important; }
+
+/* Empty page */
+.journal-empty {
+  font-family: 'Caveat', 'Kalam', cursive;
+  font-size: 24px; color: var(--muted);
+  text-align: center; padding: 70px 10px;
+}
+
+/* ═══ 5. DESK OBJECTS & EASTER EGGS ═══ */
+
+/* — Fountain pen, laid across the page's right edge —
+   Hover: it rolls a touch, as if nudged, and a tiny ink blot blooms. */
+.desk-pen {
+  position: absolute;
+  top: 150px; right: max(8px, calc(50% - 460px));
+  width: 240px;
+  transform: rotate(29deg);
+  transform-origin: 60% 50%;
+  filter: drop-shadow(7px 11px 7px rgba(35, 20, 5, 0.4));
+  transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+  z-index: 6;
+  cursor: default;
+}
+.desk-pen:hover { transform: rotate(25deg) translate(-5px, 3px); }
+.desk-pen .pen-inkblot {
+  position: absolute; left: -14px; top: 16px;
+  width: 11px; height: 9px; border-radius: 60% 45% 55% 50%;
+  background: #2c2036;
+  opacity: 0; transform: scale(0);
+  transition: transform 0.35s ease 0.1s, opacity 0.3s ease 0.1s;
+}
+.desk-pen:hover .pen-inkblot { opacity: 0.85; transform: scale(1) rotate(-14deg); }
+
+/* — Coffee ring, top-right of the page —
+   Hover: it darkens as if fresh, and steam wisps rise. */
+.coffee-ring {
+  position: absolute; top: 118px; right: 40px;
+  width: 108px; height: 108px; border-radius: 50%;
+  pointer-events: auto;
+  mix-blend-mode: multiply;
+  background:
+    radial-gradient(circle, transparent 57%, rgba(112, 66, 20, 0.20) 60%, rgba(112, 66, 20, 0.11) 66%, transparent 70%),
+    radial-gradient(circle at 53% 48%, transparent 54%, rgba(112, 66, 20, 0.12) 58%, transparent 64%);
+  transform: rotate(-10deg);
+  opacity: 0.8;
+  transition: opacity 0.5s ease, filter 0.5s ease;
+  z-index: 2;
+}
+.coffee-ring:hover { opacity: 1; filter: saturate(1.5) brightness(0.9); }
+.coffee-ring .steam {
+  position: absolute; bottom: 62%; width: 3px; height: 26px;
+  border-radius: 3px;
+  background: linear-gradient(to top, rgba(96, 66, 34, 0.28), transparent);
+  filter: blur(1.5px);
+  opacity: 0;
+}
+.coffee-ring .steam.s1 { left: 38%; }
+.coffee-ring .steam.s2 { left: 52%; height: 32px; }
+.coffee-ring .steam.s3 { left: 66%; height: 22px; }
+.coffee-ring:hover .steam { animation: steamRise 2.2s ease-out infinite; }
+.coffee-ring:hover .steam.s2 { animation-delay: 0.4s; }
+.coffee-ring:hover .steam.s3 { animation-delay: 0.9s; }
+@keyframes steamRise {
+  0%   { opacity: 0; transform: translateY(4px) scaleY(0.6) translateX(0); }
+  30%  { opacity: 0.8; }
+  100% { opacity: 0; transform: translateY(-26px) scaleY(1.15) translateX(4px); }
+}
+
+/* — Afternoon sun through a window pane —
+   A fixed multiply layer of soft pane-bar shadows over the whole desk.
+   It sways almost imperceptibly, as if branches/clouds move outside.
+   (transform-only animation on a statically-blurred layer = cheap) */
+.window-light {
+  position: fixed; inset: -14%;
+  pointer-events: none;
+  z-index: 55;
+  mix-blend-mode: multiply;
+  opacity: 0.4;
+  filter: blur(15px);
+  background:
+    repeating-linear-gradient(90deg, rgba(58, 36, 12, 0.32) 0px, rgba(58, 36, 12, 0.32) 16px, transparent 16px, transparent 360px),
+    repeating-linear-gradient(0deg, rgba(58, 36, 12, 0.30) 0px, rgba(58, 36, 12, 0.30) 16px, transparent 16px, transparent 460px);
+  transform: rotate(7deg);
+  animation: paneSway 30s ease-in-out infinite alternate;
+}
+.paper-journal.theme-dark .window-light,
+.paper-journal.theme-frost-dark .window-light { opacity: 0.28; }
+@keyframes paneSway {
+  from { transform: rotate(7deg) translateX(0); }
+  to   { transform: rotate(6.4deg) translateX(26px); }
+}
+
+/* ═══ 6. RESPONSIVE & MOTION ═══ */
+
+@media (max-width: 768px) {
+  .journal-page { padding: 30px 24px 64px; margin: 18px auto 48px; }
+  .journal-datehead h2 { font-size: 33px; }
+  .desk-pen { display: none; }            /* would sit over touch targets */
+  .coffee-ring { width: 84px; height: 84px; top: 84px; right: 18px; }
+  .window-light { opacity: 0.3; }
+}
+
+/* Global prefers-reduced-motion rules in globals.css already clamp all
+   animation durations; the sway, steam and pen nudge degrade gracefully. */
