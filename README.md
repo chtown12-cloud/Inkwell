@@ -7,6 +7,7 @@ A beautiful to-do app that bridges your physical notebook and digital life. Scan
 - **📸 AI Notebook Scanning** — Photograph your handwritten to-do list and AI extracts all tasks, detects completed items, flags duplicates, picks up dates, defer marks (`>1w`), and priority stars
 - **🖋 Paper Mode** — Notebook-first mode that pins the app to Today. The only verbs are scan, check off, and snooze; unfinished tasks carry forward automatically, and everything else waits for a deliberate weekly review. Built to keep your workflow on paper and your app time under a minute a day
 - **💤 Snooze** — One-tap "push it out" horizons (tomorrow / week / month / 3 months). Snoozed tasks vanish until their day, then resurface on Today with a badge
+- **📷 Inkwell Drop** — A scan-only mini app (`/capture`) that installs as its own Android app and registers as a share target. Built for app blockers (Brick, Screen Time): block Chrome and the full Inkwell app, exempt Drop, and capture keeps working — photograph a page (or share one from your camera roll), tasks import automatically, done
 - **📋 Smart Lists** — Today, Upcoming, All Tasks, Completed views + custom lists
 - **📅 Calendar View** — Monthly calendar with tasks color-coded by priority
 - **✅ Subtasks** — Break down tasks into smaller steps
