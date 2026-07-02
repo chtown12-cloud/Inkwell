@@ -1,4 +1,5 @@
 import "./globals.css";
+import "./paper-mode.css";
 
 export const metadata = {
   title: "Inkwell — Notebook To-Do Sync",
