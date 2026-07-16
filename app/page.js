@@ -464,13 +464,13 @@ const useTouchDrag = (onDrop, onDragStateChange, onSidebarShow) => {
 
 const PRIORITY = {
   none:   { color: "#a8a29e", label: "None" },
-  low:    { color: "#60a5fa", label: "Low" },
-  medium: { color: "#fbbf24", label: "Medium" },
-  high:   { color: "#f87171", label: "High" },
+  low:    { color: "#7ba7d7", label: "Low" },
+  medium: { color: "#d9b25c", label: "Medium" },
+  high:   { color: "#dd7f72", label: "High" },
 };
 
 const DEFAULT_LISTS = ["Inbox", "Work", "Personal"];
-const LIST_PALETTE = ["#78716c","#3b82f6","#10b981","#f59e0b","#ef4444","#8b5cf6","#ec4899","#14b8a6","#f97316","#6366f1"];
+const LIST_PALETTE = ["#8a8578","#6f8fb4","#5fa287","#c9a25a","#c07a6d","#9784bb","#c589a2","#6ba8a0","#c98d5f","#8b8fc0"];
 
 const formatDate = (d) => {
   if (!d) return "";
@@ -597,7 +597,7 @@ const mergeLists = (localLists, cloudLists) => {
 
 /* ═══ END MERGE UTILITIES ═══ */
 const getListColor = (name, lists) => LIST_PALETTE[lists.indexOf(name) % LIST_PALETTE.length];
-/* Convert hex color to rgba with alpha — e.g. hexTint("#3b82f6", 0.08) → "rgba(59,130,246,0.08)" */
+/* Convert hex color to rgba with alpha — e.g. hexTint("#3b82f6", 0.08) → "rgba(98,146,216,0.08)" */
 const hexTint = (hex, alpha) => {
   if(!hex || !hex.startsWith("#")) return `rgba(120,120,120,${alpha})`;
   const h = hex.slice(1);
@@ -718,7 +718,7 @@ const Icons = {
 const Checkbox = ({checked, onChange, priority="none", size=20, animating=false}) => (
   <button onClick={e=>{e.stopPropagation();onChange(!checked);}} className="cb-hit"
     aria-label={checked?"Mark incomplete":"Mark complete"} role="checkbox" aria-checked={checked}
-    style={{width:size,height:size,borderRadius:6,flexShrink:0,padding:0,position:"relative",
+    style={{width:size,height:size,borderRadius:7,flexShrink:0,padding:0,position:"relative",
       border:`2px solid ${checked?PRIORITY[priority].color:(priority!=="none"?PRIORITY[priority].color:"var(--border)")}`,
       background:checked?PRIORITY[priority].color:"transparent",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",
       transition:animating?"none":"all 0.2s ease",
@@ -753,7 +753,7 @@ const Overlay = ({onClose,children,wide}) => {
   },[onClose]);
   return (
   <div style={{position:"fixed",inset:0,background:"var(--overlay)",backdropFilter:"blur(8px)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,animation:"fadeIn 0.2s ease",padding:16}} onClick={onClose} role="dialog" aria-modal="true">
-    <div onClick={e=>e.stopPropagation()} style={{background:"var(--bg)",borderRadius:20,padding:28,width:"100%",maxWidth:wide?560:500,boxShadow:"0 25px 60px rgba(0,0,0,0.25)",position:"relative",display:"flex",flexDirection:"column",maxHeight:"90vh"}}>
+    <div onClick={e=>e.stopPropagation()} style={{background:"var(--bg)",borderRadius:"var(--radius-xl)",padding:28,width:"100%",maxWidth:wide?560:500,boxShadow:"var(--shadow-3)",position:"relative",display:"flex",flexDirection:"column",maxHeight:"90vh"}}>
       <button onClick={onClose} style={{position:"absolute",top:16,right:16,background:"none",border:"none",cursor:"pointer",color:"var(--muted)",padding:4}} aria-label="Close">{Icons.x}</button>
       {children}
     </div>
@@ -761,13 +761,13 @@ const Overlay = ({onClose,children,wide}) => {
   );
 };
 const Btn = ({children,variant="primary",...p}) => (
-  <button {...p} style={{flex:1,padding:"12px 16px",borderRadius:12,border:variant==="secondary"?"1px solid var(--border)":"none",background:variant==="secondary"?"var(--card)":"linear-gradient(135deg,var(--accent),var(--accent2))",color:variant==="secondary"?"var(--text)":"white",fontSize:14,fontWeight:600,cursor:p.disabled?"wait":"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8,fontFamily:"inherit",opacity:p.disabled?0.6:1,...(p.style||{})}}>{children}</button>
+  <button {...p} className={variant==="secondary"?"btn-secondary":"btn-primary"} style={{flex:1,padding:"12px 16px",borderRadius:"var(--radius-md)",border:variant==="secondary"?"1px solid var(--border)":"none",background:variant==="secondary"?"var(--card)":"linear-gradient(135deg,var(--accent),var(--accent2))",color:variant==="secondary"?"var(--text)":"white",fontSize:14,fontWeight:600,cursor:p.disabled?"wait":"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8,fontFamily:"inherit",opacity:p.disabled?0.6:1,...(p.style||{})}}>{children}</button>
 );
-const IconBtn = ({children,...p}) => (<button {...p} style={{background:"none",border:"none",cursor:"pointer",color:"var(--muted)",padding:6,borderRadius:6,display:"flex",...(p.style||{})}}>{children}</button>);
+const IconBtn = ({children,...p}) => (<button {...p} className="icon-btn" style={{background:"none",border:"none",cursor:"pointer",color:"var(--muted)",padding:6,borderRadius:"var(--radius-sm)",display:"flex",...(p.style||{})}}>{children}</button>);
 const Spinner = () => <div style={{width:16,height:16,border:"2px solid rgba(255,255,255,0.3)",borderTopColor:"white",borderRadius:"50%",animation:"spin 0.8s linear infinite"}}/>;
 const Field = ({label,children}) => (<div style={{marginBottom:18}}><label style={{fontSize:11,fontWeight:700,color:"var(--muted)",display:"block",marginBottom:7,textTransform:"uppercase",letterSpacing:0.8}}>{label}</label>{children}</div>);
-const fieldInput = {width:"100%",padding:"10px 12px",borderRadius:10,border:"1px solid var(--border)",fontSize:14,color:"var(--text)",background:"var(--card)",fontFamily:"inherit",boxSizing:"border-box",outline:"none"};
-const calNav = {background:"none",border:"1px solid var(--border)",borderRadius:8,padding:"8px 12px",cursor:"pointer",color:"var(--text)",display:"flex"};
+const fieldInput = {width:"100%",padding:"10px 12px",borderRadius:"var(--radius-md)",border:"1px solid var(--border)",fontSize:14,color:"var(--text)",background:"var(--card)",fontFamily:"inherit",boxSizing:"border-box",outline:"none"};
+const calNav = {background:"none",border:"1px solid var(--border)",borderRadius:"var(--radius-sm)",padding:"8px 12px",cursor:"pointer",color:"var(--text)",display:"flex"};
 
 /* Inline date picker — click date label to reveal native date input */
 const InlineDatePicker = ({value, overdue, onChange}) => {
@@ -783,8 +783,8 @@ const InlineDatePicker = ({value, overdue, onChange}) => {
   return (
     <span onClick={e=>{e.stopPropagation();setEditing(true);}} title="Click to change date"
       style={{fontSize:12,fontWeight:600,display:"flex",alignItems:"center",gap:3,cursor:"pointer",borderRadius:4,padding:"1px 4px",transition:"background 0.15s",
-        color:value?(overdue?"var(--danger)":value===todayStr()?"var(--accent)":"var(--muted)"):"#a78bfa",
-        background:value?"transparent":"#f5f3ff",border:value?"none":"1px solid #ede9fe"}}>
+        color:value?(overdue?"var(--danger)":value===todayStr()?"var(--accent)":"var(--muted)"):"var(--muted)",
+        background:value?"transparent":"var(--surface)",border:value?"none":"1px solid var(--border-light)"}}>
       {Icons.calendar} {value?formatDate(value):"No date"}
     </span>
   );
@@ -813,7 +813,7 @@ const SnoozeButton = ({task, onSnooze}) => {
     {menu&&(<>
       <div style={{position:"fixed",inset:0,zIndex:1199}} onClick={e=>{e.stopPropagation();close();}}/>
       <div role="menu" onClick={e=>e.stopPropagation()}
-        style={{position:"fixed",left:menu.x,top:menu.y,zIndex:1200,background:"var(--card)",border:"1px solid var(--border)",borderRadius:12,boxShadow:"0 8px 30px rgba(0,0,0,0.18)",padding:6,minWidth:190,animation:"fadeIn 0.1s ease"}}>
+        style={{position:"fixed",left:menu.x,top:menu.y,zIndex:1200,background:"var(--card)",border:"1px solid var(--border)",borderRadius:"var(--radius-md)",boxShadow:"var(--shadow-2)",padding:6,minWidth:190,animation:"fadeIn 0.1s ease"}}>
         <div style={{fontSize:10,fontWeight:700,color:"var(--muted)",textTransform:"uppercase",letterSpacing:0.8,padding:"5px 10px 3px"}}>Snooze until</div>
         {SNOOZE_PRESETS.map(p=>{const d=dateOffset(p.offset);return(
           <button key={p.label} role="menuitem" onClick={()=>{onSnooze(task,d);close();}}
@@ -1172,7 +1172,7 @@ const useSubtaskTouchDrag = (containerRef, onReorder) => {
 
           if(zone==="nest") {
             target.style.outline="2px dashed var(--depth0)";
-            target.style.background="rgba(180,83,9,0.08)";
+            target.style.background="rgba(168,100,46,0.08)";
           } else {
             const indicator = document.createElement("div");
             indicator.dataset.zoneIndicator = "1";
@@ -1285,7 +1285,7 @@ const SubtaskTree = ({subtasks, onAction, onOpenSub, onReorder, depth=0, compact
             onDrop={e => handleDrop(e, sub)}
             onDragLeave={handleDragLeave}
             style={{position:"relative",
-              background: dz?.zone === "nest" ? "rgba(180,83,9,0.08)" : "transparent",
+              background: dz?.zone === "nest" ? "rgba(168,100,46,0.08)" : "transparent",
               outline: dz?.zone === "nest" ? "2px dashed var(--accent)" : "none",
               borderRadius: dz?.zone === "nest" ? 6 : 0,
               transition:"background 0.1s"}}>
@@ -2024,7 +2024,7 @@ const TaskDetail = ({task, onUpdate, onDelete, onClose, onToggle, lists}) => {
         <Field label="Tags">
           <div style={{display:"flex",flexWrap:"wrap",gap:4,marginBottom:6}}>
             {(current.tags||[]).map(t=>(
-              <span key={t} style={{fontSize:12,padding:"2px 8px",borderRadius:12,background:"var(--accent-bg)",color:"var(--accent-dark)",display:"flex",alignItems:"center",gap:4,fontWeight:500}}>
+              <span key={t} style={{fontSize:12,padding:"2px 8px",borderRadius:"var(--radius-pill)",background:"var(--accent-bg)",color:"var(--accent-dark)",display:"flex",alignItems:"center",gap:4,fontWeight:500}}>
                 #{t}<button onClick={()=>updateCurrent({tags:(current.tags||[]).filter(x=>x!==t)})} style={{background:"none",border:"none",cursor:"pointer",color:"var(--accent)",padding:0,fontSize:14,lineHeight:1}}>×</button>
               </span>
             ))}
@@ -2037,7 +2037,7 @@ const TaskDetail = ({task, onUpdate, onDelete, onClose, onToggle, lists}) => {
 
         {/* Subtasks — recursive, with clickable items to drill in */}
         <Field label={`Subtasks (${countSubs(current.subtasks).done}/${countSubs(current.subtasks).total})`}>
-          <div ref={subTreeRef} style={(current.subtasks||[]).length>0?{background:"var(--card)",borderRadius:10,border:"1px solid var(--border)",marginBottom:8,padding:"6px 12px"}:{marginBottom:0}}>
+          <div ref={subTreeRef} style={(current.subtasks||[]).length>0?{background:"var(--card)",borderRadius:"var(--radius-md)",border:"1px solid var(--border)",marginBottom:8,padding:"6px 12px"}:{marginBottom:0}}>
             {(current.subtasks||[]).length>0&&(
               <SubtaskTree subtasks={current.subtasks} compact={true}
                 onAction={handleSubAction}
@@ -2442,7 +2442,7 @@ const KanbanBoard = ({tasks, columns, onColumnsChange, onResetColumns, onSelect,
   return (
     <div data-kanban-scroll style={{display:"flex",gap:16,height:"100%",overflowX:"auto",paddingBottom:16}}>
       {overdueTasks.length > 0 && (
-        <div style={{minWidth:220,maxWidth:280,flex:"1 0 220px",display:"flex",flexDirection:"column",background:"var(--danger-bg)",borderRadius:14,border:"1px solid var(--danger-border)",overflow:"hidden"}}>
+        <div style={{minWidth:220,maxWidth:280,flex:"1 0 220px",display:"flex",flexDirection:"column",background:"var(--danger-bg)",borderRadius:"var(--radius-lg)",border:"1px solid var(--danger-border)",overflow:"hidden"}}>
           <div style={{padding:"14px 14px 10px",borderBottom:"1px solid var(--danger-border)",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
             <div>
               <div style={{fontSize:14,fontWeight:700,color:"var(--danger)"}}>Overdue</div>
@@ -2479,7 +2479,7 @@ const KanbanBoard = ({tasks, columns, onColumnsChange, onResetColumns, onSelect,
             onDrop={e => onColDrop(e, col.dateStr)}
             style={{minWidth:220,maxWidth:280,flex:"1 0 220px",display:"flex",flexDirection:"column",
               background:isHover?"var(--accent-a08)":isToday?"var(--accent-a04)":"var(--surface)",
-              borderRadius:14,border:isHover?"2px solid var(--accent)":`1px solid ${isToday?"var(--accent-a30)":"var(--border)"}`,
+              borderRadius:"var(--radius-lg)",border:isHover?"2px solid var(--accent)":`1px solid ${isToday?"var(--accent-a30)":"var(--border)"}`,
               overflow:"hidden",transition:"border 0.15s, background 0.15s"}}>
             <div style={{padding:"10px 14px 8px",borderBottom:`1px solid ${isToday?"var(--accent-a20)":"var(--border)"}`}}>
               {isEditing ? (
@@ -2527,7 +2527,7 @@ const KanbanBoard = ({tasks, columns, onColumnsChange, onResetColumns, onSelect,
           onDrop={e => onColDrop(e, null)}
           style={{minWidth:220,maxWidth:280,flex:"1 0 220px",display:"flex",flexDirection:"column",
             background:hoverCol==="__nodate__"?"var(--accent-a08)":"var(--surface)",
-            borderRadius:14,border:hoverCol==="__nodate__"?"2px solid var(--accent)":"1px dashed var(--border)",
+            borderRadius:"var(--radius-lg)",border:hoverCol==="__nodate__"?"2px solid var(--accent)":"1px dashed var(--border)",
             overflow:"hidden",transition:"border 0.15s, background 0.15s"}}>
           <div style={{padding:"10px 14px 8px",borderBottom:"1px solid var(--border)"}}>
             <div style={{fontSize:14,fontWeight:700,color:"var(--muted)"}}>No Date</div>
@@ -2547,7 +2547,7 @@ const KanbanBoard = ({tasks, columns, onColumnsChange, onResetColumns, onSelect,
       )}
       {/* Add column */}
       <div style={{minWidth:100,flex:"0 0 100px",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:12}}>
-        <div onClick={addCol} style={{width:"100%",flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",borderRadius:14,border:"2px dashed var(--border)",cursor:"pointer",transition:"border-color 0.15s,background 0.15s",background:"transparent",gap:4}}
+        <div onClick={addCol} style={{width:"100%",flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",borderRadius:"var(--radius-lg)",border:"2px dashed var(--border)",cursor:"pointer",transition:"border-color 0.15s,background 0.15s",background:"transparent",gap:4}}
           onMouseEnter={e=>{e.currentTarget.style.borderColor="var(--accent)";e.currentTarget.style.background="var(--accent-a04)";}}
           onMouseLeave={e=>{e.currentTarget.style.borderColor="var(--border)";e.currentTarget.style.background="transparent";}}>
           <span style={{fontSize:22,color:"var(--muted)",lineHeight:1}}>+</span>
@@ -2580,7 +2580,7 @@ const KanbanCard = ({task, onSelect, onToggle, onDragBegin, animateState, cardDr
       onDragLeave={onCardDragLeave}
       style={{position:"relative",marginBottom:6}}>
       {dz?.zone === "before" && <div style={{position:"absolute",top:-3,left:4,right:4,height:2,background:"var(--accent)",borderRadius:1,zIndex:5}}/>}
-      <div style={{background:"var(--card)",borderRadius:10,borderLeft:`3px solid ${borderColor}`,boxShadow:"0 1px 3px var(--shadow)",
+      <div className="lift" style={{background:"var(--card)",borderRadius:"var(--radius-lg)",border:"1px solid var(--border)",borderLeft:`3px solid ${borderColor}`,
         animation:animateState==="complete"?"cardComplete 0.6s ease forwards":animateState==="uncomplete"?"cardUncomplete 0.5s ease forwards":"none",
         transition:"box-shadow 0.15s,transform 0.15s,border-color 0.2s",overflow:"hidden"}}>
         {/* ── Main card row (draggable) ── */}
@@ -2591,7 +2591,7 @@ const KanbanCard = ({task, onSelect, onToggle, onDragBegin, animateState, cardDr
           onClick={() => onSelect(task)}
           style={{padding:"10px 12px",cursor:"grab",touchAction:"none"}}>
           <div style={{display:"flex",alignItems:"flex-start",gap:8}}>
-            <div style={{paddingTop:1,animation:animateState?"checkPop 0.45s ease":"none"}}>
+            <div style={{paddingTop:1,animation:animateState?"checkPop 0.35s cubic-bezier(0.34,1.56,0.64,1)":"none"}}>
               <Checkbox checked={task.completed} priority={task.priority} size={16} onChange={()=>onToggle(task.id)} animating={!!animateState}/>
             </div>
             <div style={{flex:1,minWidth:0}}>
@@ -2726,7 +2726,7 @@ const SubtaskKanbanCard = ({subInfo, onSelect, onToggleSub, onDragBegin, lists})
       }}
       onDragEnd={() => { if(onDragBegin) onDragBegin(false); }}
       onClick={() => onSelect(parentTask)}
-      style={{padding:"10px 12px",background:"var(--card)",borderRadius:10,marginBottom:6,cursor:"grab",touchAction:"none",
+      style={{padding:"10px 12px",background:"var(--card)",borderRadius:"var(--radius-md)",marginBottom:6,cursor:"grab",touchAction:"none",
         boxShadow:"0 1px 3px var(--shadow)",
         border:"1px dashed var(--accent)",borderLeft:`3px solid ${borderColor}`,transition:"box-shadow 0.15s,border-color 0.2s"}}>
       <div style={{display:"flex",alignItems:"flex-start",gap:8}}>
@@ -3014,7 +3014,8 @@ const TaskRow = ({task,isActive,isSelected,onSelect,onToggle,onUpdateTask,onSnoo
     <div draggable onDragStart={e=>onDragStart(e,task,"task")} onDragOver={e=>onDragOver(e,task)} onDrop={e=>onDrop(e,task)} onDragEnd={onDragEnd}
       data-drag-id={task.id} data-drag-source="task" data-drag-label={task.title}
       data-drop-type="task" data-drop-value={task.id} data-drop-zone="nest"
-      style={{marginBottom:2,borderRadius:12,position:"relative",touchAction:"none",
+      className="task-row"
+      style={{marginBottom:2,borderRadius:"var(--radius-lg)",position:"relative",touchAction:"none",viewTransitionName:`t${task.id}`,
         background:isSelected?"var(--accent-a10)":dtZone==="nest"?"var(--accent-a08)":isActive?"var(--active-bg)":"transparent",
         outline:isSelected?"2px solid var(--accent)":dtZone==="nest"?"2px dashed var(--accent)":"none",
         borderLeft:listColor?`3px solid ${listColor}`:"3px solid transparent",
@@ -3027,29 +3028,31 @@ const TaskRow = ({task,isActive,isSelected,onSelect,onToggle,onUpdateTask,onSnoo
 
       <div onClick={handleRowClick} style={{display:"flex",alignItems:"flex-start",gap:8,padding:"11px 12px",cursor:"pointer"}}>
         <div style={{paddingTop:3,cursor:"grab",color:"var(--border)"}} onMouseDown={e=>e.stopPropagation()}>{Icons.grip}</div>
-        <div style={{paddingTop:2,animation:animateState?"checkPop 0.45s ease":"none"}}><Checkbox checked={task.completed} priority={task.priority} onChange={()=>onToggle(task.id)} animating={!!animateState}/></div>
+        <div style={{paddingTop:2,animation:animateState?"checkPop 0.35s cubic-bezier(0.34,1.56,0.64,1)":"none"}}><Checkbox checked={task.completed} priority={task.priority} onChange={()=>onToggle(task.id)} animating={!!animateState}/></div>
         <div style={{flex:1,minWidth:0}}>
           <EditableText value={task.title} onSave={t=>onUpdateTask({...task,title:t})} onEditStart={cancelRowClick}
             style={{fontSize:15,fontWeight:task.completed?400:500,lineHeight:1.4,color:task.completed?"var(--muted)":"var(--ink)",textDecoration:task.completed?"line-through":"none",display:"block",marginBottom:3}}/>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+            {/* Always visible: date, priority (the one colored signal), state badges */}
             <InlineDatePicker value={task.dueDate} overdue={overdue} onChange={d=>onUpdateTask({...task,dueDate:d||null})}/>
-            {!task.completed&&onSnooze&&<SnoozeButton task={task} onSnooze={onSnooze}/>}
+            {task.priority!=="none"&&<span style={{fontSize:11,fontWeight:700,display:"flex",alignItems:"center",gap:3,color:PRIORITY[task.priority].color}}>{Icons.flag} {PRIORITY[task.priority].label}</span>}
             {!task.completed&&task.snoozedFrom&&task.dueDate===todayStr()&&(
-              <span title={`Snoozed on ${formatDate(task.snoozedFrom)} — back today`}
-                style={{fontSize:11,fontWeight:600,color:"#0e7490",background:"rgba(14,116,144,0.1)",padding:"1px 7px",borderRadius:4}}>↩ resurfaced</span>
+              <span className="chip" title={`Snoozed on ${formatDate(task.snoozedFrom)} — back today`}>↩ resurfaced</span>
             )}
             {paperUI&&overdue&&(()=>{
               const days=Math.max(1,Math.floor((new Date(todayStr()+"T00:00:00")-new Date(task.dueDate+"T00:00:00"))/86400000));
-              return <span title="Carried forward — do it, snooze it, or let it go"
-                style={{fontSize:11,fontWeight:600,color:"var(--danger)",background:"var(--danger-bg)",padding:"1px 7px",borderRadius:4}}>↻ carried {days}d</span>;
+              return <span className="chip" style={{color:"var(--danger)"}} title="Carried forward — do it, snooze it, or let it go">↻ carried {days}d</span>;
             })()}
-            {hasDuration&&<span style={{fontSize:11,display:"flex",alignItems:"center",gap:3,color:"var(--muted)"}}>{Icons.duration} {formatDate(task.startDate)}–{formatDate(task.endDate)}</span>}
-            {task.priority!=="none"&&<span style={{fontSize:11,fontWeight:700,display:"flex",alignItems:"center",gap:3,color:PRIORITY[task.priority].color}}>{Icons.flag} {PRIORITY[task.priority].label}</span>}
-            {subTotal>0&&(<button onClick={e=>{e.stopPropagation();setSubsOpen(!subsOpen);}} style={{fontSize:12,display:"flex",alignItems:"center",gap:3,color:subDone===subTotal?"#16a34a":"var(--muted)",background:"none",border:"none",cursor:"pointer",padding:0,fontFamily:"inherit"}}>{Icons.subtask} {subDone}/{subTotal} <span style={{transform:subsOpen?"rotate(0)":"rotate(-90deg)",transition:"transform 0.15s",display:"flex"}}>{Icons.chevD}</span></button>)}
-            {(task.tags||[]).map(t=><span key={t} style={{fontSize:11,color:"var(--accent)",fontWeight:500}}>#{t}</span>)}
-            {task.notes&&<span style={{color:"var(--border)",display:"flex"}}>{Icons.note}</span>}
-            {task.recurrence&&<span style={{fontSize:11,display:"flex",alignItems:"center",gap:3,color:"#7c3aed",fontWeight:500}} title={task.recurrence.endAfter?`${task.recurrence.completedCount||0}/${task.recurrence.endAfter} done`:"Repeating"}>{Icons.repeat}{task.recurrence.endAfter?`${task.recurrence.completedCount||0}/${task.recurrence.endAfter}`:""}</span>}
-            {!view.startsWith("list:")&&view!=="inbox"&&<span style={{fontSize:11,fontWeight:500,color:listColor||"var(--muted)",background:listColor?hexTint(listColor,0.12):"var(--surface)",padding:"1px 7px",borderRadius:4}}>{task.list}</span>}
+            {/* Revealed on hover / focus; always visible on touch */}
+            <span className="row-secondary">
+              {!task.completed&&onSnooze&&<SnoozeButton task={task} onSnooze={onSnooze}/>}
+              {subTotal>0&&(<button onClick={e=>{e.stopPropagation();setSubsOpen(!subsOpen);}} style={{fontSize:12,display:"flex",alignItems:"center",gap:3,color:subDone===subTotal?"#16a34a":"var(--muted)",background:"none",border:"none",cursor:"pointer",padding:0,fontFamily:"inherit"}}>{Icons.subtask} {subDone}/{subTotal} <span style={{transform:subsOpen?"rotate(0)":"rotate(-90deg)",transition:"transform 0.15s",display:"flex"}}>{Icons.chevD}</span></button>)}
+              {hasDuration&&<span className="chip">{Icons.duration} {formatDate(task.startDate)}–{formatDate(task.endDate)}</span>}
+              {(task.tags||[]).map(t=><span key={t} className="chip">#{t}</span>)}
+              {task.notes&&<span style={{color:"var(--border)",display:"flex"}}>{Icons.note}</span>}
+              {task.recurrence&&<span className="chip" title={task.recurrence.endAfter?`${task.recurrence.completedCount||0}/${task.recurrence.endAfter} done`:"Repeating"}>{Icons.repeat}{task.recurrence.endAfter?`${task.recurrence.completedCount||0}/${task.recurrence.endAfter}`:""}</span>}
+              {!view.startsWith("list:")&&view!=="inbox"&&<span className="chip"><span style={{width:6,height:6,borderRadius:"50%",background:listColor||"var(--border)",flexShrink:0}}/>{task.list}</span>}
+            </span>
           </div>
         </div>
       </div>
@@ -3075,7 +3078,7 @@ const SurfacedSubtaskRow = ({task, onSelect, onToggleSub, view, lists, animateSt
         animation:animateState==="complete"?"taskComplete 0.7s ease forwards":animateState==="uncomplete"?"taskUncomplete 0.6s ease forwards":"none"}}
       onMouseEnter={e=>e.currentTarget.style.background="var(--active-bg)"}
       onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
-      <div style={{animation:animateState?"checkPop 0.45s ease":"none"}} onClick={e=>e.stopPropagation()}>
+      <div style={{animation:animateState?"checkPop 0.35s cubic-bezier(0.34,1.56,0.64,1)":"none"}} onClick={e=>e.stopPropagation()}>
         <Checkbox checked={task.completed} priority={task.priority} size={18}
           onChange={()=>onToggleSub(task._parentTask.id, task.id)} animating={!!animateState}/>
       </div>
@@ -3093,6 +3096,44 @@ const SurfacedSubtaskRow = ({task, onSelect, onToggleSub, view, lists, animateSt
     </div>
   );
 };
+
+/* ═══════════════════════════════════════════════════════════════════════
+   EMPTY STATES — small inkwell-and-quill line art + a crafted one-liner
+   ═══════════════════════════════════════════════════════════════════════ */
+const EmptyState = ({view, search, onGuide}) => {
+  const [title, sub] = search ? ["No matches in the inkwell", "Try a different word — or write it fresh above."]
+    : view === "completed" ? ["Nothing crossed off yet", "The first ✓ of the day is the sweetest."]
+    : view === "overdue" ? ["Nothing overdue", "The ledger is clean."]
+    : view === "today" ? ["Today's page is blank", "Add a task above, or scan a notebook page."]
+    : view === "inbox" ? ["Inbox is empty — nicely done", "New scans land here first."]
+    : ["All clear", "Add a task above, or scan a notebook page."];
+  const showGuide = !search && view !== "completed" && view !== "overdue";
+  return (
+    <div style={{textAlign:"center",padding:"56px 20px",color:"var(--muted)",animation:"fadeIn 0.3s ease"}}>
+      <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="var(--border)" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" style={{marginBottom:14}} aria-hidden="true">
+        <path d="M6 21h9"/>
+        <path d="M7.5 21v-3.4a3.2 3.2 0 0 1-1.5-2.7V13h9v1.9a3.2 3.2 0 0 1-1.5 2.7V21"/>
+        <path d="M8.2 13v-2.2h4.6V13"/>
+        <path d="M13.4 10.6 19.8 3.4c.5-.55 1.35.2.9.82L15.4 11"/>
+      </svg>
+      <div style={{fontSize:17,fontWeight:600,fontFamily:"var(--font-display)",color:"var(--text)",marginBottom:5}}>{title}</div>
+      <div style={{fontSize:13.5,lineHeight:1.6}}>
+        {sub}{showGuide && <> <span onClick={onGuide} style={{color:"var(--accent)",cursor:"pointer",fontWeight:600,textDecoration:"underline",textDecorationColor:"var(--accent-a30)",textUnderlineOffset:2}}>See what Inkwell can do →</span></>}
+      </div>
+    </div>
+  );
+};
+
+/* ═══ END-OF-DAY FLOURISH — the last Today task was just completed ═══ */
+const DayClosed = ({show}) => show ? (
+  <div aria-hidden="true" style={{position:"fixed",inset:0,zIndex:2600,display:"flex",alignItems:"center",justifyContent:"center",pointerEvents:"none",animation:"fadeIn 0.4s ease"}}>
+    <div style={{background:"var(--card)",border:"1px solid var(--border)",borderRadius:"var(--radius-xl)",padding:"30px 44px",boxShadow:"var(--shadow-3)",textAlign:"center",maxWidth:340}}>
+      <div style={{fontFamily:"var(--font-display)",fontSize:22,fontWeight:700,color:"var(--ink)",marginBottom:12}}>That's everything for today</div>
+      <div style={{height:2,background:"var(--ink)",borderRadius:1,opacity:0.7,transformOrigin:"left",animation:"inkLine 0.9s ease 0.25s both"}}/>
+      <div style={{fontSize:13,color:"var(--muted)",marginTop:12}}>The page is closed. 🖋</div>
+    </div>
+  </div>
+) : null;
 
 /* ═══════════════════════════════════════════════════════════════════════
    MAIN APP
@@ -3125,7 +3166,7 @@ const LoginScreen = ({ onSignIn, onSignInPassword, error }) => {
   return (
     <div style={{minHeight:"100dvh",display:"flex",alignItems:"center",justifyContent:"center",background:"var(--bg)",fontFamily:"var(--font-body)",padding:20}}>
       <style>{`
-        :root{--font-display:'Fraunces','Playfair Display',Georgia,serif;--font-body:'Inter Tight','Source Sans 3',-apple-system,sans-serif;--font-mono:'JetBrains Mono',ui-monospace,Consolas,monospace;--ink:#1a2238;--text:#3a405a;--muted:#7b7968;--bg:#faf7f0;--surface:#f2ece0;--border:#e4ddd0;--accent:#b45309;--accent-dark:#92400e;--accent-bg:#fdf4e3;--accent2:#d97706;--card:#fffcf5;--danger:#be2b3a;--shadow:rgba(26,34,56,0.08);--accent-a15:rgba(180,83,9,0.15);--accent-a20:rgba(180,83,9,0.2);}
+        :root{--font-display:'Fraunces','Playfair Display',Georgia,serif;--font-body:'Inter Tight','Source Sans 3',-apple-system,sans-serif;--font-mono:'JetBrains Mono',ui-monospace,Consolas,monospace;--ink:#222941;--text:#464b63;--muted:#7b7968;--bg:#faf7f0;--surface:#f2ece0;--border:#e4ddd0;--accent:#a8642e;--accent-dark:#8a5426;--accent-bg:#fdf4e3;--accent2:#c98a45;--card:#fffcf5;--danger:#b85454;--shadow:rgba(26,34,56,0.08);--shadow-strong:rgba(26,34,56,0.16);--accent-a15:rgba(168,100,46,0.15);--accent-a20:rgba(168,100,46,0.2);}
         *{box-sizing:border-box;margin:0;padding:0;font-family:var(--font-body);}
         html,body{height:100%;background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;}`}
       </style>
@@ -3320,7 +3361,7 @@ const ThemeTransition = ({type, isLight, onDone}) => {
                 if(f.r > 3) {
                   ctx.beginPath();
                   ctx.arc(wobbleX, f.y, f.r*0.45, 0, Math.PI*2);
-                  ctx.fillStyle = `rgba(59,130,246,${alpha * (0.5 + 0.5*Math.abs(Math.sin(elapsed*0.003+f.x)))})`;
+                  ctx.fillStyle = `rgba(98,146,216,${alpha * (0.5 + 0.5*Math.abs(Math.sin(elapsed*0.003+f.x)))})`;
                   ctx.fill();
                 }
               }
@@ -3334,7 +3375,7 @@ const ThemeTransition = ({type, isLight, onDone}) => {
                 const gradient = ctx.createRadialGradient(wobbleX, f.y, 0, wobbleX, f.y, f.r*2.5);
                 gradient.addColorStop(0, `rgba(255,255,255,${alpha * 0.6})`);
                 gradient.addColorStop(0.4, `rgba(191,219,254,${alpha * 0.2})`);
-                gradient.addColorStop(1, `rgba(59,130,246,0)`);
+                gradient.addColorStop(1, `rgba(98,146,216,0)`);
                 ctx.fillStyle = gradient;
                 ctx.beginPath();
                 ctx.arc(wobbleX, f.y, f.r*2.5, 0, Math.PI*2);
@@ -3610,6 +3651,7 @@ export default function InkwellApp() {
   const [showChangelog, setShowChangelog] = useState(false);
   const [confettiTrigger, setConfettiTrigger] = useState(0);
   const completionStreakRef = useRef(0);
+  const lastCompletionAtRef = useRef(0); /* for the end-of-day flourish */
   const undoToast = useUndoToast();
   const spatter = useInkSpatter();
   /* Auto dark mode — respect system preference if user hasn't flipped it explicitly */
@@ -4175,9 +4217,22 @@ export default function InkwellApp() {
   const updateTask=useCallback(updated=>{setTasks(prev=>prev.map(t=>t.id===updated.id?updated:t));},[]);
   const [animatingTasks,setAnimatingTasks]=useState({}); /* {taskId: "complete"|"uncomplete"} */
 
+  /* Smooth list reflow — View Transitions when available (rows carry a
+     viewTransitionName), plain state update otherwise */
+  const withReflow = useCallback((fn) => {
+    try {
+      if (document.startViewTransition && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        document.startViewTransition(fn);
+        return;
+      }
+    } catch(e) {}
+    fn();
+  }, []);
+
   /* Helper: actually complete a task (and optionally all its subtasks) */
   const doCompleteTask = useCallback((id, withSubs) => {
-    setTasks(prev=>prev.map(t=>{
+    lastCompletionAtRef.current = Date.now();
+    withReflow(()=>setTasks(prev=>prev.map(t=>{
       if(t.id!==id) return t;
 
       /* Recurring task logic */
@@ -4194,7 +4249,7 @@ export default function InkwellApp() {
 
       /* Normal task */
       return {...t, completed:true, completedAt:new Date().toISOString(), subtasks:withSubs ? completeAllSubs(t.subtasks) : t.subtasks};
-    }));
+    })));
     /* Animation */
     setAnimatingTasks(prev=>({...prev, [id]: "complete"}));
     setTimeout(()=>setAnimatingTasks(prev=>{const n={...prev};delete n[id];return n;}), 900);
@@ -4223,7 +4278,7 @@ export default function InkwellApp() {
         spatter(r.left + r.width * 0.1, r.top + r.height / 2);
       }
     }
-  },[tasks,flash,quillMode,spatter,paperMode]);
+  },[tasks,flash,quillMode,spatter,paperMode,withReflow]);
 
   const toggleTask=useCallback(id=>{
     const task = tasks.find(t=>t.id===id);
@@ -4233,7 +4288,7 @@ export default function InkwellApp() {
 
     /* ── Uncompleting — always straightforward ── */
     if(!nowComplete) {
-      setTasks(prev=>prev.map(t=>t.id!==id?t:{...t,completed:false,completedAt:null}));
+      withReflow(()=>setTasks(prev=>prev.map(t=>t.id!==id?t:{...t,completed:false,completedAt:null})));
       setAnimatingTasks(prev=>({...prev, [id]: "uncomplete"}));
       setTimeout(()=>setAnimatingTasks(prev=>{const n={...prev};delete n[id];return n;}), 900);
       return;
@@ -4253,7 +4308,7 @@ export default function InkwellApp() {
 
     /* No open subtasks — complete normally */
     doCompleteTask(id, false);
-  },[tasks,doCompleteTask]);
+  },[tasks,doCompleteTask,withReflow]);
 
   /* Modal handlers */
   const confirmPendingComplete = useCallback(()=>{
@@ -4577,6 +4632,24 @@ export default function InkwellApp() {
     return direct+subs;
   },[tasks,archivedLists,currentDateStr,paperMode]);
 
+  /* ═══ End-of-day flourish — fires once per day when the last Today task
+     is completed (guarded to a completion within the last 1.5s so passive
+     count changes — day rollover, sync — never trigger it) ═══ */
+  const [dayClosed,setDayClosed]=useState(false);
+  const prevTodayCountRef=useRef(null);
+  useEffect(()=>{
+    const prev=prevTodayCountRef.current;
+    prevTodayCountRef.current=todayCount;
+    if(prev===null||!ready) return;
+    if(prev>0&&todayCount===0&&Date.now()-lastCompletionAtRef.current<1500){
+      if(load("inkwell-day-closed",null)===todayStr()) return; /* once per day */
+      save("inkwell-day-closed",todayStr());
+      if(window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches){ flash("That's everything for today ✓"); return; }
+      setDayClosed(true);
+      setTimeout(()=>setDayClosed(false),3400);
+    }
+  },[todayCount,ready]);
+
   /* Keyboard shortcuts — must be after filtered/bulkDelete definitions */
   useEffect(()=>{const h=e=>{
     /* Undo/Redo — works even in inputs */
@@ -4601,10 +4674,10 @@ export default function InkwellApp() {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700;800&family=Source+Sans+3:wght@300;400;500;600;700&display=swap');
         :root{--font-display:'Fraunces','Playfair Display',Georgia,serif;--font-body:'Inter Tight','Source Sans 3',-apple-system,sans-serif;--font-mono:'JetBrains Mono',ui-monospace,Consolas,monospace;}
-        .theme-light{--ink:#1a2238;--text:#3a405a;--muted:#7b7968;--bg:#faf7f0;--surface:#f2ece0;--border:#e4ddd0;--border-light:#eee5d4;--active-bg:#fdf4e3;--accent:#b45309;--accent-dark:#92400e;--accent-bg:#fdf4e3;--accent2:#d97706;--card:#fffcf5;--card-hover:#f7f1e3;--overlay:rgba(26,34,56,0.48);--danger-bg:#fbecec;--danger-border:#f2c7c7;--danger:#be2b3a;--success-bg:rgba(46,139,87,0.14);--shadow:rgba(26,34,56,0.08);--accent-a04:rgba(180,83,9,0.04);--accent-a06:rgba(180,83,9,0.06);--accent-a08:rgba(180,83,9,0.08);--accent-a10:rgba(180,83,9,0.1);--accent-a12:rgba(180,83,9,0.12);--accent-a15:rgba(180,83,9,0.15);--accent-a18:rgba(180,83,9,0.18);--accent-a20:rgba(180,83,9,0.2);--accent-a30:rgba(180,83,9,0.3);--depth0:#92400e;--depth1:#a16207;--depth2:#78350f;--depth3:#5b2d0c;--depth0-bg:rgba(180,83,9,0.06);--depth1-bg:rgba(194,125,44,0.07);--depth2-bg:rgba(202,138,4,0.06);--offline-bg:linear-gradient(90deg,#fef3c7,#fde68a);--offline-border:#b45309;--offline-text:#78350f;--paper-noise:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' seed='7'/><feColorMatrix values='0 0 0 0 0.25  0 0 0 0 0.20  0 0 0 0 0.15  0 0 0 0.04 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");}
-        .theme-dark{--ink:#f5efe1;--text:#d8cfbb;--muted:#9a8f77;--bg:#14110d;--surface:#1d1812;--border:#3a2f22;--border-light:#28211a;--active-bg:#3a2a12;--accent:#f59e0b;--accent-dark:#fbbf24;--accent-bg:#3a2a12;--accent2:#fbbf24;--card:#231d15;--card-hover:#14110d;--overlay:rgba(0,0,0,0.62);--danger-bg:#3a1616;--danger-border:#6b2424;--danger:#f87171;--success-bg:rgba(46,139,87,0.14);--shadow:rgba(0,0,0,0.4);--accent-a04:rgba(245,158,11,0.04);--accent-a06:rgba(245,158,11,0.06);--accent-a08:rgba(245,158,11,0.08);--accent-a10:rgba(245,158,11,0.1);--accent-a12:rgba(245,158,11,0.12);--accent-a15:rgba(245,158,11,0.15);--accent-a18:rgba(245,158,11,0.18);--accent-a20:rgba(245,158,11,0.2);--accent-a30:rgba(245,158,11,0.3);--depth0:#fbbf24;--depth1:#f59e0b;--depth2:#d97706;--depth3:#b45309;--depth0-bg:rgba(245,158,11,0.06);--depth1-bg:rgba(245,158,11,0.07);--depth2-bg:rgba(245,158,11,0.06);--offline-bg:linear-gradient(90deg,#3a2a12,#5b3a14);--offline-border:#f59e0b;--offline-text:#fbbf24;--paper-noise:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' seed='7'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 0.85  0 0 0 0 0.6  0 0 0 0.04 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");}
-        .theme-frost-light{--ink:#1e293b;--text:#334155;--muted:#7b8fa3;--bg:#f0f4f8;--surface:#e2eaf3;--border:#c8d6e5;--border-light:#dde7f0;--active-bg:#eff6ff;--accent:#3b82f6;--accent-dark:#2563eb;--accent-bg:#eff6ff;--accent2:#0ea5e9;--card:#ffffff;--card-hover:#f0f4f8;--overlay:rgba(15,30,55,0.45);--danger-bg:#fef2f2;--danger-border:#fecaca;--danger:#ef4444;--success-bg:rgba(34,197,94,0.15);--shadow:rgba(0,0,0,0.06);--accent-a04:rgba(59,130,246,0.04);--accent-a06:rgba(59,130,246,0.06);--accent-a08:rgba(59,130,246,0.08);--accent-a10:rgba(59,130,246,0.1);--accent-a12:rgba(59,130,246,0.12);--accent-a15:rgba(59,130,246,0.15);--accent-a18:rgba(59,130,246,0.18);--accent-a20:rgba(59,130,246,0.2);--accent-a30:rgba(59,130,246,0.3);--depth0:#2563eb;--depth1:#1d4ed8;--depth2:#1e40af;--depth3:#1e3a8a;--depth0-bg:rgba(59,130,246,0.06);--depth1-bg:rgba(59,130,246,0.07);--depth2-bg:rgba(59,130,246,0.06);--offline-bg:linear-gradient(90deg,#dbeafe,#bfdbfe);--offline-border:#3b82f6;--offline-text:#1e40af;}
-        .theme-frost-dark{--ink:#e2eaf3;--text:#b0c4d8;--muted:#6b839b;--bg:#0c1220;--surface:#131d2e;--border:#1e2d42;--border-light:#182538;--active-bg:rgba(59,130,246,0.1);--accent:#60a5fa;--accent-dark:#93c5fd;--accent-bg:rgba(59,130,246,0.1);--accent2:#38bdf8;--card:#111b2b;--card-hover:#0c1220;--overlay:rgba(4,8,18,0.7);--danger-bg:rgba(239,68,68,0.08);--danger-border:#7f1d1d;--danger:#f87171;--success-bg:rgba(34,197,94,0.12);--shadow:rgba(0,0,0,0.3);--accent-a04:rgba(96,165,250,0.04);--accent-a06:rgba(96,165,250,0.06);--accent-a08:rgba(96,165,250,0.08);--accent-a10:rgba(96,165,250,0.1);--accent-a12:rgba(96,165,250,0.12);--accent-a15:rgba(96,165,250,0.15);--accent-a18:rgba(96,165,250,0.18);--accent-a20:rgba(96,165,250,0.2);--accent-a30:rgba(96,165,250,0.3);--depth0:#93c5fd;--depth1:#60a5fa;--depth2:#3b82f6;--depth3:#2563eb;--depth0-bg:rgba(96,165,250,0.06);--depth1-bg:rgba(96,165,250,0.07);--depth2-bg:rgba(96,165,250,0.06);--offline-bg:linear-gradient(90deg,#131d2e,#1e2d42);--offline-border:#60a5fa;--offline-text:#93c5fd;}
+        .theme-light{--ink:#222941;--text:#464b63;--muted:#7b7968;--bg:#faf7f0;--surface:#f2ece0;--border:#e4ddd0;--border-light:#eee5d4;--active-bg:#fdf4e3;--accent:#a8642e;--accent-dark:#8a5426;--accent-bg:#fdf4e3;--accent2:#c98a45;--card:#fffcf5;--card-hover:#f7f1e3;--overlay:rgba(26,34,56,0.48);--danger-bg:#fbecec;--danger-border:#f2c7c7;--danger:#b85454;--success-bg:rgba(46,139,87,0.14);--shadow:rgba(26,34,56,0.08);--shadow-strong:rgba(26,34,56,0.16);--accent-a04:rgba(168,100,46,0.04);--accent-a06:rgba(168,100,46,0.06);--accent-a08:rgba(168,100,46,0.08);--accent-a10:rgba(168,100,46,0.1);--accent-a12:rgba(168,100,46,0.12);--accent-a15:rgba(168,100,46,0.15);--accent-a18:rgba(168,100,46,0.18);--accent-a20:rgba(168,100,46,0.2);--accent-a30:rgba(168,100,46,0.3);--depth0:#92400e;--depth1:#a16207;--depth2:#78350f;--depth3:#5b2d0c;--depth0-bg:rgba(168,100,46,0.06);--depth1-bg:rgba(194,125,44,0.07);--depth2-bg:rgba(202,138,4,0.06);--offline-bg:linear-gradient(90deg,#fef3c7,#fde68a);--offline-border:#b45309;--offline-text:#78350f;--paper-noise:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' seed='7'/><feColorMatrix values='0 0 0 0 0.25  0 0 0 0 0.20  0 0 0 0 0.15  0 0 0 0.04 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");}
+        .theme-dark{--ink:#f5efe1;--text:#d8cfbb;--muted:#9a8f77;--bg:#14110d;--surface:#1d1812;--border:#3a2f22;--border-light:#28211a;--active-bg:#3a2a12;--accent:#e0a24e;--accent-dark:#ecc069;--accent-bg:#3a2a12;--accent2:#ecc069;--card:#231d15;--card-hover:#14110d;--overlay:rgba(0,0,0,0.62);--danger-bg:#3a1616;--danger-border:#6b2424;--danger:#e39191;--success-bg:rgba(46,139,87,0.14);--shadow:rgba(0,0,0,0.4);--shadow-strong:rgba(0,0,0,0.55);--accent-a04:rgba(224,162,78,0.04);--accent-a06:rgba(224,162,78,0.06);--accent-a08:rgba(224,162,78,0.08);--accent-a10:rgba(224,162,78,0.1);--accent-a12:rgba(224,162,78,0.12);--accent-a15:rgba(224,162,78,0.15);--accent-a18:rgba(224,162,78,0.18);--accent-a20:rgba(224,162,78,0.2);--accent-a30:rgba(224,162,78,0.3);--depth0:#fbbf24;--depth1:#f59e0b;--depth2:#d97706;--depth3:#b45309;--depth0-bg:rgba(224,162,78,0.06);--depth1-bg:rgba(224,162,78,0.07);--depth2-bg:rgba(224,162,78,0.06);--offline-bg:linear-gradient(90deg,#3a2a12,#5b3a14);--offline-border:#f59e0b;--offline-text:#fbbf24;--paper-noise:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' seed='7'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 0.85  0 0 0 0 0.6  0 0 0 0.04 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");}
+        .theme-frost-light{--ink:#1e293b;--text:#334155;--muted:#7b8fa3;--bg:#f0f4f8;--surface:#e2eaf3;--border:#c8d6e5;--border-light:#dde7f0;--active-bg:#eff6ff;--accent:#6292d8;--accent-dark:#4a7bc4;--accent-bg:#eff6ff;--accent2:#57a9d4;--card:#ffffff;--card-hover:#f0f4f8;--overlay:rgba(15,30,55,0.45);--danger-bg:#fef2f2;--danger-border:#fecaca;--danger:#d97070;--success-bg:rgba(34,197,94,0.15);--shadow:rgba(0,0,0,0.06);--shadow-strong:rgba(15,30,55,0.14);--accent-a04:rgba(98,146,216,0.04);--accent-a06:rgba(98,146,216,0.06);--accent-a08:rgba(98,146,216,0.08);--accent-a10:rgba(98,146,216,0.1);--accent-a12:rgba(98,146,216,0.12);--accent-a15:rgba(98,146,216,0.15);--accent-a18:rgba(98,146,216,0.18);--accent-a20:rgba(98,146,216,0.2);--accent-a30:rgba(98,146,216,0.3);--depth0:#2563eb;--depth1:#1d4ed8;--depth2:#1e40af;--depth3:#1e3a8a;--depth0-bg:rgba(98,146,216,0.06);--depth1-bg:rgba(98,146,216,0.07);--depth2-bg:rgba(98,146,216,0.06);--offline-bg:linear-gradient(90deg,#dbeafe,#bfdbfe);--offline-border:#3b82f6;--offline-text:#1e40af;}
+        .theme-frost-dark{--ink:#e2eaf3;--text:#b0c4d8;--muted:#6b839b;--bg:#0c1220;--surface:#131d2e;--border:#1e2d42;--border-light:#182538;--active-bg:rgba(98,146,216,0.1);--accent:#84aede;--accent-dark:#a8c6e8;--accent-bg:rgba(98,146,216,0.12);--accent2:#7cb8d9;--card:#111b2b;--card-hover:#0c1220;--overlay:rgba(4,8,18,0.7);--danger-bg:rgba(239,68,68,0.08);--danger-border:#7f1d1d;--danger:#f87171;--success-bg:rgba(34,197,94,0.12);--shadow:rgba(0,0,0,0.3);--shadow-strong:rgba(0,0,0,0.5);--accent-a04:rgba(132,174,222,0.04);--accent-a06:rgba(132,174,222,0.06);--accent-a08:rgba(132,174,222,0.08);--accent-a10:rgba(132,174,222,0.1);--accent-a12:rgba(132,174,222,0.12);--accent-a15:rgba(132,174,222,0.15);--accent-a18:rgba(132,174,222,0.18);--accent-a20:rgba(132,174,222,0.2);--accent-a30:rgba(132,174,222,0.3);--depth0:#93c5fd;--depth1:#60a5fa;--depth2:#3b82f6;--depth3:#2563eb;--depth0-bg:rgba(132,174,222,0.06);--depth1-bg:rgba(132,174,222,0.07);--depth2-bg:rgba(132,174,222,0.06);--offline-bg:linear-gradient(90deg,#131d2e,#1e2d42);--offline-border:#60a5fa;--offline-text:#93c5fd;}
         /* ═══ PAPER MODE — the full "journal on a wooden desk" scene lives in
            app/paper-mode.css, entirely scoped under .paper-journal. ═══ */
         *{box-sizing:border-box;margin:0;padding:0;font-family:var(--font-body);}
@@ -4613,7 +4686,7 @@ export default function InkwellApp() {
         .list-row:hover .list-menu-btn{opacity:1!important;}
         @keyframes fadeIn{from{opacity:0;transform:scale(0.95)}to{opacity:1;transform:scale(1)}}
         @keyframes shimmerIn{0%{opacity:0;transform:scale(0.3) rotate(-30deg);filter:blur(4px)}50%{opacity:1;transform:scale(1.2) rotate(10deg);filter:blur(0)}100%{opacity:1;transform:scale(1) rotate(0deg);filter:blur(0)}}
-        @keyframes frostGlow{0%,100%{filter:drop-shadow(0 0 3px rgba(96,165,250,0.4))}50%{filter:drop-shadow(0 0 8px rgba(96,165,250,0.7))}}
+        @keyframes frostGlow{0%,100%{filter:drop-shadow(0 0 3px rgba(132,174,222,0.4))}50%{filter:drop-shadow(0 0 8px rgba(132,174,222,0.7))}}
         @keyframes sunGlow{0%,100%{filter:drop-shadow(0 0 3px rgba(251,191,36,0.4))}50%{filter:drop-shadow(0 0 8px rgba(251,191,36,0.7))}}
         .logo-egg{overflow:hidden;}
         .logo-egg::after{content:"";position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:16px;opacity:0;transition:opacity 0.15s;pointer-events:none;border-radius:10px;font-weight:400;font-family:system-ui;}
@@ -4638,10 +4711,8 @@ export default function InkwellApp() {
         }
         @keyframes checkPop{
           0%{transform:scale(1)}
-          20%{transform:scale(0.8)}
-          45%{transform:scale(1.4)}
-          65%{transform:scale(0.95)}
-          85%{transform:scale(1.05)}
+          25%{transform:scale(0.82)}
+          60%{transform:scale(1.25)}
           100%{transform:scale(1)}
         }
         @keyframes cardComplete{
@@ -4671,7 +4742,7 @@ export default function InkwellApp() {
         @keyframes fadeIn{from{opacity:0}to{opacity:1}}
         @keyframes slideIn{from{opacity:0;transform:translateX(12px)}to{opacity:1;transform:translateX(0)}}
         @keyframes spin{to{transform:rotate(360deg)}}
-        @keyframes toastIn{from{opacity:0;transform:translate(-50%,20px)}to{opacity:1;transform:translate(-50%,0)}}
+        @keyframes toastIn{0%{opacity:0;transform:translate(-50%,16px)}70%{opacity:1;transform:translate(-50%,-2px)}100%{opacity:1;transform:translate(-50%,0)}}
         button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
         @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:0.01ms!important;animation-iteration-count:1!important;transition-duration:0.01ms!important;}}
         [draggable]{user-select:none;}
@@ -4684,10 +4755,10 @@ export default function InkwellApp() {
       <nav className="sidebar" aria-label="Navigation" style={{width:sidebar?264:0,...(isMobile?{position:"fixed",zIndex:100,height:"100dvh"}:{}),background:"var(--surface)",borderRight:"1px solid var(--border)",display:"flex",flexDirection:"column",transition:"width 0.25s ease",overflow:"hidden",flexShrink:0}}>
         <div style={{padding:"20px 16px 12px",flexShrink:0}}>
           <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20}}>
-            <div onClick={onLogoClick} {...logoLongHandlers} role="button" tabIndex={0} aria-label="Inkwell logo — click to toggle theme, long-press for changelog" className="logo-egg" style={{width:34,height:34,borderRadius:10,background:frostMode?"linear-gradient(135deg,#3b82f6,#38bdf8)":"linear-gradient(135deg,#b45309,#d97706)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:17,fontWeight:700,color:"white",fontFamily:"var(--font-display)",cursor:"pointer",position:"relative",transition:"background 0.5s, box-shadow 0.3s, transform 0.15s",boxShadow:frostMode?"0 2px 12px rgba(59,130,246,0.3)":"0 2px 10px rgba(180,83,9,0.25)",overflow:"hidden",userSelect:"none"}}>I</div>
+            <div onClick={onLogoClick} {...logoLongHandlers} role="button" tabIndex={0} aria-label="Inkwell logo — click to toggle theme, long-press for changelog" className="logo-egg" style={{width:34,height:34,borderRadius:10,background:frostMode?"linear-gradient(135deg,#3b82f6,#38bdf8)":"linear-gradient(135deg,#a8642e,#c98a45)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:17,fontWeight:700,color:"white",fontFamily:"var(--font-display)",cursor:"pointer",position:"relative",transition:"background 0.5s, box-shadow 0.3s, transform 0.15s",boxShadow:frostMode?"0 2px 12px rgba(98,146,216,0.3)":"0 2px 10px rgba(168,100,46,0.25)",overflow:"hidden",userSelect:"none"}}>I</div>
             <span style={{fontSize:20,fontWeight:700,fontFamily:"var(--font-display)",color:"var(--ink)",whiteSpace:"nowrap"}}>Inkwell</span>
           </div>
-          <button onClick={()=>{setShowPhoto(true);if(isMobile)setSidebar(false);}} style={{width:"100%",padding:"11px 14px",borderRadius:12,border:"2px dashed var(--border)",background:"var(--accent-bg)",color:"var(--accent)",fontSize:13,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:10,transition:"all 0.2s",marginBottom:16,whiteSpace:"nowrap",fontFamily:"inherit"}}>{Icons.camera} Scan Notebook Page</button>
+          <button onClick={()=>{setShowPhoto(true);if(isMobile)setSidebar(false);}} style={{width:"100%",padding:"11px 14px",borderRadius:"var(--radius-md)",border:"2px dashed var(--border)",background:"var(--accent-bg)",color:"var(--accent)",fontSize:13,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:10,transition:"all 0.2s",marginBottom:16,whiteSpace:"nowrap",fontFamily:"inherit"}}>{Icons.camera} Scan Notebook Page</button>
         </div>
         <div style={{flex:1,overflowY:"auto",padding:"0 8px"}}>
           {paperUI?(<>
@@ -4711,7 +4782,7 @@ export default function InkwellApp() {
           {paperMode&&reviewMode&&(
             <div style={{padding:"0 4px",marginBottom:12}}>
               <button onClick={()=>{setReviewMode(false);setView("today");flash("🖋 Review done — back to paper");}}
-                style={{width:"100%",padding:"10px 12px",borderRadius:10,border:"none",background:"linear-gradient(135deg,var(--accent),var(--accent2))",color:"white",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center",gap:8,boxShadow:"0 2px 10px rgba(180,83,9,0.25)"}}>
+                style={{width:"100%",padding:"10px 12px",borderRadius:10,border:"none",background:"linear-gradient(135deg,var(--accent),var(--accent2))",color:"white",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center",gap:8,boxShadow:"0 2px 10px rgba(168,100,46,0.25)"}}>
                 ✓ End weekly review
               </button>
             </div>
@@ -4809,7 +4880,7 @@ export default function InkwellApp() {
             {/* List context menu */}
             {listMenu&&(<>
               <div style={{position:"fixed",inset:0,zIndex:999}} onClick={()=>setListMenu(null)}/>
-              <div style={{position:"fixed",left:listMenu.x,top:listMenu.y,background:"var(--card)",borderRadius:10,boxShadow:"0 4px 20px rgba(0,0,0,0.15)",border:"1px solid var(--border)",padding:4,zIndex:1000,minWidth:140,animation:"fadeIn 0.1s ease"}}>
+              <div style={{position:"fixed",left:listMenu.x,top:listMenu.y,background:"var(--card)",borderRadius:"var(--radius-md)",boxShadow:"var(--shadow-2)",border:"1px solid var(--border)",padding:4,zIndex:1000,minWidth:140,animation:"fadeIn 0.1s ease"}}>
                 <button onClick={()=>{setEditingList(listMenu.name);setListMenu(null);}} style={{width:"100%",padding:"8px 12px",border:"none",background:"none",cursor:"pointer",fontSize:13,fontWeight:500,color:"var(--text)",textAlign:"left",borderRadius:6,fontFamily:"inherit",display:"flex",alignItems:"center",gap:8}}
                   onMouseEnter={e=>e.currentTarget.style.background="var(--surface)"} onMouseLeave={e=>e.currentTarget.style.background="none"}>✏️ Rename</button>
                 <button onClick={()=>{archiveList(listMenu.name);setListMenu(null);}} style={{width:"100%",padding:"8px 12px",border:"none",background:"none",cursor:"pointer",fontSize:13,fontWeight:500,color:"var(--text)",textAlign:"left",borderRadius:6,fontFamily:"inherit",display:"flex",alignItems:"center",gap:8}}
@@ -4900,11 +4971,10 @@ export default function InkwellApp() {
             <span>You're offline — your edits are saved locally and will sync when you reconnect</span>
           </div>
         )}
-        <header style={{padding:isMobile?"14px 16px":"14px 24px",borderBottom:"1px solid var(--border)",display:"flex",alignItems:"center",gap:12,flexShrink:0}}>
+        <header style={{padding:isMobile?"14px 16px":"14px 24px",borderBottom:"1px solid var(--border-light)",display:"flex",alignItems:"center",gap:12,flexShrink:0}}>
           <button onClick={()=>setSidebar(!sidebar)} title={sidebar?"Hide sidebar (B)":"Show sidebar (B)"} style={{background:"none",border:"none",cursor:"pointer",color:sidebar?"var(--muted)":"var(--accent)",padding:6,display:"flex",borderRadius:6,transition:"color 0.15s"}} aria-label="Toggle sidebar">{Icons.menu}</button>
           <div style={{flex:1,display:"flex",alignItems:"center",gap:10,minWidth:0}}>
             {!showSearch?(<>
-              <span style={{color:view==="overdue"?"var(--danger)":"var(--accent)",flexShrink:0}}>{viewIcon}</span>
               {view.startsWith("list:")?(<EditableText value={viewTitle} onSave={n=>renameList(viewTitle,n)} tag="h1" style={{fontSize:isMobile?20:22,fontFamily:"var(--font-display)",fontWeight:700,color:"var(--ink)"}}/>):(<h1 style={{margin:0,fontSize:isMobile?20:22,fontFamily:"var(--font-display)",fontWeight:700,color:view==="overdue"?"var(--danger)":"var(--ink)",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{viewTitle}</h1>)}
               {view==="today"&&!isMobile&&<span className={paperUI?"font-hand":undefined} style={{fontSize:paperUI?18:13,color:"var(--muted)",whiteSpace:"nowrap"}}>{new Date().toLocaleDateString("en-IE",{weekday:"long",month:"long",day:"numeric"})}</span>}
               {paperUI&&<span title="Paper Mode — your notebook is the workspace, this is the record" style={{fontSize:10,fontWeight:700,color:"var(--accent)",background:"var(--accent-bg)",padding:"3px 9px",borderRadius:12,whiteSpace:"nowrap",letterSpacing:0.6,flexShrink:0}}>🖋 PAPER MODE</span>}
@@ -4913,7 +4983,7 @@ export default function InkwellApp() {
                 onMouseEnter={e=>{e.currentTarget.style.background="var(--danger-border)"}} onMouseLeave={e=>{e.currentTarget.style.background="var(--danger-bg)"}}>
                 → Move All to Today
               </button>}
-            </>):(<input id="task-search" autoFocus value={search} onChange={e=>setSearch(e.target.value)} onKeyDown={e=>{if(e.key==="Escape"){setShowSearch(false);setSearch("");}}} placeholder="Search tasks, tags..." style={{flex:1,padding:"10px 14px",borderRadius:12,border:"1px solid var(--border)",fontSize:15,outline:"none",background:"var(--card)",fontFamily:"inherit",minWidth:0}}/>)}
+            </>):(<input id="task-search" autoFocus value={search} onChange={e=>setSearch(e.target.value)} onKeyDown={e=>{if(e.key==="Escape"){setShowSearch(false);setSearch("");}}} placeholder="Search tasks, tags..." style={{flex:1,padding:"10px 14px",borderRadius:"var(--radius-md)",border:"1px solid var(--border)",fontSize:15,outline:"none",background:"var(--card)",fontFamily:"inherit",minWidth:0}}/>)}
           </div>
           {paperUI&&<button onClick={()=>setShowPhoto(true)} style={{background:"var(--accent-bg)",border:"none",cursor:"pointer",color:"var(--accent)",padding:8,borderRadius:8,display:"flex",flexShrink:0}} aria-label="Scan notebook page" title="Scan notebook page">{Icons.camera}</button>}
           <button onClick={()=>{setShowSearch(!showSearch);if(showSearch)setSearch("");}} style={{background:showSearch?"var(--surface)":"none",border:"none",cursor:"pointer",color:"var(--muted)",padding:8,borderRadius:8,display:"flex",flexShrink:0}} aria-label="Search">{Icons.search}</button>
@@ -4927,7 +4997,7 @@ export default function InkwellApp() {
             </button>
             {showSortMenu&&(<>
               <div style={{position:"fixed",inset:0,zIndex:1300}} onClick={()=>setShowSortMenu(false)}/>
-              <div style={{position:"absolute",top:"100%",right:0,marginTop:6,background:"var(--card)",borderRadius:14,border:"1px solid var(--border)",boxShadow:"0 8px 30px rgba(0,0,0,0.12)",padding:8,zIndex:1301,minWidth:200}}>
+              <div style={{position:"absolute",top:"100%",right:0,marginTop:6,background:"var(--card)",borderRadius:"var(--radius-md)",border:"1px solid var(--border)",boxShadow:"var(--shadow-2)",padding:8,zIndex:1301,minWidth:200}}>
                 <div style={{fontSize:11,fontWeight:700,color:"var(--muted)",textTransform:"uppercase",letterSpacing:0.8,padding:"6px 10px 4px"}}>Sort by</div>
                 {[["default","Default"],["priority","Priority"],["alpha","A → Z"],["date","Due Date"],["created","Newest First"]].map(([val,label])=>(
                   <button key={val} onClick={()=>{setSortBy(val);}} style={{width:"100%",padding:"8px 10px",border:"none",borderRadius:8,background:sortBy===val?"var(--accent-bg)":"transparent",
@@ -4983,7 +5053,7 @@ export default function InkwellApp() {
                       </button>
                       {showTodayFilter && (<>
                         <div style={{position:"fixed",inset:0,zIndex:999}} onClick={()=>setShowTodayFilter(false)}/>
-                        <div style={{position:"absolute",top:"calc(100% + 4px)",left:0,background:"var(--card)",borderRadius:10,boxShadow:"0 4px 20px rgba(0,0,0,0.15)",border:"1px solid var(--border)",padding:6,zIndex:1000,minWidth:200,maxHeight:340,overflowY:"auto",animation:"fadeIn 0.12s ease"}}>
+                        <div style={{position:"absolute",top:"calc(100% + 4px)",left:0,background:"var(--card)",borderRadius:"var(--radius-md)",boxShadow:"var(--shadow-2)",border:"1px solid var(--border)",padding:6,zIndex:1000,minWidth:200,maxHeight:340,overflowY:"auto",animation:"fadeIn 0.12s ease"}}>
                           <div style={{fontSize:11,fontWeight:700,color:"var(--muted)",textTransform:"uppercase",letterSpacing:0.8,padding:"6px 10px 4px"}}>Show tasks from</div>
                           {["Inbox",...lists.filter(l=>l!=="Inbox")].map(l=>{
                             const color = listAccentColor(l, lists);
@@ -5032,14 +5102,14 @@ export default function InkwellApp() {
               );
 
               return view==="calendar"?(<CalendarView tasks={tasks} onSelect={t=>setSelectedTask(t)} onUpdate={updateTask}/>):inKanbanMode?(<div style={{display:"flex",flexDirection:"column",height:"100%"}}>
-              <div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",background:"var(--card)",borderRadius:14,border:"1px solid var(--border)",marginBottom:10,boxShadow:"0 1px 3px var(--shadow)",flexShrink:0}}>
+              <div className="lift" style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",background:"var(--card)",borderRadius:"var(--radius-lg)",border:"1px solid var(--border)",marginBottom:10,flexShrink:0}}>
                 <span style={{color:"var(--accent)",flexShrink:0}}>{Icons.plus}</span>
                 <input id="quick-add" value={newTitle} onChange={e=>setNewTitle(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&newTitle.trim()){const t=addTask({title:newTitle.trim()});setNewTitle("");flash(`✓ Added "${t.title}"`);}}} placeholder="Add a task... (Enter) · defaults to today" style={{flex:1,border:"none",outline:"none",fontSize:15,color:"var(--ink)",background:"none",fontFamily:"inherit",minWidth:0}}/>
               </div>
               {renderViewToolbar()}
               <div style={{flex:1,minHeight:0}}><KanbanBoard key={`kb-${view}-${sortBy}-${filterPriority}`} tasks={tasks} columns={activeKanbanCols} onColumnsChange={setKanbanColumns} onResetColumns={kanbanColumns?resetKanbanCols:null} onSelect={t=>setSelectedTask(t)} onUpdate={updateTask} onToggle={toggleTask} onReorder={setTasks} onUpdateSubtask={(taskId,subId)=>{setTasks(prev=>prev.map(t=>t.id!==taskId?t:{...t,subtasks:updateSubById(t.subtasks,subId,{completed:!findSubById(t.subtasks,subId)?.completed,completedAt:!findSubById(t.subtasks,subId)?.completed?new Date().toISOString():null})}));}} onSubUpdate={(subId,changes)=>{setTasks(prev=>prev.map(t=>{const found=findSubById(t.subtasks,subId);if(!found)return t;return{...t,subtasks:updateSubById(t.subtasks,subId,changes)};}));}} flash={flash} setIsDragging={setIsDragging} animatingTasks={animatingTasks} sortBy={sortBy} filterPriority={filterPriority} lists={lists} scopeListName={currentListName} todayListFilter={view==="today"?todayListFilter:null}/></div>
             </div>):(<>
-              {view!=="completed"&&view!=="overdue"&&(<div className="quick-add-card" style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",background:"var(--card)",borderRadius:14,border:"1px solid var(--border)",marginBottom:boardEligible?10:16,boxShadow:"0 1px 3px var(--shadow)"}}>
+              {view!=="completed"&&view!=="overdue"&&(<div className="quick-add-card lift" style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",background:"var(--card)",borderRadius:"var(--radius-lg)",border:"1px solid var(--border)",marginBottom:boardEligible?10:16}}>
                 <span style={{color:"var(--accent)",flexShrink:0}}>{Icons.plus}</span>
                 <input id="quick-add" value={newTitle} onChange={e=>setNewTitle(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&newTitle.trim()){const t=addTask({title:newTitle.trim()});setNewTitle("");flash(`✓ Added "${t.title}"`);}}} placeholder="Add a task... (Enter) · defaults to today" style={{flex:1,border:"none",outline:"none",fontSize:15,color:"var(--ink)",background:"none",fontFamily:"inherit",minWidth:0}}/>
               </div>)}
@@ -5053,8 +5123,8 @@ export default function InkwellApp() {
                 </div>
               )}
               {renderViewToolbar()}
-              {filtered.length===0?(<div style={{textAlign:"center",padding:"50px 20px",color:view==="overdue"?"var(--danger)":"var(--muted)"}}><div style={{fontSize:44,marginBottom:14,opacity:0.4}}>{view==="completed"?"🎉":view==="today"?"☀️":view==="overdue"?"🎉":search?"🔍":"📋"}</div><div style={{fontSize:16,fontWeight:600,marginBottom:4}}>{view==="completed"?"No completed tasks yet":view==="overdue"?"All caught up!":search?"No matching tasks":"All clear!"}</div><div style={{fontSize:14}}>{view==="overdue"?"No overdue tasks — nice work!":(<>Add a task above or scan a notebook page. <span onClick={()=>setShowTips("welcome")} style={{color:"var(--accent)",cursor:"pointer",fontWeight:600,textDecoration:"underline",textDecorationColor:"var(--accent-a30)",textUnderlineOffset:2}}>See what Inkwell can do →</span></>)}</div></div>):(
-                <div role="list" aria-label="Tasks" style={view==="overdue"?{background:"var(--danger-bg)",borderRadius:14,border:"1px solid var(--danger-border)",padding:"8px 10px"}:undefined}>
+              {filtered.length===0?(<EmptyState view={view} search={!!search} onGuide={()=>setShowTips("welcome")}/>):(
+                <div role="list" aria-label="Tasks" style={view==="overdue"?{background:"var(--danger-bg)",borderRadius:"var(--radius-lg)",border:"1px solid var(--danger-border)",padding:"8px 10px"}:undefined}>
                   {filtered.map((task,i)=>{const prev=i>0?filtered[i-1]:null;const showSep=task.completed&&!task._surfacedSub&&prev&&!prev.completed;
                     /* Date group headers for overdue view */
                     const showDateHeader = view==="overdue" && (!prev || prev.dueDate !== task.dueDate);
@@ -5202,7 +5272,7 @@ export default function InkwellApp() {
       </Overlay>)}
       {/* ═══ BULK ACTION BAR ═══ */}
       {selectedIds.size>1&&(
-        <div style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",background:"#292524",color:"#fafaf9",padding:"10px 16px",borderRadius:14,fontSize:13,fontWeight:600,boxShadow:"0 8px 24px rgba(0,0,0,0.25)",animation:"toastIn 0.3s ease",zIndex:1500,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",justifyContent:"center",maxWidth:"calc(100vw - 24px)"}}>
+        <div style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",background:"#292524",color:"#fafaf9",padding:"10px 16px",borderRadius:"var(--radius-lg)",fontSize:13,fontWeight:600,boxShadow:"0 8px 24px rgba(0,0,0,0.25)",animation:"toastIn 0.3s ease",zIndex:1500,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",justifyContent:"center",maxWidth:"calc(100vw - 24px)"}}>
           <span style={{opacity:0.7}}>{selectedIds.size} selected</span>
           <div style={{width:1,height:20,background:"rgba(255,255,255,0.2)"}}/>
           <select onChange={e=>{if(e.target.value)bulkMove(e.target.value);e.target.value="";}} defaultValue="" style={{background:"rgba(255,255,255,0.15)",border:"none",color:"white",borderRadius:6,padding:"5px 8px",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
@@ -5224,6 +5294,7 @@ export default function InkwellApp() {
       {/* ═══ GLOW-UP: command palette, changelog, confetti, midnight moon, undo toast ═══ */}
       <MidnightMoon show={midnightActive} />
       <ConfettiInk trigger={confettiTrigger} />
+      <DayClosed show={dayClosed} />
       <ChangelogScroll open={showChangelog} onClose={() => setShowChangelog(false)} />
       {undoToast.render()}
       <CommandPalette open={showCmd} onClose={() => setShowCmd(false)} commands={(()=>{const all=[
@@ -5269,7 +5340,7 @@ export default function InkwellApp() {
         return (
           <div style={{position:"fixed",inset:0,background:"var(--overlay)",zIndex:2500,display:"flex",alignItems:"center",justifyContent:"center",padding:16,animation:"fadeIn 0.15s ease"}}
             onClick={cancelPendingComplete}>
-            <div onClick={e=>e.stopPropagation()} style={{background:"var(--card)",borderRadius:16,padding:"24px 28px",maxWidth:380,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,0.3)",animation:"toastIn 0.2s ease"}}>
+            <div onClick={e=>e.stopPropagation()} style={{background:"var(--card)",borderRadius:"var(--radius-lg)",padding:"24px 28px",maxWidth:380,width:"100%",boxShadow:"var(--shadow-3)",animation:"toastIn 0.2s ease"}}>
               <div style={{fontSize:16,fontWeight:700,color:"var(--ink)",marginBottom:8,fontFamily:"var(--font-display)"}}>Complete all subtasks?</div>
               <div style={{fontSize:14,color:"var(--text)",lineHeight:1.5,marginBottom:20}}>
                 <b>{pt.title}</b> has {open} open subtask{open!==1?"s":""}. Completing this task will mark {open===1?"it":"all of them"} as done too.
@@ -5288,7 +5359,7 @@ export default function InkwellApp() {
           </div>
         );
       })()}
-      {toast&&<div role="status" aria-live="polite" style={{position:"fixed",bottom:isDragging?84:24,left:"50%",transform:"translateX(-50%)",background:"var(--ink)",color:"var(--bg)",padding:"12px 24px",borderRadius:12,fontSize:14,fontWeight:600,boxShadow:"0 10px 30px rgba(0,0,0,0.25)",animation:"toastIn 0.3s ease",zIndex:2000,whiteSpace:"nowrap",pointerEvents:"none",transition:"bottom 0.2s ease",fontFamily:"var(--font-body)"}}>{typeof toast==="string"?renderCoffee(toast):toast}</div>}
+      {toast&&<div role="status" aria-live="polite" style={{position:"fixed",bottom:isDragging?84:24,left:"50%",transform:"translateX(-50%)",background:"var(--ink)",color:"var(--bg)",padding:"12px 24px",borderRadius:"var(--radius-lg)",fontSize:14,fontWeight:600,boxShadow:"0 10px 30px rgba(0,0,0,0.25)",animation:"toastIn 0.3s ease",zIndex:2000,whiteSpace:"nowrap",pointerEvents:"none",transition:"bottom 0.2s ease",fontFamily:"var(--font-body)"}}>{typeof toast==="string"?renderCoffee(toast):toast}</div>}
       {/* Trash drop zone — appears during any drag */}
       {isDragging&&(
         <div data-drop-type="trash"
@@ -5327,4 +5398,4 @@ export default function InkwellApp() {
 }
 
 function NavSection({title,action,children}){return(<div style={{marginBottom:14}}><div style={{fontSize:11,fontWeight:700,color:"var(--muted)",textTransform:"uppercase",letterSpacing:1,padding:"0 8px",marginBottom:4,display:"flex",alignItems:"center",justifyContent:"space-between"}}>{title}{action&&<button onClick={action} style={{background:"none",border:"none",cursor:"pointer",color:"var(--muted)",padding:0,display:"flex"}} aria-label={`Add ${title.toLowerCase()}`}>{Icons.plus}</button>}</div>{children}</div>);}
-function NavItem({active,icon,label,count,onClick,countColor,labelColor,iconColor}){return(<button onClick={onClick} style={{width:"100%",padding:"8px 10px",borderRadius:10,border:"none",background:active?(labelColor?"var(--danger-bg)":"var(--active-bg)"):"transparent",color:active?"var(--ink)":"var(--text)",fontSize:14,fontWeight:active?600:500,cursor:"pointer",display:"flex",alignItems:"center",gap:10,textAlign:"left",transition:"all 0.12s",whiteSpace:"nowrap",fontFamily:"inherit"}}><span style={{display:"flex",flexShrink:0,color:iconColor||undefined}}>{icon}</span><span style={{flex:1,color:labelColor||undefined}}>{typeof label==="string"?label:label}</span>{count>0&&<span style={{fontSize:12,fontWeight:700,minWidth:18,textAlign:"right",color:countColor||"var(--muted)"}}>{count}</span>}</button>);}
+function NavItem({active,icon,label,count,onClick,countColor,labelColor,iconColor}){return(<button onClick={onClick} style={{width:"100%",padding:"8px 10px",borderRadius:"var(--radius-md)",border:"none",background:active?(labelColor?"var(--danger-bg)":"var(--active-bg)"):"transparent",color:active?"var(--ink)":"var(--text)",fontSize:14,fontWeight:active?600:500,cursor:"pointer",display:"flex",alignItems:"center",gap:10,textAlign:"left",transition:"all 0.12s",whiteSpace:"nowrap",fontFamily:"inherit"}}><span style={{display:"flex",flexShrink:0,color:iconColor||undefined}}>{icon}</span><span style={{flex:1,color:labelColor||undefined}}>{typeof label==="string"?label:label}</span>{count>0&&<span style={{fontSize:11,fontWeight:500,minWidth:18,textAlign:"right",color:countColor||"var(--muted)"}}>{count}</span>}</button>);}

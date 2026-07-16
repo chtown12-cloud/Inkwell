@@ -252,7 +252,7 @@ export function CommandPalette({ open, onClose, commands }) {
       onClick={onClose}
       style={{position:"fixed",inset:0,background:"var(--overlay)",backdropFilter:"blur(8px)",zIndex:3000,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"10vh 16px 16px",animation:"fadeIn 0.15s ease"}}>
       <div onClick={e=>e.stopPropagation()}
-        style={{width:"100%",maxWidth:560,background:"var(--card)",borderRadius:16,border:"1px solid var(--border)",boxShadow:"0 25px 80px rgba(0,0,0,0.35)",overflow:"hidden",fontFamily:"var(--font-body)",animation:"toastIn 0.18s ease"}}>
+        style={{width:"100%",maxWidth:560,background:"var(--card)",borderRadius:"var(--radius-lg)",border:"1px solid var(--border)",boxShadow:"var(--shadow-3)",overflow:"hidden",fontFamily:"var(--font-body)",animation:"toastIn 0.18s ease"}}>
         <div style={{padding:"14px 16px",borderBottom:"1px solid var(--border-light)",display:"flex",alignItems:"center",gap:10}}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.3-4.3"/></svg>
           <input ref={inputRef} value={q} onChange={e=>setQ(e.target.value)} onKeyDown={onKey}
@@ -318,11 +318,11 @@ export function useUndoToast() {
 
   const render = () => toast && (
     <div role="status" aria-live="polite"
-      style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",background:"var(--ink)",color:"var(--bg)",padding:"10px 8px 10px 18px",borderRadius:12,fontSize:14,fontWeight:500,boxShadow:"0 12px 32px rgba(0,0,0,0.3)",zIndex:2200,display:"flex",alignItems:"center",gap:12,animation:"toastIn 0.25s ease",maxWidth:"calc(100vw - 32px)",fontFamily:"var(--font-body)"}}>
+      style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",background:"var(--ink)",color:"var(--bg)",padding:"10px 8px 10px 18px",borderRadius:"var(--radius-lg)",fontSize:14,fontWeight:500,boxShadow:"var(--shadow-2)",zIndex:2200,display:"flex",alignItems:"center",gap:12,animation:"toastIn 0.25s ease",maxWidth:"calc(100vw - 32px)",fontFamily:"var(--font-body)"}}>
       <span style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:"60vw"}}>{toast.message}</span>
       {toast.undoFn && (
         <button onClick={() => { toast.undoFn(); dismiss(); }}
-          style={{background:"var(--accent)",color:"#fff",border:"none",padding:"6px 14px",borderRadius:8,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>
+          style={{background:"var(--accent)",color:"#fff",border:"none",padding:"6px 14px",borderRadius:"var(--radius-pill)",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>
           Undo
         </button>
       )}
@@ -369,7 +369,7 @@ export function ChangelogScroll({ open, onClose }) {
       onClick={onClose}
       style={{position:"fixed",inset:0,background:"var(--overlay)",backdropFilter:"blur(6px)",zIndex:3100,display:"flex",alignItems:"center",justifyContent:"center",padding:16,animation:"fadeIn 0.2s ease"}}>
       <div onClick={e=>e.stopPropagation()}
-        style={{maxWidth:520,width:"100%",maxHeight:"80vh",overflowY:"auto",background:"var(--card)",borderRadius:20,border:"1px solid var(--border)",boxShadow:"0 30px 80px rgba(0,0,0,0.35)",padding:"28px 28px 22px",animation:"scrollRoll 0.4s cubic-bezier(.25,.8,.3,1) forwards",transformOrigin:"top center",fontFamily:"var(--font-body)"}}>
+        style={{maxWidth:520,width:"100%",maxHeight:"80vh",overflowY:"auto",background:"var(--card)",borderRadius:"var(--radius-xl)",border:"1px solid var(--border)",boxShadow:"var(--shadow-3)",padding:"28px 28px 22px",animation:"scrollRoll 0.4s cubic-bezier(.25,.8,.3,1) forwards",transformOrigin:"top center",fontFamily:"var(--font-body)"}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
           <h2 style={{margin:0,fontSize:22,fontFamily:"var(--font-display)",color:"var(--ink)",fontWeight:600}}>The Scroll</h2>
           <button onClick={onClose} aria-label="Close"

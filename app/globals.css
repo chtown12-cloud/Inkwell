@@ -10,9 +10,17 @@
 :root {
   /* Base type scale — overridden by body[data-text-size] */
   --type-scale: 1;
-  --radius-card: 14px;
-  --radius-lg: 20px;
-  --ring: 0 0 0 2px var(--bg, #fafaf9), 0 0 0 4px var(--accent, #d97706);
+  /* ═══ ROUNDING SCALE — one system, used everywhere ═══ */
+  --radius-sm: 8px;    /* icon buttons, small controls */
+  --radius-md: 12px;   /* buttons, inputs, nav items, menus */
+  --radius-lg: 16px;   /* task rows, cards, toasts, palettes */
+  --radius-xl: 24px;   /* modal shells, large panels */
+  --radius-pill: 999px;/* chips + badges */
+  --radius-card: var(--radius-lg); /* back-compat alias */
+  /* ═══ ELEVATION SCALE — borders at rest, shadows only when floating ═══ */
+  --shadow-1: 0 1px 2px var(--shadow, rgba(26,34,56,0.08));
+  --shadow-2: 0 8px 24px var(--shadow-strong, rgba(20,14,4,0.16));
+  --shadow-3: 0 24px 64px var(--shadow-strong, rgba(20,14,4,0.24));
 }
 
 * {
@@ -248,7 +256,7 @@ body[data-text-size="xl"] { --type-scale: 1.22; }
 @keyframes slideUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes slideIn { from { opacity: 0; transform: translateX(12px); } to { opacity: 1; transform: translateX(0); } }
 @keyframes spin { to { transform: rotate(360deg); } }
-@keyframes toastIn { from { opacity: 0; transform: translate(-50%, 20px); } to { opacity: 1; transform: translate(-50%, 0); } }
+@keyframes toastIn { 0% { opacity: 0; transform: translate(-50%, 16px); } 70% { opacity: 1; transform: translate(-50%, -2px); } 100% { opacity: 1; transform: translate(-50%, 0); } }
 @keyframes pulseGlow { 0%, 100% { box-shadow: 0 0 0 0 rgba(217,119,6,0.3); } 50% { box-shadow: 0 0 0 8px rgba(217,119,6,0); } }
 @keyframes drillIn { from { opacity: 0; transform: translateX(40px); } to { opacity: 1; transform: translateX(0); } }
 @keyframes drillOut { from { opacity: 0; transform: translateX(-40px); } to { opacity: 1; transform: translateX(0); } }
@@ -279,6 +287,44 @@ body[data-text-size="xl"] { --type-scale: 1.22; }
   position: absolute;
   inset: -9px;
 }
+
+/* ═══ GLOW-UP UTILITIES ═══ */
+
+/* One quiet chip system — monochrome, pill-shaped; priority flag stays the
+   single colored signal on a row */
+.chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11px; font-weight: 500; line-height: 1.5;
+  color: var(--muted, #7b7968);
+  background: var(--surface, #f2ece0);
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+}
+
+/* Calm rows: secondary chips fade in on hover/focus; always visible on touch.
+   Opacity-only — elements keep their space, so nothing shifts. */
+.row-secondary { display: inline-flex; align-items: center; gap: 8px; opacity: 0; transition: opacity 0.15s ease; }
+.task-row:hover .row-secondary,
+.task-row:focus-within .row-secondary { opacity: 1; }
+@media (hover: none) { .row-secondary { opacity: 1; } }
+
+/* Hover lift for cards + primary surfaces */
+.lift { transition: transform 0.15s ease, box-shadow 0.15s ease; }
+.lift:hover { transform: translateY(-1px); box-shadow: var(--shadow-2); }
+.lift:active { transform: translateY(0); box-shadow: none; }
+
+/* Button feedback via CSS instead of hand-rolled mouse handlers */
+.btn-primary { transition: filter 0.15s ease, transform 0.1s ease; }
+.btn-primary:hover { filter: brightness(1.06); }
+.btn-primary:active { transform: scale(0.98); }
+.btn-secondary { transition: background 0.15s ease; }
+.btn-secondary:hover { background: var(--card-hover, #f7f1e3) !important; }
+.icon-btn { transition: background 0.15s ease, color 0.15s ease; }
+.icon-btn:hover { background: var(--surface, #f2ece0) !important; color: var(--text, #3a405a) !important; }
+
+/* End-of-day flourish: an ink line drawing itself across */
+@keyframes inkLine { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 
 .main-scroll { -webkit-overflow-scrolling: touch; }
 @media (max-width: 768px) {

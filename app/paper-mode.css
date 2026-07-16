@@ -146,7 +146,7 @@
   --danger: #ff9d8a; --danger-bg: rgba(255,157,138,0.12);
   --danger-border: rgba(255, 157, 138, 0.3);
   background-image: none;
-  box-shadow: 6px 0 18px rgba(28, 15, 3, 0.35);
+  box-shadow: 3px 0 12px rgba(28, 15, 3, 0.22);
 }
 .paper-journal .logo-egg {
   background: linear-gradient(135deg, #8d6b34, #c9a15b) !important;
@@ -246,7 +246,7 @@
 
 .journal-entry {
   display: flex; align-items: baseline; gap: 10px;
-  padding: 1px 2px; border-radius: 4px;
+  padding: 1px 2px; border-radius: 6px;
   cursor: pointer;
   transition: background 0.15s;
 }
